@@ -511,6 +511,11 @@ class OrgNodeUpdate(BaseModel):
 async def list_org(user=Depends(get_current_user)):
     return await db.org_nodes.find(dscope(user), {"_id": 0}).sort("order", 1).to_list(2000)
 
+@api.get("/org/public")
+async def list_org_public():
+    """Public read of the real (non-demo) organization chart for visitors."""
+    return await db.org_nodes.find({"is_demo": {"$ne": True}}, {"_id": 0}).sort("order", 1).to_list(2000)
+
 @api.post("/org")
 async def create_org(body: OrgNodeIn, user=Depends(require_roles("super_admin"))):
     if body.parent_id and not await db.org_nodes.find_one({"id": body.parent_id, **dscope(user)}):
@@ -526,8 +531,17 @@ async def update_org(nid: str, body: OrgNodeUpdate, user=Depends(require_roles("
     if not node:
         raise HTTPException(404, "Anggota tidak ditemukan")
     upd = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
-    if "parent_id" in upd and upd["parent_id"] == nid:
-        raise HTTPException(400, "Tidak dapat menjadikan dirinya sendiri sebagai atasan")
+    if "parent_id" in upd and upd["parent_id"]:
+        # prevent cycles: new parent must not be the node itself or one of its descendants
+        cur, seen = upd["parent_id"], set()
+        while cur:
+            if cur == nid:
+                raise HTTPException(400, "Tidak dapat memindahkan anggota ke dalam bawahannya sendiri")
+            if cur in seen:
+                break
+            seen.add(cur)
+            p = await db.org_nodes.find_one({"id": cur}, {"_id": 0, "parent_id": 1})
+            cur = p.get("parent_id") if p else None
     if upd:
         await db.org_nodes.update_one({"id": nid}, {"$set": upd})
     return await db.org_nodes.find_one({"id": nid}, {"_id": 0})

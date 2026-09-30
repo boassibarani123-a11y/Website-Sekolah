@@ -69,7 +69,14 @@ export default function Classes() {
                 </div>
               )}
             </div>
-            <h3 className="font-heading font-extrabold text-lg text-slate-900 mt-3">{c.name}</h3>
+            <h3 className="font-heading font-extrabold text-lg text-slate-900 mt-3 flex items-center gap-2 flex-wrap">
+              {c.name}
+              {user.role === "guru" && canManageClass(c) && (
+                <span data-testid={`wali-badge-${c.id}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200">
+                  <UserCog className="w-3 h-3"/>Wali Anda
+                </span>
+              )}
+            </h3>
             {c.description && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{c.description}</p>}
             <div className="mt-3 flex flex-wrap gap-1.5">
               {(c.subjects||[]).slice(0,4).map((s,i)=>(

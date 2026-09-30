@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Network, Plus, X, Pencil, Trash2, UserPlus, Upload, User } from "lucide-react";
+import { Network, Plus, X, Pencil, Trash2, UserPlus, Upload, User, Image, FileDown } from "lucide-react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -35,6 +37,9 @@ export default function OrgStructure() {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // {mode:'add'|'edit', node, parent}
+  const [exporting, setExporting] = useState(false);
+  const chartRef = useRef(null);
+  const dragRef = useRef(null);
 
   const load = () => {
     setLoading(true);
@@ -48,6 +53,72 @@ export default function OrgStructure() {
     catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
   };
 
+  const onDropNode = async (targetId) => {
+    const draggedId = dragRef.current;
+    dragRef.current = null;
+    if (!draggedId || draggedId === targetId) return;
+    const byId = {};
+    nodes.forEach(n => (byId[n.id] = n));
+    const isDescendant = (id, ancestorId) => {
+      let cur = byId[id];
+      while (cur && cur.parent_id) { if (cur.parent_id === ancestorId) return true; cur = byId[cur.parent_id]; }
+      return false;
+    };
+    if (isDescendant(targetId, draggedId)) { toast.error("Tidak bisa memindahkan ke dalam bawahannya sendiri"); return; }
+    const dragged = byId[draggedId], target = byId[targetId];
+    try {
+      if ((dragged.parent_id || null) === (target.parent_id || null)) {
+        // same parent -> reorder: place dragged right after target
+        const sibs = nodes.filter(n => (n.parent_id || null) === (target.parent_id || null) && n.id !== draggedId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0));
+        const idx = sibs.findIndex(s => s.id === targetId);
+        sibs.splice(idx + 1, 0, dragged);
+        await Promise.all(sibs.map((s, i) => (s.order !== i ? api.patch(`/org/${s.id}`, { order: i }) : null)).filter(Boolean));
+        toast.success("Urutan diperbarui");
+      } else {
+        // different branch -> reparent under target
+        const childCount = nodes.filter(n => n.parent_id === targetId).length;
+        await api.patch(`/org/${draggedId}`, { parent_id: targetId, order: childCount });
+        toast.success(`${dragged.name} dipindah ke bawah ${target.name}`);
+      }
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal memindahkan"); }
+  };
+
+  const onDropRoot = async () => {
+    const draggedId = dragRef.current;
+    dragRef.current = null;
+    if (!draggedId) return;
+    const dragged = nodes.find(n => n.id === draggedId);
+    if (!dragged || !dragged.parent_id) return; // already root
+    try {
+      const rootCount = nodes.filter(n => !n.parent_id).length;
+      await api.patch(`/org/${draggedId}`, { parent_id: null, order: rootCount });
+      toast.success(`${dragged.name} dijadikan puncak`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal memindahkan"); }
+  };
+
+  const exportImage = async (asPdf) => {
+    if (!chartRef.current) return;
+    setExporting(true);
+    try {
+      const canvas = await html2canvas(chartRef.current, { backgroundColor: "#ffffff", scale: 2 });
+      if (asPdf) {
+        const img = canvas.toDataURL("image/png");
+        const pdf = new jsPDF({ orientation: canvas.width >= canvas.height ? "landscape" : "portrait", unit: "px", format: [canvas.width, canvas.height] });
+        pdf.addImage(img, "PNG", 0, 0, canvas.width, canvas.height);
+        pdf.save("struktur-organisasi.pdf");
+      } else {
+        const link = document.createElement("a");
+        link.download = "struktur-organisasi.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
+    } catch (e) { toast.error("Gagal mengekspor bagan"); }
+    finally { setExporting(false); }
+  };
+
   const tree = buildTree(nodes);
 
   return (
@@ -57,14 +128,31 @@ export default function OrgStructure() {
           <h1 className="font-heading text-3xl font-extrabold text-slate-900 flex items-center gap-2">
             <Network className="w-7 h-7 text-sky-600" />Struktur Organisasi
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Bagan organisasi sekolah — tak terbatas, memanjang ke bawah sesuai kebutuhan.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Bagan organisasi sekolah — tak terbatas, memanjang ke bawah.
+            {isAdmin && " Seret kartu untuk mengubah induk atau urutan."}
+          </p>
         </div>
-        {isAdmin && (
-          <button data-testid="add-root-node-button" onClick={() => setModal({ mode: "add", parent: null })}
-            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-xl shadow-lg shadow-sky-600/30 flex items-center gap-2">
-            <Plus className="w-4 h-4" />Tambah Anggota Puncak
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {tree.length > 0 && (
+            <>
+              <button data-testid="org-export-png" disabled={exporting} onClick={() => exportImage(false)}
+                className="px-3 py-2.5 border-2 border-slate-200 rounded-xl font-semibold text-slate-700 hover:border-sky-400 flex items-center gap-2 disabled:opacity-50">
+                <Image className="w-4 h-4" />PNG
+              </button>
+              <button data-testid="org-export-pdf" disabled={exporting} onClick={() => exportImage(true)}
+                className="px-3 py-2.5 border-2 border-slate-200 rounded-xl font-semibold text-slate-700 hover:border-sky-400 flex items-center gap-2 disabled:opacity-50">
+                <FileDown className="w-4 h-4" />PDF
+              </button>
+            </>
+          )}
+          {isAdmin && (
+            <button data-testid="add-root-node-button" onClick={() => setModal({ mode: "add", parent: null })}
+              className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-xl shadow-lg shadow-sky-600/30 flex items-center gap-2">
+              <Plus className="w-4 h-4" />Tambah Anggota Puncak
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -77,13 +165,20 @@ export default function OrgStructure() {
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm overflow-x-auto">
-          <div className="org-tree" data-testid="org-tree">
+          {isAdmin && (
+            <div data-testid="org-root-dropzone" onDragOver={e => e.preventDefault()} onDrop={onDropRoot}
+              className="mb-4 text-center text-xs font-semibold text-slate-400 border-2 border-dashed border-slate-200 rounded-xl py-2">
+              Tarik ke sini untuk menjadikan anggota sebagai puncak
+            </div>
+          )}
+          <div className="org-tree" data-testid="org-tree" ref={chartRef}>
             <ul>
               {tree.map(n => (
                 <OrgNode key={n.id} node={n} isAdmin={isAdmin}
                   onAdd={(parent) => setModal({ mode: "add", parent })}
                   onEdit={(node) => setModal({ mode: "edit", node })}
-                  onDelete={remove} />
+                  onDelete={remove}
+                  dragRef={dragRef} onDropNode={onDropNode} />
               ))}
             </ul>
           </div>
@@ -98,13 +193,19 @@ export default function OrgStructure() {
   );
 }
 
-function OrgNode({ node, isAdmin, onAdd, onEdit, onDelete }) {
+function OrgNode({ node, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }) {
+  const [over, setOver] = useState(false);
   return (
     <li className={node.dashed ? "dashed" : ""}>
       <div data-testid={`org-node-${node.id}`}
-        className="group inline-flex flex-col items-center bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 shadow-sm hover:border-sky-400 hover:shadow-md transition-all w-44">
+        draggable={isAdmin}
+        onDragStart={isAdmin ? (e) => { dragRef.current = node.id; e.stopPropagation(); } : undefined}
+        onDragOver={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); setOver(true); } : undefined}
+        onDragLeave={isAdmin ? () => setOver(false) : undefined}
+        onDrop={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); setOver(false); onDropNode(node.id); } : undefined}
+        className={`group inline-flex flex-col items-center bg-white border-2 rounded-2xl px-4 py-3 shadow-sm hover:shadow-md transition-all w-44 ${over ? "border-sky-500 ring-2 ring-sky-200" : "border-slate-200 hover:border-sky-400"} ${isAdmin ? "cursor-move" : ""}`}>
         <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center">
-          {node.photo ? <img src={node.photo} alt={node.name} className="w-full h-full object-cover" />
+          {node.photo ? <img src={node.photo} alt={node.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
             : <User className="w-7 h-7 text-slate-300" />}
         </div>
         <p className="mt-2 font-heading font-bold text-sm text-slate-900 leading-tight">{node.name}</p>
@@ -122,7 +223,7 @@ function OrgNode({ node, isAdmin, onAdd, onEdit, onDelete }) {
       </div>
       {node.children.length > 0 && (
         <ul>
-          {node.children.map(c => React.createElement(OrgNode, { key: c.id, node: c, isAdmin, onAdd, onEdit, onDelete }))}
+          {node.children.map(c => React.createElement(OrgNode, { key: c.id, node: c, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }))}
         </ul>
       )}
     </li>

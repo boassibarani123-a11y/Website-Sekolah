@@ -53,18 +53,30 @@ export default function Attendance() {
   const startCam = async () => {
     setScanning(true);
     const { Html5Qrcode } = await import("html5-qrcode");
+    await new Promise(r => setTimeout(r, 120)); // let #qr-reader become visible
     const cam = new Html5Qrcode("qr-reader");
     scannerRef.current = cam;
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+    const onOk = async (txt) => {
+      if (lockRef.current) return;          // debounce repeated detections
+      lockRef.current = true;
+      const photo = await captureSnapshot(); // snapshot proof before submitting
+      await submit({ qr_code: txt, photo });
+      setTimeout(() => { lockRef.current = false; }, 2500);
+    };
     try {
-      await cam.start({facingMode:"environment"}, {fps:10, qrbox:{width:250,height:250}},
-        async (txt) => {
-          if (lockRef.current) return;          // debounce repeated detections
-          lockRef.current = true;
-          const photo = await captureSnapshot(); // snapshot proof before submitting
-          await submit({ qr_code: txt, photo });
-          setTimeout(() => { lockRef.current = false; }, 2500);
-        }, () => {});
-    } catch (e) { toast.error("Kamera tidak tersedia"); setScanning(false); }
+      // Prefer rear camera; fall back to any available camera (laptop/desktop webcam)
+      try {
+        await cam.start({ facingMode: "environment" }, config, onOk, () => {});
+      } catch (e1) {
+        const cams = await Html5Qrcode.getCameras();
+        if (cams && cams.length) await cam.start(cams[0].id, config, onOk, () => {});
+        else throw e1;
+      }
+    } catch (e) {
+      toast.error("Kamera tidak tersedia / izin ditolak. Pakai Input Manual NISN atau QR di bawah.");
+      setScanning(false);
+    }
   };
   const stopCam = async () => {
     try { await scannerRef.current?.stop(); } catch(e){}
