@@ -1,0 +1,134 @@
+import { useEffect, useRef, useState } from "react";
+import api from "@/lib/apiClient";
+import { toast } from "sonner";
+import { QrCode, Download, Camera as CamIcon, Users, Check } from "lucide-react";
+
+export default function Attendance() {
+  const [stats, setStats] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [manual, setManual] = useState("");
+  const [status, setStatus] = useState("hadir");
+  const [scanning, setScanning] = useState(false);
+  const scannerRef = useRef(null);
+
+  const load = () => {
+    api.get("/attendance/stats").then(r=>setStats(r.data));
+    api.get("/attendance").then(r=>setRows(r.data));
+  };
+  useEffect(() => { load(); }, []);
+
+  const submit = async (qr) => {
+    try {
+      const r = await api.post("/attendance/scan", { qr_code: qr, status });
+      toast.success(`${r.data.student.name} - ${status.toUpperCase()}`);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal absen");
+    }
+  };
+
+  const startCam = async () => {
+    setScanning(true);
+    const { Html5Qrcode } = await import("html5-qrcode");
+    const cam = new Html5Qrcode("qr-reader");
+    scannerRef.current = cam;
+    try {
+      await cam.start({facingMode:"environment"}, {fps:10, qrbox:{width:250,height:250}},
+        async (txt) => { await submit(txt); }, () => {});
+    } catch (e) { toast.error("Kamera tidak tersedia"); setScanning(false); }
+  };
+  const stopCam = async () => {
+    try { await scannerRef.current?.stop(); } catch(e){}
+    setScanning(false);
+  };
+  useEffect(()=>()=>{stopCam();},[]);
+
+  const exportXlsx = async () => {
+    const r = await api.get(`/attendance/export?date=${stats?.date || ""}`, { responseType:"blob" });
+    const url = URL.createObjectURL(r.data);
+    const a = document.createElement("a"); a.href = url; a.download = `absensi_${stats?.date}.xlsx`; a.click();
+  };
+
+  return (
+    <div className="space-y-6" data-testid="attendance-page">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi QR Code</h1>
+          <p className="mt-1 text-sm text-slate-500">Scan QR Kartu Pelajar untuk absensi real-time · {stats?.date}</p>
+        </div>
+        <button data-testid="attendance-export-excel-button" onClick={exportXlsx}
+          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+          <Download className="w-4 h-4"/>Export Excel
+        </button>
+      </div>
+
+      <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <Counter label="Hadir" value={stats?.hadir} color="emerald"/>
+        <Counter label="Izin" value={stats?.izin} color="sky"/>
+        <Counter label="Sakit" value={stats?.sakit} color="amber"/>
+        <Counter label="Alpa" value={stats?.alpa} color="rose"/>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 className="font-heading text-lg font-bold mb-4 flex items-center gap-2"><QrCode className="w-5 h-5 text-sky-600"/>Scanner</h2>
+          <div className="flex gap-2 mb-4">
+            {["hadir","izin","sakit","alpa"].map(s=>(
+              <button key={s} onClick={()=>setStatus(s)} data-testid={`att-status-${s}`}
+                className={`flex-1 py-2 rounded-lg text-xs font-semibold uppercase transition-all ${status===s?"bg-sky-600 text-white shadow":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{s}</button>
+            ))}
+          </div>
+          <div id="qr-reader" className={`rounded-xl overflow-hidden ${scanning?"":"hidden"} border-4 border-sky-500/30 bg-slate-950`}></div>
+          {!scanning ? (
+            <button data-testid="qr-scanner-toggle-button" onClick={startCam}
+              className="w-full py-3 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 flex items-center justify-center gap-2">
+              <CamIcon className="w-4 h-4"/>Buka Kamera & Scan
+            </button>
+          ) : (
+            <button onClick={stopCam} className="w-full py-3 bg-rose-600 text-white rounded-xl font-semibold hover:bg-rose-700 mt-3">Berhenti Scan</button>
+          )}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <label className="text-xs font-semibold text-slate-600 uppercase">Input Manual QR</label>
+            <div className="mt-1.5 flex gap-2">
+              <input value={manual} onChange={e=>setManual(e.target.value)} placeholder="SEKOLAHKU-xxxx"
+                className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-sky-500 outline-none text-sm"/>
+              <button data-testid="manual-scan-submit" onClick={()=>{if(manual){submit(manual); setManual("");}}}
+                className="px-4 bg-sky-600 text-white rounded-lg font-semibold hover:bg-sky-700 flex items-center gap-1"><Check className="w-4 h-4"/></button>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 className="font-heading text-lg font-bold mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-sky-600"/>Log Presensi Hari Ini</h2>
+          <div className="max-h-[400px] overflow-y-auto -mx-2 px-2">
+            {rows.length===0 && <p className="text-sm text-slate-400 italic">Belum ada absensi.</p>}
+            <div className="space-y-2">
+              {rows.slice(0, 30).map(r=>(
+                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100">
+                  <div>
+                    <p className="font-semibold text-sm text-slate-900">{r.student_name}</p>
+                    <p className="text-[11px] text-slate-500">{r.kelas} · {new Date(r.scanned_at).toLocaleTimeString("id-ID")}</p>
+                  </div>
+                  <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${
+                    r.status==="hadir"?"bg-emerald-100 text-emerald-700":
+                    r.status==="izin"?"bg-sky-100 text-sky-700":
+                    r.status==="sakit"?"bg-amber-100 text-amber-700":"bg-rose-100 text-rose-700"
+                  }`}>{r.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Counter({label, value, color}) {
+  const c = {emerald:"from-emerald-500 to-emerald-600", sky:"from-sky-500 to-sky-600",
+              amber:"from-amber-500 to-amber-600", rose:"from-rose-500 to-rose-600"}[color];
+  return <div className={`bg-gradient-to-br ${c} text-white p-5 rounded-2xl shadow-lg`}>
+    <p className="text-xs font-semibold uppercase tracking-wider opacity-90">{label}</p>
+    <p className="mt-2 font-heading text-4xl font-extrabold">{value ?? 0}</p>
+  </div>;
+}

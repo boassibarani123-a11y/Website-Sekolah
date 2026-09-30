@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 7 - Announcements CRUD + rich fields (image/category/scope/pinned) fully tested end-to-end. Backend: 11/11 pytest cases passed covering create with all fields, pinned-first sort, admin edit/delete, permission matrix (siswa cannot create, guru can create own only, guru 403 on others, admin overrides all, 404 on missing, upload endpoint). Frontend: verified Super Admin, Guru, and Siswa flows on /announcements against the public preview URL - create with image upload, pin badge, category badge, edit, delete, and role-based visibility of controls (pin checkbox only for admin; edit/delete only on cards where canManage).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_announcements.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now >1400 lines - should be split into routers per domain (auth, users, classes, announcements, uploads, reports, chats, events) for maintainability. Non-blocking.",
+    "Announcements image URLs are stored as absolute (BACKEND + /api/files/path) from the frontend; if REACT_APP_BACKEND_URL changes in deployment, old announcements will keep the stale host. Consider storing only the relative /api/files/... path and letting the client prefix at render time.",
+    "GET /api/announcements returns all announcements regardless of scope; there is no filtering by kelas for scope=kelas. Non-blocking for this iteration but worth noting for privacy.",
+    "PATCH /api/announcements/{aid} accepts null-only body silently returning the doc unchanged - acceptable but could return 400 if upd is empty."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Super Admin boassibarani123@gmail.com / Boas12345io, Guru guru.test@sekolah.id / Guru12345, Siswa siswa.test@sekolah.id / Siswa12345",
+  "seed_data_creation": "TEST_ prefixed announcements created during pytest were auto-cleaned via cleanup fixture. Playwright-created TEST_UI announcements were deleted at end of each flow.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter7_announcements.py covers announcement CRUD + permissions + upload. Login redirect after successful auth goes to '/' (root/dashboard), NOT '/dashboard' - use presence of announcements-page testid or absence of /login in URL to detect login success. Guru pinned checkbox is intentionally hidden (isAdmin gate) - not a bug.",
+  "rca of the issue": "N/A - no bugs found in this iteration."
+}
