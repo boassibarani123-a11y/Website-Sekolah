@@ -3,13 +3,22 @@ import { Link } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight } from "lucide-react";
+import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight, UserCog } from "lucide-react";
 
 export default function Classes() {
   const { user } = useAuth();
   const isAdmin = ["super_admin", "guru"].includes(user.role);
+  const isSuperAdmin = user.role === "super_admin";
   const canManageClass = (c) => user.role === "super_admin" ||
     (user.role === "guru" && (c.created_by === user.id || c.homeroom_teacher_id === user.id));
+  const assignHomeroom = async (classId, teacherId) => {
+    try {
+      await api.patch(`/classes/${classId}`, { homeroom_teacher_id: teacherId || null });
+      const tName = teachers.find(t => t.id === teacherId)?.name;
+      toast.success(teacherId ? `Wali kelas: ${tName} — manajemen kelas terbuka untuknya` : "Wali kelas dikosongkan");
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menetapkan wali"); }
+  };
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [editing, setEditing] = useState(null); // null | {} (new) | class obj
@@ -72,6 +81,19 @@ export default function Classes() {
             <div className="mt-4 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-3">
               <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5"/>{c.student_count ?? 0} siswa</span>
               <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5"/>{(c.subjects||[]).length} mapel</span>
+            </div>
+            <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 p-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1"><UserCog className="w-3 h-3"/>Wali Kelas</p>
+              {isSuperAdmin ? (
+                <select data-testid={`homeroom-select-${c.id}`} value={c.homeroom_teacher_id || ""}
+                  onChange={e=>assignHomeroom(c.id, e.target.value)}
+                  className="mt-1 w-full px-2 py-1.5 text-sm border-2 border-slate-200 rounded-lg bg-white focus:border-sky-500 outline-none">
+                  <option value="">— Belum ada wali —</option>
+                  {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              ) : (
+                <p data-testid={`homeroom-name-${c.id}`} className="mt-0.5 text-sm font-semibold text-slate-800">{c.homeroom_teacher_name || "—"}</p>
+              )}
             </div>
             <Link to={`/classes/${c.id}`} data-testid={`open-class-${c.id}`}
               className="mt-4 w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2 group-hover:bg-sky-600 transition-colors">

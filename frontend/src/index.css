@@ -26,6 +26,35 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* ---------- Organization chart (unlimited depth, top-down) ---------- */
+.org-tree { display: inline-block; min-width: 100%; text-align: center; }
+.org-tree ul { position: relative; display: flex; justify-content: center; padding-top: 24px; margin: 0; }
+.org-tree li {
+  position: relative; list-style: none; text-align: center;
+  padding: 24px 12px 0; display: flex; flex-direction: column; align-items: center;
+}
+/* connector: down from parent to the horizontal bar */
+.org-tree li::before, .org-tree li::after {
+  content: ''; position: absolute; top: 0; right: 50%;
+  border-top: 2px solid #cbd5e1; width: 50%; height: 24px;
+}
+.org-tree li::after { right: auto; left: 50%; border-left: 2px solid #cbd5e1; }
+/* single child: just a straight line */
+.org-tree li:only-child::after, .org-tree li:only-child::before { display: none; }
+.org-tree li:only-child { padding-top: 24px; }
+/* remove outer connectors on the ends */
+.org-tree li:first-child::before, .org-tree li:last-child::after { border: 0 none; }
+.org-tree li:last-child::before { border-right: 2px solid #cbd5e1; border-radius: 0 6px 0 0; }
+.org-tree li:first-child::after { border-radius: 6px 0 0 0; }
+/* vertical line from a node down to its children's bar */
+.org-tree ul ul::before {
+  content: ''; position: absolute; top: 0; left: 50%;
+  border-left: 2px solid #cbd5e1; width: 0; height: 24px;
+}
+.org-tree > ul { padding-top: 0; }
+.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
+.org-tree li.dashed::before, .org-tree li.dashed::after { border-top-style: dashed; border-left-style: dashed; border-right-style: dashed; }
+
 /* Printable KTP Card */
 @media print {
   @page { margin: 8mm; }

@@ -423,9 +423,12 @@ async def list_classes(user=Depends(get_current_user)):
     # Students & class/osis leaders only see their own class
     if user["role"] in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
         classes = [c for c in classes if c.get("name") == user.get("kelas")]
-    # attach student count
+    # attach student count + homeroom teacher name
     for c in classes:
         c["student_count"] = await db.users.count_documents({"role": "siswa", "kelas": c["name"], **dscope(user)})
+        if c.get("homeroom_teacher_id"):
+            t = await db.users.find_one({"id": c["homeroom_teacher_id"]}, {"_id": 0, "name": 1})
+            c["homeroom_teacher_name"] = t["name"] if t else None
     return classes
 
 @api.get("/classes/{cid}")
@@ -485,6 +488,61 @@ async def delete_class(cid: str, user=Depends(require_roles("super_admin", "guru
     if not can_manage_class(user, klass):
         raise HTTPException(403, "Anda hanya dapat mengelola kelas milik/wali Anda sendiri")
     await db.classes.delete_one({"id": cid})
+    return {"ok": True}
+
+# ---------------- ORGANIZATION STRUCTURE (Struktur Organisasi) ----------------
+class OrgNodeIn(BaseModel):
+    name: str
+    title: str
+    photo: Optional[str] = None
+    parent_id: Optional[str] = None
+    dashed: bool = False  # dashed connector (advisory roles e.g. Komite)
+    order: int = 0
+
+class OrgNodeUpdate(BaseModel):
+    name: Optional[str] = None
+    title: Optional[str] = None
+    photo: Optional[str] = None
+    parent_id: Optional[str] = None
+    dashed: Optional[bool] = None
+    order: Optional[int] = None
+
+@api.get("/org")
+async def list_org(user=Depends(get_current_user)):
+    return await db.org_nodes.find(dscope(user), {"_id": 0}).sort("order", 1).to_list(2000)
+
+@api.post("/org")
+async def create_org(body: OrgNodeIn, user=Depends(require_roles("super_admin"))):
+    if body.parent_id and not await db.org_nodes.find_one({"id": body.parent_id, **dscope(user)}):
+        raise HTTPException(404, "Atasan (parent) tidak ditemukan")
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.org_nodes.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+@api.patch("/org/{nid}")
+async def update_org(nid: str, body: OrgNodeUpdate, user=Depends(require_roles("super_admin"))):
+    node = await db.org_nodes.find_one({"id": nid, **dscope(user)})
+    if not node:
+        raise HTTPException(404, "Anggota tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if "parent_id" in upd and upd["parent_id"] == nid:
+        raise HTTPException(400, "Tidak dapat menjadikan dirinya sendiri sebagai atasan")
+    if upd:
+        await db.org_nodes.update_one({"id": nid}, {"$set": upd})
+    return await db.org_nodes.find_one({"id": nid}, {"_id": 0})
+
+@api.delete("/org/{nid}")
+async def delete_org(nid: str, user=Depends(require_roles("super_admin"))):
+    scope = dscope(user)
+    async def _delete_subtree(node_id):
+        children = await db.org_nodes.find({"parent_id": node_id, **scope}, {"_id": 0, "id": 1}).to_list(2000)
+        for c in children:
+            await _delete_subtree(c["id"])
+        await db.org_nodes.delete_one({"id": node_id})
+    if not await db.org_nodes.find_one({"id": nid, **scope}):
+        raise HTTPException(404, "Anggota tidak ditemukan")
+    await _delete_subtree(nid)
     return {"ok": True}
 
 # ---------------- ATTENDANCE ----------------
