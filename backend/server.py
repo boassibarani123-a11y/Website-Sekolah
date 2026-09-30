@@ -101,6 +101,19 @@ DEFAULT_SETTINGS = {
     ],
     "footer_text": "Sistem Manajemen Sekolah Terpadu",
     "primary_color": "#0284C7",
+    # School info (Informasi Sekolah)
+    "about": "",
+    "vision": "",
+    "mission": [],
+    "history": "",
+    "principal_name": "",
+    "established_year": "",
+    "npsn": "",
+    "accreditation": "",
+    "contact_phone": "",
+    "contact_email": "",
+    "contact_website": "",
+    "hero_image_url": "",
 }
 
 async def get_settings() -> dict:
@@ -380,6 +393,57 @@ async def delete_user(uid: str, user=Depends(require_roles("super_admin"))):
     await db.users.delete_one({"id": uid})
     return {"ok": True}
 
+# ---------------- CLASSES (Kelas) ----------------
+class ClassIn(BaseModel):
+    name: str
+    subjects: List[str] = []
+    homeroom_teacher_id: Optional[str] = None
+    description: Optional[str] = None
+
+class ClassUpdate(BaseModel):
+    name: Optional[str] = None
+    subjects: Optional[List[str]] = None
+    homeroom_teacher_id: Optional[str] = None
+    description: Optional[str] = None
+
+@api.get("/classes")
+async def list_classes(user=Depends(get_current_user)):
+    classes = await db.classes.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+    # Students & class/osis leaders only see their own class
+    if user["role"] in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
+        classes = [c for c in classes if c.get("name") == user.get("kelas")]
+    # attach student count
+    for c in classes:
+        c["student_count"] = await db.users.count_documents({"role": "siswa", "kelas": c["name"]})
+    return classes
+
+@api.get("/classes/{cid}")
+async def get_class(cid: str, user=Depends(get_current_user)):
+    c = await db.classes.find_one({"id": cid}, {"_id": 0})
+    if not c:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    return c
+
+@api.post("/classes")
+async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))):
+    if await db.classes.find_one({"name": body.name}):
+        raise HTTPException(400, "Nama kelas sudah ada")
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
+    await db.classes.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.patch("/classes/{cid}")
+async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin"))):
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    await db.classes.update_one({"id": cid}, {"$set": upd})
+    return await db.classes.find_one({"id": cid}, {"_id": 0})
+
+@api.delete("/classes/{cid}")
+async def delete_class(cid: str, user=Depends(require_roles("super_admin"))):
+    await db.classes.delete_one({"id": cid})
+    return {"ok": True}
+
 # ---------------- ATTENDANCE ----------------
 class ScanIn(BaseModel):
     qr_code: str
@@ -509,14 +573,22 @@ class AssignmentIn(BaseModel):
     description: str
     kelas: str
     due_date: str
+    subject: Optional[str] = None
+    class_id: Optional[str] = None
+    attachments: Optional[List[dict]] = None  # [{url, name, type}]
 
 class SubmissionIn(BaseModel):
     assignment_id: str
-    content: str
+    content: Optional[str] = ""
+    attachments: Optional[List[dict]] = None  # [{url, name, type}]
 
 @api.get("/assignments")
-async def list_assign(user=Depends(get_current_user)):
-    q = {"kelas": user.get("kelas")} if user["role"] == "siswa" else {}
+async def list_assign(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
+    q = {}
+    if user["role"] == "siswa":
+        q["kelas"] = user.get("kelas")
+    if class_id: q["class_id"] = class_id
+    if subject: q["subject"] = subject
     return await db.assignments.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.post("/assignments")
@@ -529,11 +601,12 @@ async def create_assign(body: AssignmentIn, user=Depends(require_roles("guru", "
 @api.post("/submissions")
 async def submit(body: SubmissionIn, user=Depends(require_roles("siswa"))):
     existing = await db.submissions.find_one({"assignment_id": body.assignment_id, "student_id": user["id"]})
+    payload = {"content": body.content or "", "attachments": body.attachments or [], "submitted_at": now_iso()}
     if existing:
-        await db.submissions.update_one({"id": existing["id"]}, {"$set": {"content": body.content, "submitted_at": now_iso()}})
+        await db.submissions.update_one({"id": existing["id"]}, {"$set": payload})
         return {"ok": True}
     doc = {"id": str(uuid.uuid4()), "assignment_id": body.assignment_id, "student_id": user["id"],
-           "student_name": user["name"], "content": body.content, "grade": None, "submitted_at": now_iso()}
+           "student_name": user["name"], "grade": None, **payload}
     await db.submissions.insert_one(doc)
     return {"ok": True}
 
@@ -559,14 +632,18 @@ class QuizIn(BaseModel):
     title: str
     kelas: str
     questions: List[dict]  # [{q, options[], answer}]
+    subject: Optional[str] = None
+    class_id: Optional[str] = None
 
 class QuizAttemptIn(BaseModel):
     quiz_id: str
     answers: List[int]
 
 @api.get("/quizzes")
-async def list_quiz(user=Depends(get_current_user)):
+async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
     q = {"kelas": user.get("kelas")} if user["role"] == "siswa" else {}
+    if class_id: q["class_id"] = class_id
+    if subject: q["subject"] = subject
     quizzes = await db.quizzes.find(q, {"_id": 0}).to_list(500)
     if user["role"] == "siswa":
         for qz in quizzes:
@@ -1421,6 +1498,18 @@ class SettingsIn(BaseModel):
     id_card_rules: Optional[List[str]] = None
     footer_text: Optional[str] = None
     primary_color: Optional[str] = None
+    about: Optional[str] = None
+    vision: Optional[str] = None
+    mission: Optional[List[str]] = None
+    history: Optional[str] = None
+    principal_name: Optional[str] = None
+    established_year: Optional[str] = None
+    npsn: Optional[str] = None
+    accreditation: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_website: Optional[str] = None
+    hero_image_url: Optional[str] = None
 
 @api.get("/settings")
 async def api_get_settings():
@@ -1435,46 +1524,26 @@ async def api_update_settings(body: SettingsIn, user=Depends(require_roles("supe
     return await get_settings()
 
 async def _seed():
-    admin_email = os.environ.get("ADMIN_EMAIL", "cassandramarsada@gmail.com").lower()
-    admin_pw = os.environ.get("ADMIN_PASSWORD", "Admin@Sekolah2026")
+    admin_email = os.environ.get("ADMIN_EMAIL", "boassibarani123@gmail.com").lower()
+    admin_pw = os.environ.get("ADMIN_PASSWORD", "Boas12345io")
     existing = await db.users.find_one({"email": admin_email})
     if not existing:
         uid = str(uuid.uuid4())
         await db.users.insert_one({
             "id": uid, "email": admin_email, "password_hash": hash_pw(admin_pw),
-            "name": "Cassandra Marsada", "role": "super_admin",
+            "name": "Boas Sibarani", "role": "super_admin",
             "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
         })
         logger.info(f"Super admin seeded: {admin_email}")
-    elif not verify_pw(admin_pw, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email},
-                                   {"$set": {"password_hash": hash_pw(admin_pw), "role": "super_admin"}})
+    elif existing["role"] != "super_admin":
+        await db.users.update_one({"email": admin_email}, {"$set": {"role": "super_admin"}})
 
-    # Seed demo users if empty
-    if await db.users.count_documents({}) < 5:
-        demo = [
-            ("kepsek@sekolahku.id", "Kepsek@2026", "Drs. Budi Santoso", "kepsek", None, None),
-            ("tu@sekolahku.id", "TU@2026", "Ibu Sri Wahyuni", "staff_tu", None, None),
-            ("guru@sekolahku.id", "Guru@2026", "Pak Ahmad Fadli", "guru", None, None),
-            ("siswa@sekolahku.id", "Siswa@2026", "Rina Putri Anggraini", "siswa", "0051234567", "XI IPA 1"),
-            ("ketuaosis@sekolahku.id", "Osis@2026", "Dimas Prakoso", "ketua_osis", "0049876543", "XII IPA 2"),
-            ("ketuakelas@sekolahku.id", "Kelas@2026", "Lisa Amelia", "ketua_kelas", "0055551122", "XI IPA 1"),
-        ]
-        for email, pw, name, role, nisn, kelas in demo:
-            if not await db.users.find_one({"email": email}):
-                uid = str(uuid.uuid4())
-                await db.users.insert_one({
-                    "id": uid, "email": email, "password_hash": hash_pw(pw), "name": name,
-                    "role": role, "nisn": nisn, "kelas": kelas, "jurusan": "IPA" if kelas else None,
-                    "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
-                })
-        # Seed a bit of demo data
-        if await db.inventory.count_documents({}) == 0:
-            for item in [("Proyektor Epson", "Elektronik", 5), ("Bola Basket", "Olahraga", 10),
-                          ("Buku Panduan Fisika", "Buku", 30), ("Mikroskop Lab", "Laboratorium", 8)]:
-                await db.inventory.insert_one({"id": str(uuid.uuid4()), "name": item[0],
-                                                "category": item[1], "stock": item[2],
-                                                "condition": "Baik", "created_at": now_iso()})
+    # Remove legacy demo accounts (keep only real accounts)
+    demo_emails = [
+        "cassandramarsada@gmail.com", "kepsek@sekolahku.id", "tu@sekolahku.id",
+        "guru@sekolahku.id", "siswa@sekolahku.id", "ketuaosis@sekolahku.id", "ketuakelas@sekolahku.id",
+    ]
+    await db.users.delete_many({"email": {"$in": demo_emails}})
 
 app.include_router(api)
 

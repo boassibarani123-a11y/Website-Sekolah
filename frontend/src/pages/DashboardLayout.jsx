@@ -3,12 +3,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, PiggyBank, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 
 const MENU = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: "*" },
+  { to: "/school-info", label: "Informasi Sekolah", icon: Info, roles: "*" },
   { to: "/my-card", label: "Kartu Saya", icon: IdCard, roles: ["siswa","ketua_kelas","ketua_osis"] },
   { to: "/accounts", label: "Kelola Akun", icon: UsersRound, roles: ["super_admin"] },
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, roles: ["super_admin"] },
@@ -18,8 +19,7 @@ const MENU = [
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },
   { to: "/schoolgram", label: "Schoolgram", icon: Camera, roles: "*" },
   { to: "/inventory", label: "Inventaris", icon: Boxes, roles: "*" },
-  { to: "/assignments", label: "Tugas", icon: ClipboardList, roles: "*" },
-  { to: "/quizzes", label: "Mini-Quiz", icon: BrainCircuit, roles: "*" },
+  { to: "/classes", label: "Kelas", icon: School, roles: "*" },
   { to: "/reports", label: "Rapor Digital", icon: FileText, roles: ["guru","kepsek","super_admin","siswa","orang_tua"] },
   { to: "/chats", label: "Chat Wali-Ortu", icon: MessageSquare, roles: ["guru","orang_tua","super_admin"] },
   { to: "/uang-kas", label: "Uang Kas", icon: PiggyBank, roles: "*" },
@@ -83,7 +83,7 @@ export default function DashboardLayout() {
         <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between lg:justify-end gap-3">
           <div className="flex items-center gap-2 lg:hidden">
             <GraduationCap className="w-6 h-6 text-sky-600"/>
-            <h1 className="font-heading font-bold text-slate-900">SEKOLAHKU</h1>
+            <h1 className="font-heading font-bold text-slate-900">{settings.school_name}</h1>
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell/>

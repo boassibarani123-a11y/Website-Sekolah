@@ -26,16 +26,6 @@ export default function Login() {
     }
   };
 
-  const demoUsers = [
-    { role: "Super Admin", email: "cassandramarsada@gmail.com", pw: "Admin@Sekolah2026" },
-    { role: "Kepsek", email: "kepsek@sekolahku.id", pw: "Kepsek@2026" },
-    { role: "Staff TU", email: "tu@sekolahku.id", pw: "TU@2026" },
-    { role: "Guru", email: "guru@sekolahku.id", pw: "Guru@2026" },
-    { role: "Siswa", email: "siswa@sekolahku.id", pw: "Siswa@2026" },
-    { role: "Ketua OSIS", email: "ketuaosis@sekolahku.id", pw: "Osis@2026" },
-    { role: "Ketua Kelas", email: "ketuakelas@sekolahku.id", pw: "Kelas@2026" },
-  ];
-
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-white">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 text-white relative overflow-hidden">
@@ -92,20 +82,7 @@ export default function Login() {
             </div>
           </form>
 
-          <div className="mt-8 border-t border-slate-200 pt-6">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Coba Akun Demo (klik untuk isi)</p>
-            <div className="grid grid-cols-2 gap-2">
-              {demoUsers.map(d=>(
-                <button key={d.email} onClick={()=>{setEmail(d.email);setPassword(d.pw);}}
-                  className="text-left px-3 py-2 border border-slate-200 rounded-lg hover:border-sky-400 hover:bg-sky-50 transition-colors">
-                  <p className="text-xs font-semibold text-slate-800">{d.role}</p>
-                  <p className="text-[10px] text-slate-500 truncate">{d.email}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
+          <div className="mt-8 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
             <p className="text-sm font-heading font-bold text-slate-900">📥 Calon Siswa Baru?</p>
             <p className="text-xs text-slate-600 mt-1">Daftar online tanpa perlu akun, upload berkas, dan pantau status kelulusan.</p>
             <a href="/ppdb" data-testid="ppdb-cta-link"

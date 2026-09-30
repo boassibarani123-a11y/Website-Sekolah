@@ -28,6 +28,9 @@ import PpdbPublic from "@/pages/PpdbPublic";
 import AdminPpdb from "@/pages/AdminPpdb";
 import SettingsPage from "@/pages/SettingsPage";
 import MyCard from "@/pages/MyCard";
+import Classes from "@/pages/Classes";
+import ClassDetail from "@/pages/ClassDetail";
+import SchoolInfo from "@/pages/SchoolInfo";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -55,6 +58,9 @@ function AppInner() {
           <Route path="inventory" element={<Inventory/>}/>
           <Route path="assignments" element={<Assignments/>}/>
           <Route path="quizzes" element={<Quizzes/>}/>
+          <Route path="classes" element={<Classes/>}/>
+          <Route path="classes/:id" element={<ClassDetail/>}/>
+          <Route path="school-info" element={<SchoolInfo/>}/>
           <Route path="uang-kas" element={<UangKas/>}/>
           <Route path="social-fund" element={<SocialFund/>}/>
           <Route path="elections" element={<Elections/>}/>

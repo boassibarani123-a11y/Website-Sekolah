@@ -28,14 +28,13 @@ body {
 
 /* Printable KTP Card */
 @media print {
+  @page { margin: 8mm; }
   body * { visibility: hidden !important; }
   .printable-id-card, .printable-id-card * { visibility: visible !important; }
   .printable-id-card {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
     box-shadow: none !important;
-    page-break-after: always;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .no-print { display: none !important; }
 }
@@ -47,6 +46,8 @@ body {
   overflow: hidden;
   position: relative;
   box-shadow: 0 20px 40px -12px rgba(2, 132, 199, 0.35);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 @layer base {
