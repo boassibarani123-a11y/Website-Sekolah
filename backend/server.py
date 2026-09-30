@@ -724,22 +724,55 @@ class AnnouncementIn(BaseModel):
     title: str
     content: str
     scope: str = "sekolah"  # sekolah | osis | kelas
+    category: Optional[str] = "Umum"
+    image: Optional[str] = None
+    pinned: Optional[bool] = False
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    scope: Optional[str] = None
+    category: Optional[str] = None
+    image: Optional[str] = None
+    pinned: Optional[bool] = None
 
 @api.get("/announcements")
 async def list_ann(user=Depends(get_current_user)):
-    return await db.announcements.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return await db.announcements.find({}, {"_id": 0}).sort([("pinned", -1), ("created_at", -1)]).to_list(200)
 
 @api.post("/announcements")
 async def add_ann(body: AnnouncementIn, user=Depends(get_current_user)):
     if user["role"] not in ["super_admin", "kepsek", "ketua_osis", "ketua_kelas", "staff_tu", "guru"]:
         raise HTTPException(403, "Forbidden")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "author": user["name"],
-           "role": user["role"], "created_at": now_iso()}
+           "author_id": user["id"], "role": user["role"], "created_at": now_iso()}
     await db.announcements.insert_one(doc); doc.pop("_id", None)
     # notify students
     student_ids = [u["id"] for u in await db.users.find({"role": "siswa"}, {"id": 1}).to_list(2000)]
     await notify(student_ids, f"📢 {body.title}", body.content[:120], "/announcements")
     return doc
+
+@api.patch("/announcements/{aid}")
+async def edit_ann(aid: str, body: AnnouncementUpdate, user=Depends(get_current_user)):
+    ann = await db.announcements.find_one({"id": aid})
+    if not ann:
+        raise HTTPException(404, "Pengumuman tidak ditemukan")
+    if user["role"] != "super_admin" and ann.get("author_id") != user["id"]:
+        raise HTTPException(403, "Tidak berwenang mengedit pengumuman ini")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.announcements.update_one({"id": aid}, {"$set": upd})
+    return await db.announcements.find_one({"id": aid}, {"_id": 0})
+
+@api.delete("/announcements/{aid}")
+async def del_ann(aid: str, user=Depends(get_current_user)):
+    ann = await db.announcements.find_one({"id": aid})
+    if not ann:
+        raise HTTPException(404, "Pengumuman tidak ditemukan")
+    if user["role"] != "super_admin" and ann.get("author_id") != user["id"]:
+        raise HTTPException(403, "Tidak berwenang menghapus pengumuman ini")
+    await db.announcements.delete_one({"id": aid})
+    return {"ok": True}
 
 # ---------------- UANG KAS ----------------
 class KasIn(BaseModel):
