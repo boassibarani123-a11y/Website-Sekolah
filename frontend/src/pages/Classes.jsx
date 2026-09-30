@@ -8,6 +8,8 @@ import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight } from "lu
 export default function Classes() {
   const { user } = useAuth();
   const isAdmin = ["super_admin", "guru"].includes(user.role);
+  const canManageClass = (c) => user.role === "super_admin" ||
+    (user.role === "guru" && (c.created_by === user.id || c.homeroom_teacher_id === user.id));
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [editing, setEditing] = useState(null); // null | {} (new) | class obj
@@ -51,10 +53,10 @@ export default function Classes() {
               <div className="w-11 h-11 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center">
                 <School className="w-5 h-5"/>
               </div>
-              {isAdmin && (
+              {canManageClass(c) && (
                 <div className="flex gap-1">
                   <button data-testid={`edit-class-${c.id}`} onClick={()=>setEditing(c)} className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg"><Pencil className="w-4 h-4"/></button>
-                  <button data-testid={`delete-class-${c.id}`} onClick={async()=>{if(confirm(`Hapus kelas ${c.name}?`)){await api.delete(`/classes/${c.id}`); toast.success("Kelas dihapus"); load();}}} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                  <button data-testid={`delete-class-${c.id}`} onClick={async()=>{if(confirm(`Hapus kelas ${c.name}?`)){try{await api.delete(`/classes/${c.id}`); toast.success("Kelas dihapus"); load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
                 </div>
               )}
             </div>

@@ -435,11 +435,32 @@ async def get_class(cid: str, user=Depends(get_current_user)):
         raise HTTPException(404, "Kelas tidak ditemukan")
     return c
 
+def can_manage_class(user: dict, klass: dict) -> bool:
+    """super_admin manages all; a guru manages only classes they created or are homeroom of."""
+    if user.get("role") == "super_admin":
+        return True
+    if user.get("role") == "guru":
+        return klass.get("created_by") == user["id"] or klass.get("homeroom_teacher_id") == user["id"]
+    return False
+
+async def guru_assert_manages(user: dict, class_id: Optional[str], kelas_name: Optional[str]):
+    """Guru may only add tugas/quiz to their own/homeroom class; super_admin unrestricted."""
+    if user.get("role") == "super_admin":
+        return
+    klass = None
+    if class_id:
+        klass = await db.classes.find_one({"id": class_id})
+    if not klass and kelas_name:
+        klass = await db.classes.find_one({"name": kelas_name, **dscope(user)})
+    if not klass or not can_manage_class(user, klass):
+        raise HTTPException(403, "Anda hanya dapat menambah tugas/quiz pada kelas milik/wali Anda sendiri")
+
 @api.post("/classes")
 async def create_class(body: ClassIn, user=Depends(require_roles("super_admin", "guru"))):
     if await db.classes.find_one({"name": body.name, **dscope(user)}):
         raise HTTPException(400, "Nama kelas sudah ada")
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_by": user["id"],
+           "created_by_name": user["name"], "created_at": now_iso()}
     dstamp(doc, user)
     await db.classes.insert_one(doc)
     doc.pop("_id", None)
@@ -447,12 +468,22 @@ async def create_class(body: ClassIn, user=Depends(require_roles("super_admin", 
 
 @api.patch("/classes/{cid}")
 async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin", "guru"))):
+    klass = await db.classes.find_one({"id": cid})
+    if not klass:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    if not can_manage_class(user, klass):
+        raise HTTPException(403, "Anda hanya dapat mengelola kelas milik/wali Anda sendiri")
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     await db.classes.update_one({"id": cid}, {"$set": upd})
     return await db.classes.find_one({"id": cid}, {"_id": 0})
 
 @api.delete("/classes/{cid}")
 async def delete_class(cid: str, user=Depends(require_roles("super_admin", "guru"))):
+    klass = await db.classes.find_one({"id": cid})
+    if not klass:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    if not can_manage_class(user, klass):
+        raise HTTPException(403, "Anda hanya dapat mengelola kelas milik/wali Anda sendiri")
     await db.classes.delete_one({"id": cid})
     return {"ok": True}
 
@@ -545,7 +576,20 @@ class BorrowRequest(BaseModel):
 
 @api.get("/inventory")
 async def list_inventory(user=Depends(get_current_user)):
-    return await db.inventory.find(dscope(user), {"_id": 0}).to_list(500)
+    items = await db.inventory.find(dscope(user), {"_id": 0}).to_list(500)
+    # outstanding = quantity currently out on approved-but-not-returned loans
+    pipeline = [{"$match": {"status": "Disetujui", **dscope(user)}},
+                {"$group": {"_id": "$item_id", "n": {"$sum": "$quantity"}}}]
+    agg = await db.borrow_requests.aggregate(pipeline).to_list(1000)
+    out_map = {a["_id"]: a["n"] for a in agg}
+    for it in items:
+        it["outstanding"] = int(out_map.get(it["id"], 0))
+        it["total"] = int(it.get("stock", 0)) + it["outstanding"]
+    return items
+
+@api.get("/inventory/{iid}/history")
+async def inventory_history(iid: str, user=Depends(require_roles("staff_tu", "super_admin"))):
+    return await db.borrow_requests.find({"item_id": iid, **dscope(user)}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.post("/inventory")
 async def add_inventory(body: InventoryItem, user=Depends(require_roles("staff_tu", "super_admin"))):
@@ -639,6 +683,7 @@ async def list_assign(class_id: Optional[str] = None, subject: Optional[str] = N
 
 @api.post("/assignments")
 async def create_assign(body: AssignmentIn, user=Depends(require_roles("guru", "super_admin"))):
+    await guru_assert_manages(user, body.class_id, body.kelas)
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
     dstamp(doc, user)
@@ -730,6 +775,7 @@ async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = Non
 
 @api.post("/quizzes")
 async def create_quiz(body: QuizIn, user=Depends(require_roles("guru", "super_admin"))):
+    await guru_assert_manages(user, body.class_id, body.kelas)
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
     dstamp(doc, user)

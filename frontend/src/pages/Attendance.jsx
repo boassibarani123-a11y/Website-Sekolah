@@ -3,6 +3,8 @@ import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash } from "lucide-react";
 
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
+
 export default function Attendance() {
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);
@@ -12,6 +14,7 @@ export default function Attendance() {
   const [status, setStatus] = useState("hadir");
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef(null);
+  const lockRef = useRef(false);
 
   const load = () => {
     api.get("/attendance/stats").then(r=>setStats(r.data));
@@ -22,12 +25,29 @@ export default function Attendance() {
   const submit = async (payload) => {
     try {
       const r = await api.post("/attendance/scan", { ...payload, status });
-      setLastScan({ ...r.data.student, status, at: new Date() });
+      setLastScan({ ...r.data.student, status, at: new Date(), proof: payload.photo || null });
       toast.success(`${r.data.student.name} - ${status.toUpperCase()}`);
       load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal absen");
     }
+  };
+
+  // Capture a JPEG frame from the live scanner video (anti buddy-punching proof)
+  const captureSnapshot = async () => {
+    try {
+      const video = document.querySelector("#qr-reader video");
+      if (!video || !video.videoWidth) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+      const blob = await (await fetch(dataUrl)).blob();
+      const fd = new FormData();
+      fd.append("file", blob, "presensi.jpg");
+      const up = await api.post("/upload", fd);
+      return `${BACKEND}${up.data.url}`;
+    } catch { return null; }
   };
 
   const startCam = async () => {
@@ -37,7 +57,13 @@ export default function Attendance() {
     scannerRef.current = cam;
     try {
       await cam.start({facingMode:"environment"}, {fps:10, qrbox:{width:250,height:250}},
-        async (txt) => { await submit({ qr_code: txt }); }, () => {});
+        async (txt) => {
+          if (lockRef.current) return;          // debounce repeated detections
+          lockRef.current = true;
+          const photo = await captureSnapshot(); // snapshot proof before submitting
+          await submit({ qr_code: txt, photo });
+          setTimeout(() => { lockRef.current = false; }, 2500);
+        }, () => {});
     } catch (e) { toast.error("Kamera tidak tersedia"); setScanning(false); }
   };
   const stopCam = async () => {
@@ -141,9 +167,16 @@ export default function Attendance() {
             <div className="space-y-2">
               {rows.slice(0, 30).map(r=>(
                 <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100">
-                  <div>
-                    <p className="font-semibold text-sm text-slate-900">{r.student_name}</p>
-                    <p className="text-[11px] text-slate-500">{r.kelas} · {new Date(r.scanned_at).toLocaleTimeString("id-ID")}</p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {r.photo && (
+                      <a href={r.photo} target="_blank" rel="noreferrer" data-testid={`attendance-photo-${r.id}`} title="Foto bukti scan">
+                        <img src={r.photo} alt="bukti" className="w-9 h-9 rounded-lg object-cover border border-slate-200"/>
+                      </a>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm text-slate-900 truncate">{r.student_name}</p>
+                      <p className="text-[11px] text-slate-500">{r.kelas} · {new Date(r.scanned_at).toLocaleTimeString("id-ID")}</p>
+                    </div>
                   </div>
                   <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${
                     r.status==="hadir"?"bg-emerald-100 text-emerald-700":

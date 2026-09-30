@@ -43,6 +43,8 @@ export default function ClassDetail() {
 
   if (!klass) return <div className="text-slate-400 py-20 text-center">Memuat kelas...</div>;
 
+  const canManage = user.role === "super_admin" ||
+    (user.role === "guru" && (klass.created_by === user.id || klass.homeroom_teacher_id === user.id));
   const subjects = klass.subjects || [];
 
   return (
@@ -87,15 +89,21 @@ export default function ClassDetail() {
         </button>
       </div>
 
+      {isTeacher && !canManage && (
+        <div data-testid="readonly-badge" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800 font-medium">
+          Mode baca-saja — Anda bukan pembuat / wali kelas ini, jadi tidak dapat menambah atau mengubah tugas & quiz.
+        </div>
+      )}
+
       {tab === "tugas"
-        ? <TugasTab klass={klass} subject={subject} subjects={subjects} isTeacher={isTeacher} isStudent={isStudent}/>
-        : <QuizTab klass={klass} subject={subject} subjects={subjects} isTeacher={isTeacher} isStudent={isStudent}/>}
+        ? <TugasTab klass={klass} subject={subject} subjects={subjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
+        : <QuizTab klass={klass} subject={subject} subjects={subjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
     </div>
   );
 }
 
 /* ---------------- TUGAS TAB ---------------- */
-function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
+function TugasTab({ klass, subject, subjects, isTeacher, isStudent, canManage }) {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [detailFor, setDetailFor] = useState(null);
@@ -109,7 +117,7 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
 
   return (
     <div className="space-y-4">
-      {isTeacher && (
+      {canManage && (
         <button data-testid="new-assignment-button" onClick={()=>setShowNew(true)}
           className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold flex items-center gap-2">
           <Plus className="w-4 h-4"/>Beri Tugas Baru
@@ -124,7 +132,7 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
                 <span className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><ClipboardList className="w-5 h-5"/></span>
                 {a.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{a.subject}</span>}
               </div>
-              {isTeacher && (
+              {canManage && (
                 <div className="flex gap-1">
                   <button data-testid={`edit-assignment-${a.id}`}
                     onClick={()=>setEditItem(a)}
@@ -333,7 +341,7 @@ function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
 }
 
 /* ---------------- QUIZ TAB ---------------- */
-function QuizTab({ klass, subject, subjects, isTeacher }) {
+function QuizTab({ klass, subject, subjects, isTeacher, canManage }) {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [taking, setTaking] = useState(null);
@@ -354,7 +362,7 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
 
   return (
     <div className="space-y-4">
-      {isTeacher && (
+      {canManage && (
         <button data-testid="new-quiz-button" onClick={()=>setShowNew(true)} className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold flex items-center gap-2">
           <Plus className="w-4 h-4"/>Buat Mini-Quiz
         </button>
@@ -368,7 +376,7 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
                 <span className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center"><BrainCircuit className="w-5 h-5"/></span>
                 {q.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{q.subject}</span>}
               </div>
-              {isTeacher && (
+              {canManage && (
                 <div className="flex gap-1">
                   <button data-testid={`edit-quiz-${q.id}`} onClick={()=>setEditItem(q)}
                     className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg"><Pencil className="w-4 h-4"/></button>
