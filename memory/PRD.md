@@ -82,3 +82,16 @@ See `/app/memory/test_credentials.md`
   - Refactor: attendance/export, social-fund/export dengan format baru
   - Endpoint baru: /api/kas/export, /api/inventory/export, /api/users/export, /api/ppdb/export/xlsx
   - Tombol Export Excel di halaman Uang Kas, Inventaris, Admin PPDB
+
+## Update (Jun 2026 - Phase 3, imported repo + fitur baru)
+- [x] FIX bug cetak Kartu Pelajar: print CSS (index.css) tidak lagi memaksa position:absolute + page-break per kartu; tambah print-color-adjust:exact agar gradien tercetak; cetak massal (/print-cards) kini rapi di grid A4.
+- [x] Fitur Kelas (Classes): Super Admin membuat kelas + daftar Mata Pelajaran; tiap kelas jadi wadah Tugas & Mini-Quiz per mapel. Endpoint /api/classes CRUD. Halaman Classes.jsx + ClassDetail.jsx (tab Tugas/Quiz + filter mapel).
+- [x] Tugas berbasis file: guru melampirkan file (PDF/gambar) pada tugas; siswa mengumpulkan via upload PDF/foto + teks opsional (Emergent object storage).
+- [x] Halaman Informasi Sekolah (/school-info): editable Super Admin (tentang, visi, misi, sejarah, kepala sekolah, NPSN, akreditasi, kontak, foto sampul), view-only untuk role lain.
+- [x] Kustomisasi website: judul tab browser mengikuti nama sekolah dari Pengaturan; header sidebar & mobile pakai settings.school_name.
+- [x] Hapus semua akun demo; hanya Super Admin (boassibarani123@gmail.com). Auto-seed demo dimatikan; akun demo lama dihapus saat startup. Super Admin bisa membuat akun peran apa pun.
+- [x] Halaman Login: tombol "Coba Akun Demo" dihapus.
+
+## Credentials (current)
+- Super Admin: boassibarani123@gmail.com / Boas12345io
+- QA (dapat dihapus): guru.test@sekolah.id / Guru12345, siswa.test@sekolah.id / Siswa12345
