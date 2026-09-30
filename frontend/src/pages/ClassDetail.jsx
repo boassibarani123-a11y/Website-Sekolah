@@ -118,9 +118,16 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {list.map(a => (
           <div key={a.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><ClipboardList className="w-5 h-5"/></span>
-              {a.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{a.subject}</span>}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><ClipboardList className="w-5 h-5"/></span>
+                {a.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{a.subject}</span>}
+              </div>
+              {isTeacher && (
+                <button data-testid={`delete-assignment-${a.id}`}
+                  onClick={async()=>{if(confirm(`Hapus tugas "${a.title}"?`)){try{await api.delete(`/assignments/${a.id}`);toast.success("Tugas dihapus");load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}}
+                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+              )}
             </div>
             <h3 className="font-heading font-bold text-slate-900 mt-3">{a.title}</h3>
             <p className="text-xs text-slate-500 mt-1 line-clamp-2 flex-1">{a.description}</p>
@@ -338,9 +345,16 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {list.map(q=>(
           <div key={q.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center"><BrainCircuit className="w-5 h-5"/></span>
-              {q.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{q.subject}</span>}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center"><BrainCircuit className="w-5 h-5"/></span>
+                {q.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{q.subject}</span>}
+              </div>
+              {isTeacher && (
+                <button data-testid={`delete-quiz-${q.id}`}
+                  onClick={async()=>{if(confirm(`Hapus quiz "${q.title}"?`)){try{await api.delete(`/quizzes/${q.id}`);toast.success("Quiz dihapus");load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}}
+                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+              )}
             </div>
             <h3 className="font-heading font-bold mt-3">{q.title}</h3>
             <p className="text-xs text-slate-500 mt-1">{(q.questions||[]).length} soal</p>

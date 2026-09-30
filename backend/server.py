@@ -598,6 +598,17 @@ async def create_assign(body: AssignmentIn, user=Depends(require_roles("guru", "
     await db.assignments.insert_one(doc); doc.pop("_id", None)
     return doc
 
+@api.delete("/assignments/{aid}")
+async def delete_assign(aid: str, user=Depends(require_roles("guru", "super_admin"))):
+    a = await db.assignments.find_one({"id": aid})
+    if not a:
+        raise HTTPException(404, "Tugas tidak ditemukan")
+    if user["role"] != "super_admin" and a.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus tugas ini")
+    await db.assignments.delete_one({"id": aid})
+    await db.submissions.delete_many({"assignment_id": aid})
+    return {"ok": True}
+
 @api.post("/submissions")
 async def submit(body: SubmissionIn, user=Depends(require_roles("siswa"))):
     existing = await db.submissions.find_one({"assignment_id": body.assignment_id, "student_id": user["id"]})
@@ -657,6 +668,17 @@ async def create_quiz(body: QuizIn, user=Depends(require_roles("guru", "super_ad
            "teacher_name": user["name"], "created_at": now_iso()}
     await db.quizzes.insert_one(doc); doc.pop("_id", None)
     return doc
+
+@api.delete("/quizzes/{qid}")
+async def delete_quiz(qid: str, user=Depends(require_roles("guru", "super_admin"))):
+    qz = await db.quizzes.find_one({"id": qid})
+    if not qz:
+        raise HTTPException(404, "Quiz tidak ditemukan")
+    if user["role"] != "super_admin" and qz.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus quiz ini")
+    await db.quizzes.delete_one({"id": qid})
+    await db.quiz_attempts.delete_many({"quiz_id": qid})
+    return {"ok": True}
 
 @api.post("/quizzes/attempt")
 async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))):
