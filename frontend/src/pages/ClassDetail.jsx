@@ -4,7 +4,7 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2 } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -99,6 +99,7 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [detailFor, setDetailFor] = useState(null);
+  const [editItem, setEditItem] = useState(null);
 
   const load = useCallback(() => {
     const q = subject !== "all" ? `&subject=${encodeURIComponent(subject)}` : "";
@@ -124,9 +125,14 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
                 {a.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{a.subject}</span>}
               </div>
               {isTeacher && (
-                <button data-testid={`delete-assignment-${a.id}`}
-                  onClick={async()=>{if(confirm(`Hapus tugas "${a.title}"?`)){try{await api.delete(`/assignments/${a.id}`);toast.success("Tugas dihapus");load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}}
-                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                <div className="flex gap-1">
+                  <button data-testid={`edit-assignment-${a.id}`}
+                    onClick={()=>setEditItem(a)}
+                    className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg"><Pencil className="w-4 h-4"/></button>
+                  <button data-testid={`delete-assignment-${a.id}`}
+                    onClick={async()=>{if(confirm(`Hapus tugas "${a.title}"?`)){try{await api.delete(`/assignments/${a.id}`);toast.success("Tugas dihapus");load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}}
+                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                </div>
               )}
             </div>
             <h3 className="font-heading font-bold text-slate-900 mt-3">{a.title}</h3>
@@ -145,14 +151,19 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
       </div>
 
       {showNew && <NewAssignModal klass={klass} subjects={subjects} onClose={()=>setShowNew(false)} onDone={()=>{load(); setShowNew(false);}}/>}
+      {editItem && <NewAssignModal klass={klass} subjects={subjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load(); setEditItem(null);}}/>}
       {detailFor && <AssignDetailModal assignment={detailFor} isTeacher={isTeacher} isStudent={isStudent} onClose={()=>setDetailFor(null)}/>}
     </div>
   );
 }
 
-function NewAssignModal({ klass, subjects, onClose, onDone }) {
-  const [f, setF] = useState({ title:"", description:"", subject: subjects[0] || "", due_date:"" });
-  const [atts, setAtts] = useState([]);
+function NewAssignModal({ klass, subjects, initial, onClose, onDone }) {
+  const isEdit = !!(initial && initial.id);
+  const [f, setF] = useState({
+    title: initial?.title || "", description: initial?.description || "",
+    subject: initial?.subject || subjects[0] || "", due_date: initial?.due_date || "",
+  });
+  const [atts, setAtts] = useState(initial?.attachments || []);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -167,8 +178,14 @@ function NewAssignModal({ klass, subjects, onClose, onDone }) {
     if (!f.title.trim()) return toast.error("Judul wajib diisi");
     setBusy(true);
     try {
-      await api.post("/assignments", { ...f, kelas: klass.name, class_id: klass.id, attachments: atts });
-      toast.success("Tugas dibuat"); onDone();
+      if (isEdit) {
+        await api.patch(`/assignments/${initial.id}`, { ...f, attachments: atts });
+        toast.success("Tugas diperbarui");
+      } else {
+        await api.post("/assignments", { ...f, kelas: klass.name, class_id: klass.id, attachments: atts });
+        toast.success("Tugas dibuat");
+      }
+      onDone();
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
     finally { setBusy(false); }
   };
@@ -176,7 +193,7 @@ function NewAssignModal({ klass, subjects, onClose, onDone }) {
   return (
     <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold text-lg">Beri Tugas Baru</h3>
+        <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold text-lg">{isEdit ? "Edit Tugas" : "Beri Tugas Baru"}</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button></div>
         <div className="p-5 space-y-3">
           <input data-testid="assignment-title-input" placeholder="Judul tugas" value={f.title} onChange={e=>setF({...f,title:e.target.value})} className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
@@ -321,6 +338,7 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
   const [showNew, setShowNew] = useState(false);
   const [taking, setTaking] = useState(null);
   const [answers, setAnswers] = useState([]);
+  const [editItem, setEditItem] = useState(null);
 
   const load = useCallback(() => {
     const q = subject !== "all" ? `&subject=${encodeURIComponent(subject)}` : "";
@@ -351,9 +369,13 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
                 {q.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{q.subject}</span>}
               </div>
               {isTeacher && (
-                <button data-testid={`delete-quiz-${q.id}`}
-                  onClick={async()=>{if(confirm(`Hapus quiz "${q.title}"?`)){try{await api.delete(`/quizzes/${q.id}`);toast.success("Quiz dihapus");load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}}
-                  className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                <div className="flex gap-1">
+                  <button data-testid={`edit-quiz-${q.id}`} onClick={()=>setEditItem(q)}
+                    className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg"><Pencil className="w-4 h-4"/></button>
+                  <button data-testid={`delete-quiz-${q.id}`}
+                    onClick={async()=>{if(confirm(`Hapus quiz "${q.title}"?`)){try{await api.delete(`/quizzes/${q.id}`);toast.success("Quiz dihapus");load();}catch(e){toast.error(e.response?.data?.detail||"Gagal menghapus");}}}}
+                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                </div>
               )}
             </div>
             <h3 className="font-heading font-bold mt-3">{q.title}</h3>
@@ -365,6 +387,7 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
       </div>
 
       {showNew && <NewQuizModal klass={klass} subjects={subjects} onClose={()=>setShowNew(false)} onDone={()=>{load();setShowNew(false);}}/>}
+      {editItem && <NewQuizModal klass={klass} subjects={subjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load();setEditItem(null);}}/>}
       {taking && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -392,23 +415,28 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
   );
 }
 
-function NewQuizModal({ klass, subjects, onClose, onDone }) {
-  const [title, setTitle] = useState("");
-  const [subject, setSubject] = useState(subjects[0] || "");
-  const [qs, setQs] = useState([{ q:"", options:["","","",""], answer:0 }]);
+function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
+  const isEdit = !!(initial && initial.id);
+  const [title, setTitle] = useState(initial?.title || "");
+  const [subject, setSubject] = useState(initial?.subject || subjects[0] || "");
+  const [qs, setQs] = useState(initial?.questions?.length ? initial.questions.map(q=>({q:q.q,options:[...(q.options||["","","",""])],answer:q.answer ?? 0})) : [{ q:"", options:["","","",""], answer:0 }]);
   const [busy, setBusy] = useState(false);
   const add = () => setQs([...qs, { q:"", options:["","","",""], answer:0 }]);
   const submit = async () => {
     if (!title.trim()) return toast.error("Judul quiz wajib diisi");
     setBusy(true);
-    try { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs }); toast.success("Quiz dibuat"); onDone(); }
-    catch { toast.error("Gagal"); }
+    try {
+      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs }); toast.success("Quiz diperbarui"); }
+      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs }); toast.success("Quiz dibuat"); }
+      onDone();
+    }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
     finally { setBusy(false); }
   };
   return (
     <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-xl w-full max-h-[88vh] overflow-y-auto shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold">Buat Mini-Quiz</h3>
+        <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold">{isEdit ? "Edit Mini-Quiz" : "Buat Mini-Quiz"}</h3>
           <button onClick={onClose} className="p-1.5"><X className="w-5 h-5"/></button></div>
         <div className="p-5 space-y-3">
           <input data-testid="quiz-title-input" placeholder="Judul quiz" value={title} onChange={e=>setTitle(e.target.value)} className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>

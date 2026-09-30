@@ -12,6 +12,16 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const demoUsers = [
+    { role: "Super Admin", email: "admin.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Kepsek", email: "kepsek.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Staff TU", email: "tu.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Guru", email: "guru.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Siswa", email: "siswa.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Ketua OSIS", email: "osis.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Ketua Kelas", email: "kelas.demo@sekolahku.id", pw: "Demo12345" },
+  ];
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -82,7 +92,22 @@ export default function Login() {
             </div>
           </form>
 
-          <div className="mt-8 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
+          <div className="mt-8 border-t border-slate-200 pt-6">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Coba Akun Demo (klik untuk isi)</p>
+            <p className="text-[10px] text-slate-400 mb-3">Perubahan di akun demo terpisah & tidak memengaruhi data asli sekolah.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {demoUsers.map(d=>(
+                <button key={d.email} type="button" data-testid={`demo-login-${d.role.toLowerCase().replace(/\s/g,'-')}`}
+                  onClick={()=>{setEmail(d.email);setPassword(d.pw);}}
+                  className="text-left px-3 py-2 border border-slate-200 rounded-lg hover:border-sky-400 hover:bg-sky-50 transition-colors">
+                  <p className="text-xs font-semibold text-slate-800">{d.role}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{d.email}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
             <p className="text-sm font-heading font-bold text-slate-900">📥 Calon Siswa Baru?</p>
             <p className="text-xs text-slate-600 mt-1">Daftar online tanpa perlu akun, upload berkas, dan pantau status kelulusan.</p>
             <a href="/ppdb" data-testid="ppdb-cta-link"

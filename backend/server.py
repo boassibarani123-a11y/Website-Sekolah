@@ -295,6 +295,16 @@ def strip(doc):
     doc.pop("_id", None); doc.pop("password_hash", None)
     return doc
 
+# ---------------- DEMO ISOLATION ----------------
+# Demo accounts operate in a separate sandbox: their created data is tagged
+# is_demo=True and is never shown to real users (and vice-versa).
+def dscope(user: dict) -> dict:
+    return {"is_demo": True} if user.get("is_demo") else {"is_demo": {"$ne": True}}
+
+def dstamp(doc: dict, user: dict) -> dict:
+    doc["is_demo"] = bool(user.get("is_demo"))
+    return doc
+
 # ---------------- MODELS ----------------
 class LoginIn(BaseModel):
     email: EmailStr
@@ -351,7 +361,7 @@ async def me(user=Depends(get_current_user)):
 # ---------------- USERS (Super Admin) ----------------
 @api.get("/users")
 async def list_users(role: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dscope(user)
     if role: q["role"] = role
     users = await db.users.find(q, {"password_hash": 0, "_id": 0}).to_list(1000)
     return users
@@ -374,6 +384,7 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
         "student_id": body.student_id,
         "created_at": now_iso(),
     }
+    dstamp(doc, user)
     await db.users.insert_one(doc)
     return strip(doc)
 
@@ -408,13 +419,13 @@ class ClassUpdate(BaseModel):
 
 @api.get("/classes")
 async def list_classes(user=Depends(get_current_user)):
-    classes = await db.classes.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+    classes = await db.classes.find(dscope(user), {"_id": 0}).sort("name", 1).to_list(500)
     # Students & class/osis leaders only see their own class
     if user["role"] in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
         classes = [c for c in classes if c.get("name") == user.get("kelas")]
     # attach student count
     for c in classes:
-        c["student_count"] = await db.users.count_documents({"role": "siswa", "kelas": c["name"]})
+        c["student_count"] = await db.users.count_documents({"role": "siswa", "kelas": c["name"], **dscope(user)})
     return classes
 
 @api.get("/classes/{cid}")
@@ -426,9 +437,10 @@ async def get_class(cid: str, user=Depends(get_current_user)):
 
 @api.post("/classes")
 async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))):
-    if await db.classes.find_one({"name": body.name}):
+    if await db.classes.find_one({"name": body.name, **dscope(user)}):
         raise HTTPException(400, "Nama kelas sudah ada")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
+    dstamp(doc, user)
     await db.classes.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -454,7 +466,7 @@ class ScanIn(BaseModel):
 async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "guru", "super_admin"))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
-    student = await db.users.find_one({"qr_code": body.qr_code, "role": "siswa"})
+    student = await db.users.find_one({"qr_code": body.qr_code, "role": "siswa", **dscope(user)})
     if not student:
         raise HTTPException(404, "QR tidak dikenali")
     today = datetime.now(timezone.utc).date().isoformat()
@@ -466,13 +478,13 @@ async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "guru", "sup
         return {"ok": True, "student": strip(student), "status": body.status, "updated": True}
     rec = {"id": str(uuid.uuid4()), "student_id": student["id"], "student_name": student["name"],
            "kelas": student.get("kelas"), "date": today, "status": body.status, "scanned_at": now_iso(),
-           "scanned_by": user["name"], "photo": body.photo}
+           "scanned_by": user["name"], "photo": body.photo, "is_demo": bool(user.get("is_demo"))}
     await db.attendance.insert_one(rec)
     return {"ok": True, "student": strip(student), "status": body.status}
 
 @api.get("/attendance")
 async def list_attendance(date: Optional[str] = None, kelas: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dscope(user)
     if date: q["date"] = date
     if kelas: q["kelas"] = kelas
     rows = await db.attendance.find(q, {"_id": 0}).sort("scanned_at", -1).to_list(2000)
@@ -481,8 +493,8 @@ async def list_attendance(date: Optional[str] = None, kelas: Optional[str] = Non
 @api.get("/attendance/stats")
 async def att_stats(date: Optional[str] = None, user=Depends(get_current_user)):
     date = date or datetime.now(timezone.utc).date().isoformat()
-    pipeline = [{"$match": {"date": date}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
-    total_siswa = await db.users.count_documents({"role": "siswa"})
+    pipeline = [{"$match": {"date": date, **dscope(user)}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
+    total_siswa = await db.users.count_documents({"role": "siswa", **dscope(user)})
     agg = await db.attendance.aggregate(pipeline).to_list(100)
     out = {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0}
     for r in agg: out[r["_id"]] = r["n"]
@@ -493,7 +505,7 @@ async def att_stats(date: Optional[str] = None, user=Depends(get_current_user)):
 
 @api.get("/attendance/export")
 async def export_attendance(date: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dscope(user)
     if date: q["date"] = date
     docs = await db.attendance.find(q, {"_id": 0}).sort("scanned_at", -1).to_list(5000)
     columns = ["Tanggal", "Nama Siswa", "Kelas", "Status", "Waktu Scan", "Petugas"]
@@ -525,11 +537,12 @@ class BorrowRequest(BaseModel):
 
 @api.get("/inventory")
 async def list_inventory(user=Depends(get_current_user)):
-    return await db.inventory.find({}, {"_id": 0}).to_list(500)
+    return await db.inventory.find(dscope(user), {"_id": 0}).to_list(500)
 
 @api.post("/inventory")
 async def add_inventory(body: InventoryItem, user=Depends(require_roles("staff_tu", "super_admin"))):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
+    dstamp(doc, user)
     await db.inventory.insert_one(doc); doc.pop("_id", None)
     return doc
 
@@ -539,18 +552,18 @@ async def del_inventory(iid: str, user=Depends(require_roles("staff_tu", "super_
 
 @api.post("/borrow")
 async def create_borrow(body: BorrowRequest, user=Depends(get_current_user)):
-    item = await db.inventory.find_one({"id": body.item_id})
+    item = await db.inventory.find_one({"id": body.item_id, **dscope(user)})
     if not item: raise HTTPException(404, "Item tidak ditemukan")
     doc = {"id": str(uuid.uuid4()), "item_id": body.item_id, "item_name": item["name"],
            "quantity": body.quantity, "purpose": body.purpose, "return_date": body.return_date,
            "requester_id": user["id"], "requester_name": user["name"],
-           "status": "Menunggu Approval", "created_at": now_iso()}
+           "status": "Menunggu Approval", "created_at": now_iso(), "is_demo": bool(user.get("is_demo"))}
     await db.borrow_requests.insert_one(doc); doc.pop("_id", None)
     return doc
 
 @api.get("/borrow")
 async def list_borrow(mine: bool = False, user=Depends(get_current_user)):
-    q = {"requester_id": user["id"]} if mine else {}
+    q = {"requester_id": user["id"]} if mine else dscope(user)
     return await db.borrow_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.patch("/borrow/{bid}")
@@ -582,9 +595,16 @@ class SubmissionIn(BaseModel):
     content: Optional[str] = ""
     attachments: Optional[List[dict]] = None  # [{url, name, type}]
 
+class AssignmentUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    subject: Optional[str] = None
+    due_date: Optional[str] = None
+    attachments: Optional[List[dict]] = None
+
 @api.get("/assignments")
 async def list_assign(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dscope(user)
     if user["role"] == "siswa":
         q["kelas"] = user.get("kelas")
     if class_id: q["class_id"] = class_id
@@ -595,8 +615,21 @@ async def list_assign(class_id: Optional[str] = None, subject: Optional[str] = N
 async def create_assign(body: AssignmentIn, user=Depends(require_roles("guru", "super_admin"))):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
     await db.assignments.insert_one(doc); doc.pop("_id", None)
     return doc
+
+@api.patch("/assignments/{aid}")
+async def edit_assign(aid: str, body: AssignmentUpdate, user=Depends(require_roles("guru", "super_admin"))):
+    a = await db.assignments.find_one({"id": aid})
+    if not a:
+        raise HTTPException(404, "Tugas tidak ditemukan")
+    if user["role"] != "super_admin" and a.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit tugas ini")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.assignments.update_one({"id": aid}, {"$set": upd})
+    return await db.assignments.find_one({"id": aid}, {"_id": 0})
 
 @api.delete("/assignments/{aid}")
 async def delete_assign(aid: str, user=Depends(require_roles("guru", "super_admin"))):
@@ -618,12 +651,13 @@ async def submit(body: SubmissionIn, user=Depends(require_roles("siswa"))):
         return {"ok": True}
     doc = {"id": str(uuid.uuid4()), "assignment_id": body.assignment_id, "student_id": user["id"],
            "student_name": user["name"], "grade": None, **payload}
+    dstamp(doc, user)
     await db.submissions.insert_one(doc)
     return {"ok": True}
 
 @api.get("/submissions")
 async def list_subs(assignment_id: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dscope(user)
     if assignment_id: q["assignment_id"] = assignment_id
     if user["role"] == "siswa": q["student_id"] = user["id"]
     return await db.submissions.find(q, {"_id": 0}).to_list(1000)
@@ -650,9 +684,15 @@ class QuizAttemptIn(BaseModel):
     quiz_id: str
     answers: List[int]
 
+class QuizUpdate(BaseModel):
+    title: Optional[str] = None
+    subject: Optional[str] = None
+    questions: Optional[List[dict]] = None
+
 @api.get("/quizzes")
 async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
-    q = {"kelas": user.get("kelas")} if user["role"] == "siswa" else {}
+    q = dict(dscope(user))
+    if user["role"] == "siswa": q["kelas"] = user.get("kelas")
     if class_id: q["class_id"] = class_id
     if subject: q["subject"] = subject
     quizzes = await db.quizzes.find(q, {"_id": 0}).to_list(500)
@@ -666,8 +706,21 @@ async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = Non
 async def create_quiz(body: QuizIn, user=Depends(require_roles("guru", "super_admin"))):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
     await db.quizzes.insert_one(doc); doc.pop("_id", None)
     return doc
+
+@api.patch("/quizzes/{qid}")
+async def edit_quiz(qid: str, body: QuizUpdate, user=Depends(require_roles("guru", "super_admin"))):
+    qz = await db.quizzes.find_one({"id": qid})
+    if not qz:
+        raise HTTPException(404, "Quiz tidak ditemukan")
+    if user["role"] != "super_admin" and qz.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit quiz ini")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.quizzes.update_one({"id": qid}, {"$set": upd})
+    return await db.quizzes.find_one({"id": qid}, {"_id": 0})
 
 @api.delete("/quizzes/{qid}")
 async def delete_quiz(qid: str, user=Depends(require_roles("guru", "super_admin"))):
@@ -693,7 +746,7 @@ async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))
     percent = (score / total * 100) if total else 0
     doc = {"id": str(uuid.uuid4()), "quiz_id": body.quiz_id, "student_id": user["id"],
            "student_name": user["name"], "score": score, "total": total, "percent": percent,
-           "submitted_at": now_iso()}
+           "submitted_at": now_iso(), "is_demo": bool(user.get("is_demo"))}
     await db.quiz_attempts.replace_one({"quiz_id": body.quiz_id, "student_id": user["id"]}, doc, upsert=True)
     return {"score": score, "total": total, "percent": percent}
 
@@ -704,7 +757,7 @@ class PostIn(BaseModel):
 
 @api.get("/posts")
 async def list_posts(user=Depends(get_current_user)):
-    posts = await db.posts.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    posts = await db.posts.find(dscope(user), {"_id": 0}).sort("created_at", -1).to_list(200)
     for p in posts:
         p["like_count"] = len(p.get("likes", []))
         p["liked"] = user["id"] in p.get("likes", [])
@@ -716,7 +769,8 @@ async def create_post(body: PostIn, user=Depends(get_current_user)):
         raise HTTPException(403, "Hanya Ketua Kelas / OSIS / Guru yang dapat posting")
     doc = {"id": str(uuid.uuid4()), "image": body.image, "caption": body.caption,
            "author_id": user["id"], "author_name": user["name"], "author_role": user["role"],
-           "kelas": user.get("kelas"), "likes": [], "comments": [], "created_at": now_iso()}
+           "kelas": user.get("kelas"), "likes": [], "comments": [], "created_at": now_iso(),
+           "is_demo": bool(user.get("is_demo"))}
     await db.posts.insert_one(doc); doc.pop("_id", None)
     return doc
 
@@ -760,7 +814,7 @@ class AnnouncementUpdate(BaseModel):
 
 @api.get("/announcements")
 async def list_ann(user=Depends(get_current_user)):
-    return await db.announcements.find({}, {"_id": 0}).sort([("pinned", -1), ("created_at", -1)]).to_list(200)
+    return await db.announcements.find(dscope(user), {"_id": 0}).sort([("pinned", -1), ("created_at", -1)]).to_list(200)
 
 @api.post("/announcements")
 async def add_ann(body: AnnouncementIn, user=Depends(get_current_user)):
@@ -768,9 +822,10 @@ async def add_ann(body: AnnouncementIn, user=Depends(get_current_user)):
         raise HTTPException(403, "Forbidden")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "author": user["name"],
            "author_id": user["id"], "role": user["role"], "created_at": now_iso()}
+    dstamp(doc, user)
     await db.announcements.insert_one(doc); doc.pop("_id", None)
     # notify students
-    student_ids = [u["id"] for u in await db.users.find({"role": "siswa"}, {"id": 1}).to_list(2000)]
+    student_ids = [u["id"] for u in await db.users.find({"role": "siswa", **dscope(user)}, {"id": 1}).to_list(2000)]
     await notify(student_ids, f"📢 {body.title}", body.content[:120], "/announcements")
     return doc
 
@@ -805,7 +860,7 @@ class KasIn(BaseModel):
 
 @api.get("/kas")
 async def list_kas(kelas: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dict(dscope(user))
     if kelas: q["kelas"] = kelas
     elif user["role"] == "siswa" and user.get("kelas"): q["kelas"] = user["kelas"]
     return await db.uang_kas.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -814,18 +869,20 @@ async def list_kas(kelas: Optional[str] = None, user=Depends(get_current_user)):
 async def add_kas(body: KasIn, user=Depends(get_current_user)):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(),
            "recorded_by": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
     await db.uang_kas.insert_one(doc); doc.pop("_id", None)
     return doc
 
 # ---------------- SOCIAL FUND ----------------
 @api.get("/social-fund")
 async def list_sf(user=Depends(get_current_user)):
-    return await db.social_fund.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return await db.social_fund.find(dscope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.post("/social-fund")
 async def add_sf(body: KasIn, user=Depends(require_roles("ketua_osis", "super_admin"))):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(),
            "recorded_by": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
     await db.social_fund.insert_one(doc); doc.pop("_id", None)
     return doc
 
@@ -839,7 +896,7 @@ class CandidateIn(BaseModel):
 
 @api.get("/candidates")
 async def list_candidates(user=Depends(get_current_user)):
-    cands = await db.candidates.find({}, {"_id": 0}).to_list(200)
+    cands = await db.candidates.find(dscope(user), {"_id": 0}).to_list(200)
     for c in cands:
         c["vote_count"] = await db.votes.count_documents({"candidate_id": c["id"]})
     return cands
@@ -847,6 +904,7 @@ async def list_candidates(user=Depends(get_current_user)):
 @api.post("/candidates")
 async def add_candidate(body: CandidateIn, user=Depends(require_roles("super_admin", "ketua_osis"))):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
+    dstamp(doc, user)
     await db.candidates.insert_one(doc); doc.pop("_id", None)
     return doc
 
@@ -863,7 +921,7 @@ async def vote(cid: str, user=Depends(require_roles("siswa"))):
         raise HTTPException(400, f"Anda sudah memilih untuk posisi {cand['position']}")
     await db.votes.insert_one({"id": str(uuid.uuid4()), "candidate_id": cid,
                                 "position": cand["position"], "student_id": user["id"],
-                                "created_at": now_iso()})
+                                "created_at": now_iso(), "is_demo": bool(user.get("is_demo"))})
     return {"ok": True}
 
 @api.get("/my-votes")
@@ -882,22 +940,25 @@ async def add_feedback(body: FeedbackIn, user=Depends(get_current_user)):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(),
            "user_name": "Anonim" if body.anonymous else user["name"],
            "created_at": now_iso()}
+    dstamp(doc, user)
     await db.feedback.insert_one(doc); doc.pop("_id", None)
     return doc
 
 @api.get("/feedback")
 async def list_feedback(user=Depends(require_roles("super_admin", "kepsek"))):
-    return await db.feedback.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return await db.feedback.find(dscope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
 
 # ---------------- ACHIEVEMENTS ----------------
 @api.get("/achievements")
 async def achievements(user=Depends(get_current_user)):
     # Most diligent = highest submission count
-    sub_pipeline = [{"$group": {"_id": "$student_id", "count": {"$sum": 1}, "name": {"$first": "$student_name"}}},
+    sub_pipeline = [{"$match": dscope(user)},
+                    {"$group": {"_id": "$student_id", "count": {"$sum": 1}, "name": {"$first": "$student_name"}}},
                     {"$sort": {"count": -1}}, {"$limit": 10}]
     diligent = await db.submissions.aggregate(sub_pipeline).to_list(10)
     # Top academic = avg quiz percent
-    quiz_pipeline = [{"$group": {"_id": "$student_id", "avg": {"$avg": "$percent"},
+    quiz_pipeline = [{"$match": dscope(user)},
+                     {"$group": {"_id": "$student_id", "avg": {"$avg": "$percent"},
                                   "name": {"$first": "$student_name"}, "count": {"$sum": 1}}},
                      {"$sort": {"avg": -1}}, {"$limit": 10}]
     academic = await db.quiz_attempts.aggregate(quiz_pipeline).to_list(10)
@@ -906,15 +967,16 @@ async def achievements(user=Depends(get_current_user)):
 # ---------------- STATS ----------------
 @api.get("/stats")
 async def stats(user=Depends(get_current_user)):
+    ds = dscope(user)
     return {
-        "users": await db.users.count_documents({}),
-        "siswa": await db.users.count_documents({"role": "siswa"}),
-        "guru": await db.users.count_documents({"role": "guru"}),
-        "inventory": await db.inventory.count_documents({}),
-        "assignments": await db.assignments.count_documents({}),
-        "quizzes": await db.quizzes.count_documents({}),
-        "posts": await db.posts.count_documents({}),
-        "pending_borrow": await db.borrow_requests.count_documents({"status": "Menunggu Approval"}),
+        "users": await db.users.count_documents(ds),
+        "siswa": await db.users.count_documents({"role": "siswa", **ds}),
+        "guru": await db.users.count_documents({"role": "guru", **ds}),
+        "inventory": await db.inventory.count_documents(ds),
+        "assignments": await db.assignments.count_documents(ds),
+        "quizzes": await db.quizzes.count_documents(ds),
+        "posts": await db.posts.count_documents(ds),
+        "pending_borrow": await db.borrow_requests.count_documents({"status": "Menunggu Approval", **ds}),
     }
 
 # ---------------- UPLOAD / FILES ----------------
@@ -977,7 +1039,7 @@ async def analytics(user=Depends(require_roles("kepsek", "super_admin"))):
     days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     trend = []
     for d in days:
-        pipe = [{"$match": {"date": d}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
+        pipe = [{"$match": {"date": d, **dscope(user)}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
         agg = await db.attendance.aggregate(pipe).to_list(10)
         row = {"date": d, "hadir": 0, "izin": 0, "sakit": 0, "alpa": 0}
         for r in agg: row[r["_id"]] = r["n"]
@@ -985,18 +1047,18 @@ async def analytics(user=Depends(require_roles("kepsek", "super_admin"))):
     # Quiz score distribution buckets
     buckets = [{"range": "0-40", "count": 0}, {"range": "41-60", "count": 0},
                {"range": "61-80", "count": 0}, {"range": "81-100", "count": 0}]
-    async for a in db.quiz_attempts.find({}, {"percent": 1}):
+    async for a in db.quiz_attempts.find(dscope(user), {"percent": 1}):
         p = a.get("percent", 0)
         idx = 0 if p <= 40 else 1 if p <= 60 else 2 if p <= 80 else 3
         buckets[idx]["count"] += 1
     # Class activity ranking (posts + submissions + quiz attempts by kelas of student)
     class_rank = {}
-    users_by_id = {u["id"]: u.get("kelas") for u in await db.users.find({"role": "siswa"}, {"id": 1, "kelas": 1}).to_list(1000)}
+    users_by_id = {u["id"]: u.get("kelas") for u in await db.users.find({"role": "siswa", **dscope(user)}, {"id": 1, "kelas": 1}).to_list(1000)}
     for coll in ["submissions", "quiz_attempts"]:
-        async for r in db[coll].find({}, {"student_id": 1}):
+        async for r in db[coll].find(dscope(user), {"student_id": 1}):
             k = users_by_id.get(r.get("student_id"))
             if k: class_rank[k] = class_rank.get(k, 0) + 1
-    async for p in db.posts.find({}, {"kelas": 1}):
+    async for p in db.posts.find(dscope(user), {"kelas": 1}):
         k = p.get("kelas")
         if k: class_rank[k] = class_rank.get(k, 0) + 2
     ranking = sorted([{"kelas": k, "score": v} for k, v in class_rank.items()], key=lambda x: -x["score"])[:10]
@@ -1169,7 +1231,7 @@ def can_access_thread(user: dict, student: dict) -> bool:
 async def list_threads(user=Depends(get_current_user)):
     threads = []
     if user["role"] == "guru":
-        students = await db.users.find({"role": "siswa", "kelas": user.get("kelas")}, {"password_hash": 0, "_id": 0}).to_list(500)
+        students = await db.users.find({"role": "siswa", "kelas": user.get("kelas"), **dscope(user)}, {"password_hash": 0, "_id": 0}).to_list(500)
     elif user["role"] == "orang_tua":
         sid = user.get("student_id")
         s = await db.users.find_one({"id": sid}, {"password_hash": 0, "_id": 0}) if sid else None
@@ -1177,7 +1239,7 @@ async def list_threads(user=Depends(get_current_user)):
     elif user["role"] == "siswa":
         students = [await db.users.find_one({"id": user["id"]}, {"password_hash": 0, "_id": 0})]
     else:
-        students = await db.users.find({"role": "siswa"}, {"password_hash": 0, "_id": 0}).to_list(500)
+        students = await db.users.find({"role": "siswa", **dscope(user)}, {"password_hash": 0, "_id": 0}).to_list(500)
     for st in students:
         if not st: continue
         last = await db.chat_messages.find_one({"thread_id": st["id"]}, sort=[("created_at", -1)])
@@ -1236,7 +1298,7 @@ class EventIn(BaseModel):
 
 @api.get("/events")
 async def list_events(month: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
+    q = dscope(user)
     if month:  # YYYY-MM
         q["date"] = {"$regex": f"^{month}"}
     if user["role"] == "siswa" and user.get("kelas"):
@@ -1250,13 +1312,14 @@ async def add_event(body: EventIn, user=Depends(get_current_user)):
         raise HTTPException(403, "Forbidden")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_by": user["name"],
            "created_at": now_iso()}
+    dstamp(doc, user)
     await db.events.insert_one(doc); doc.pop("_id", None)
     # notify all students (+ orang tua)
-    audience_q = {"role": {"$in": ["siswa", "orang_tua"]}}
+    audience_q = {"role": {"$in": ["siswa", "orang_tua"]}, **dscope(user)}
     if body.kelas:
         # only students of that kelas + linked parents
-        student_ids = [s["id"] for s in await db.users.find({"role": "siswa", "kelas": body.kelas}, {"id": 1}).to_list(500)]
-        parents = [p["id"] for p in await db.users.find({"role": "orang_tua", "student_id": {"$in": student_ids}}, {"id": 1}).to_list(500)]
+        student_ids = [s["id"] for s in await db.users.find({"role": "siswa", "kelas": body.kelas, **dscope(user)}, {"id": 1}).to_list(500)]
+        parents = [p["id"] for p in await db.users.find({"role": "orang_tua", "student_id": {"$in": student_ids}, **dscope(user)}, {"id": 1}).to_list(500)]
         user_ids = student_ids + parents
     else:
         user_ids = [u["id"] for u in await db.users.find(audience_q, {"id": 1}).to_list(2000)]
@@ -1339,7 +1402,7 @@ def build_pdf(report: dict) -> bytes:
 
 @api.get("/reports/batch/zip")
 async def batch_reports(kelas: str, user=Depends(require_roles("guru","kepsek","super_admin"))):
-    students = await db.users.find({"role": "siswa", "kelas": kelas}, {"password_hash": 0, "_id": 0}).to_list(500)
+    students = await db.users.find({"role": "siswa", "kelas": kelas, **dscope(user)}, {"password_hash": 0, "_id": 0}).to_list(500)
     if not students: raise HTTPException(404, "Tidak ada siswa di kelas ini")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1586,19 +1649,44 @@ async def _seed():
         uid = str(uuid.uuid4())
         await db.users.insert_one({
             "id": uid, "email": admin_email, "password_hash": hash_pw(admin_pw),
-            "name": "Boas Sibarani", "role": "super_admin",
+            "name": "Boas Sibarani", "role": "super_admin", "is_demo": False,
             "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
         })
         logger.info(f"Super admin seeded: {admin_email}")
     elif existing["role"] != "super_admin":
         await db.users.update_one({"email": admin_email}, {"$set": {"role": "super_admin"}})
 
-    # Remove legacy demo accounts (keep only real accounts)
-    demo_emails = [
-        "cassandramarsada@gmail.com", "kepsek@sekolahku.id", "tu@sekolahku.id",
-        "guru@sekolahku.id", "siswa@sekolahku.id", "ketuaosis@sekolahku.id", "ketuakelas@sekolahku.id",
+    # Remove legacy (non-isolated) demo accounts from earlier versions
+    legacy = ["cassandramarsada@gmail.com", "kepsek@sekolahku.id", "tu@sekolahku.id",
+              "guru@sekolahku.id", "siswa@sekolahku.id", "ketuaosis@sekolahku.id", "ketuakelas@sekolahku.id"]
+    await db.users.delete_many({"email": {"$in": legacy}})
+
+    # Seed ISOLATED demo accounts (is_demo=True). Their data never shows to real users.
+    demo = [
+        ("admin.demo@sekolahku.id", "Demo12345", "Admin Demo", "super_admin", None, None),
+        ("kepsek.demo@sekolahku.id", "Demo12345", "Kepsek Demo", "kepsek", None, None),
+        ("tu.demo@sekolahku.id", "Demo12345", "Staff TU Demo", "staff_tu", None, None),
+        ("guru.demo@sekolahku.id", "Demo12345", "Guru Demo", "guru", None, "XI IPA 1"),
+        ("siswa.demo@sekolahku.id", "Demo12345", "Siswa Demo", "siswa", "0099887766", "XI IPA 1"),
+        ("osis.demo@sekolahku.id", "Demo12345", "Ketua OSIS Demo", "ketua_osis", "0099887701", "XII IPA 2"),
+        ("kelas.demo@sekolahku.id", "Demo12345", "Ketua Kelas Demo", "ketua_kelas", "0099887702", "XI IPA 1"),
     ]
-    await db.users.delete_many({"email": {"$in": demo_emails}})
+    for email, pw, name, role, nisn, kelas in demo:
+        if not await db.users.find_one({"email": email}):
+            uid = str(uuid.uuid4())
+            await db.users.insert_one({
+                "id": uid, "email": email, "password_hash": hash_pw(pw), "name": name,
+                "role": role, "nisn": nisn, "kelas": kelas, "jurusan": "IPA" if kelas else None,
+                "is_demo": True, "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
+            })
+    # Seed one demo class so demo users have instant content
+    if not await db.classes.find_one({"name": "XI IPA 1", "is_demo": True}):
+        await db.classes.insert_one({
+            "id": str(uuid.uuid4()), "name": "XI IPA 1",
+            "subjects": ["Matematika", "Fisika", "Biologi"],
+            "homeroom_teacher_id": None, "description": "Kelas demo untuk uji coba",
+            "is_demo": True, "created_at": now_iso(),
+        })
 
 app.include_router(api)
 
