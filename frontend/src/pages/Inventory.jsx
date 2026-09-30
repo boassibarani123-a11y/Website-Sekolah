@@ -2,13 +2,18 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Boxes, Plus, X, Check, Ban, Undo2 } from "lucide-react";
+import { Boxes, Plus, X, Check, Ban, Undo2, User } from "lucide-react";
 
 const STATUS_STYLE = {
   "Menunggu Approval": "bg-sky-100 text-sky-700 border-sky-200",
   "Disetujui": "bg-emerald-100 text-emerald-700 border-emerald-200",
   "Ditolak": "bg-rose-100 text-rose-700 border-rose-200",
   "Dikembalikan": "bg-slate-100 text-slate-700 border-slate-200",
+};
+
+const ROLE_LABEL = {
+  super_admin: "Super Admin", kepsek: "Kepala Sekolah", staff_tu: "Staff TU",
+  guru: "Guru", siswa: "Siswa", ketua_osis: "Ketua OSIS", ketua_kelas: "Ketua Kelas", orang_tua: "Orang Tua",
 };
 
 export default function Inventory() {
@@ -77,10 +82,23 @@ export default function Inventory() {
         <div className="space-y-3">
           {reqs.length===0 && <p className="text-slate-400 italic">Belum ada permintaan.</p>}
           {reqs.map(r=>(
-            <div key={r.id} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
-              <div>
+            <div key={r.id} data-testid={`borrow-request-${r.id}`} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+              <div className="min-w-0">
                 <p className="font-semibold text-slate-900">{r.item_name} <span className="text-slate-400 text-sm">× {r.quantity}</span></p>
-                <p className="text-xs text-slate-500">{r.requester_name} · {r.purpose} · Kembali: {r.return_date}</p>
+                {isStaff && (
+                  <div className="mt-1.5 flex items-center gap-2 flex-wrap" data-testid={`borrower-info-${r.id}`}>
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                      <User className="w-3 h-3"/>{r.requester_name}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-semibold">{ROLE_LABEL[r.requester_role] || r.requester_role || "—"}</span>
+                    {r.requester_kelas && <span className="text-[11px] text-slate-500">Kelas {r.requester_kelas}</span>}
+                    {r.requester_nisn && <span className="text-[11px] text-slate-500">NISN {r.requester_nisn}</span>}
+                  </div>
+                )}
+                <p className="text-xs text-slate-500 mt-1">
+                  {!isStaff && <span>{r.requester_name} · </span>}
+                  {r.purpose} · Kembali: {r.return_date}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${STATUS_STYLE[r.status]}`}>{r.status}</span>

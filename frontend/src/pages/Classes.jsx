@@ -7,7 +7,7 @@ import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight } from "lu
 
 export default function Classes() {
   const { user } = useAuth();
-  const isAdmin = user.role === "super_admin";
+  const isAdmin = ["super_admin", "guru"].includes(user.role);
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [editing, setEditing] = useState(null); // null | {} (new) | class obj

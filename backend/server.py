@@ -436,7 +436,7 @@ async def get_class(cid: str, user=Depends(get_current_user)):
     return c
 
 @api.post("/classes")
-async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))):
+async def create_class(body: ClassIn, user=Depends(require_roles("super_admin", "guru"))):
     if await db.classes.find_one({"name": body.name, **dscope(user)}):
         raise HTTPException(400, "Nama kelas sudah ada")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
@@ -446,19 +446,20 @@ async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))
     return doc
 
 @api.patch("/classes/{cid}")
-async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin"))):
+async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin", "guru"))):
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     await db.classes.update_one({"id": cid}, {"$set": upd})
     return await db.classes.find_one({"id": cid}, {"_id": 0})
 
 @api.delete("/classes/{cid}")
-async def delete_class(cid: str, user=Depends(require_roles("super_admin"))):
+async def delete_class(cid: str, user=Depends(require_roles("super_admin", "guru"))):
     await db.classes.delete_one({"id": cid})
     return {"ok": True}
 
 # ---------------- ATTENDANCE ----------------
 class ScanIn(BaseModel):
-    qr_code: str
+    qr_code: Optional[str] = None
+    nisn: Optional[str] = None  # manual fallback using student's NISN on the card
     status: str = "hadir"  # hadir | izin | sakit | alpa
     photo: Optional[str] = None  # URL of webcam snapshot for anti-titip proof
 
@@ -466,9 +467,16 @@ class ScanIn(BaseModel):
 async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "guru", "super_admin"))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
-    student = await db.users.find_one({"qr_code": body.qr_code, "role": "siswa", **dscope(user)})
+    q = {"role": "siswa", **dscope(user)}
+    if body.qr_code and body.qr_code.strip():
+        q["qr_code"] = body.qr_code.strip()
+    elif body.nisn and body.nisn.strip():
+        q["nisn"] = body.nisn.strip()
+    else:
+        raise HTTPException(400, "QR code atau NISN wajib diisi")
+    student = await db.users.find_one(q)
     if not student:
-        raise HTTPException(404, "QR tidak dikenali")
+        raise HTTPException(404, "NISN tidak dikenali" if body.nisn else "QR tidak dikenali")
     today = datetime.now(timezone.utc).date().isoformat()
     existing = await db.attendance.find_one({"student_id": student["id"], "date": today})
     if existing:
@@ -554,9 +562,14 @@ async def del_inventory(iid: str, user=Depends(require_roles("staff_tu", "super_
 async def create_borrow(body: BorrowRequest, user=Depends(get_current_user)):
     item = await db.inventory.find_one({"id": body.item_id, **dscope(user)})
     if not item: raise HTTPException(404, "Item tidak ditemukan")
+    if body.quantity < 1: raise HTTPException(400, "Jumlah minimal 1")
+    if body.quantity > int(item.get("stock", 0)):
+        raise HTTPException(400, f"Stok tidak cukup. Tersedia: {item.get('stock', 0)}")
     doc = {"id": str(uuid.uuid4()), "item_id": body.item_id, "item_name": item["name"],
            "quantity": body.quantity, "purpose": body.purpose, "return_date": body.return_date,
            "requester_id": user["id"], "requester_name": user["name"],
+           "requester_role": user.get("role"), "requester_kelas": user.get("kelas"),
+           "requester_nisn": user.get("nisn"), "requester_email": user.get("email"),
            "status": "Menunggu Approval", "created_at": now_iso(), "is_demo": bool(user.get("is_demo"))}
     await db.borrow_requests.insert_one(doc); doc.pop("_id", None)
     return doc
@@ -570,10 +583,23 @@ async def list_borrow(mine: bool = False, user=Depends(get_current_user)):
 async def update_borrow(bid: str, status: str, user=Depends(require_roles("staff_tu", "super_admin"))):
     if status not in ["Disetujui", "Ditolak", "Dikembalikan"]:
         raise HTTPException(400, "Status tidak valid")
+    br = await db.borrow_requests.find_one({"id": bid})
+    if not br: raise HTTPException(404, "Permintaan tidak ditemukan")
+    prev = br.get("status")
+    qty = int(br.get("quantity", 0))
+    item = await db.inventory.find_one({"id": br.get("item_id")})
+    # Approving an outstanding request reduces available stock (only once)
+    if status == "Disetujui" and prev != "Disetujui":
+        if item and qty > int(item.get("stock", 0)):
+            raise HTTPException(400, f"Stok tidak cukup untuk disetujui. Tersedia: {item.get('stock', 0)}")
+        if item:
+            await db.inventory.update_one({"id": item["id"]}, {"$inc": {"stock": -qty}})
+    # Returning or rejecting a previously-approved loan restores stock
+    if status in ("Dikembalikan", "Ditolak") and prev == "Disetujui" and item:
+        await db.inventory.update_one({"id": item["id"]}, {"$inc": {"stock": qty}})
     await db.borrow_requests.update_one({"id": bid}, {"$set": {"status": status, "updated_at": now_iso(),
                                                                  "approved_by": user["name"]}})
-    br = await db.borrow_requests.find_one({"id": bid})
-    if br and br.get("requester_id"):
+    if br.get("requester_id"):
         await notify([br["requester_id"]],
                      f"Peminjaman: {status}",
                      f"Permintaan {br.get('item_name')} × {br.get('quantity')} — {status}",
