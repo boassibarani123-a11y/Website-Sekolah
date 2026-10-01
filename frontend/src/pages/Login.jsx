@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GraduationCap, LogIn, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { LoginAnnouncementBanner } from "@/components/LoginAnnouncementBanner";
 
 export default function Login() {
   const { login } = useAuth();
@@ -64,6 +65,7 @@ export default function Login() {
             <div className="w-12 h-12 rounded-xl bg-sky-600 text-white flex items-center justify-center"><GraduationCap className="w-6 h-6"/></div>
             <div><h1 className="font-heading text-xl font-extrabold">SEKOLAHKU</h1><p className="text-xs text-slate-500">Sistem Manajemen Sekolah</p></div>
           </div>
+          <LoginAnnouncementBanner />
           <h2 className="font-heading text-3xl font-extrabold text-slate-900">Masuk ke Akun Anda</h2>
           <p className="mt-2 text-slate-500 text-sm">Gunakan email dan password yang diberikan oleh Super Admin sekolah.</p>
 

@@ -27,35 +27,34 @@ body {
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ---------- Organization chart (top-down tree, connectors, unlimited depth downward) ---------- */
-.org-tree { display: inline-block; min-width: 100%; text-align: center; }
-.org-tree ul { position: relative; display: flex; justify-content: center; padding-top: 34px; margin: 0; list-style: none; }
+.org-tree { display: inline-block; min-width: 100%; text-align: center; padding-bottom: 8px; }
+.org-tree ul { position: relative; display: flex; justify-content: center; padding: 28px 0 0; margin: 0; list-style: none; }
 .org-tree li {
   position: relative; list-style: none; text-align: center;
-  padding: 34px 14px 0; display: flex; flex-direction: column; align-items: center;
+  padding: 28px 10px 0; display: flex; flex-direction: column; align-items: center;
 }
-/* connector: horizontal bar from a child up toward the parent's center line */
 .org-tree li::before, .org-tree li::after {
   content: ''; position: absolute; top: 0; right: 50%;
-  border-top: 2px solid #94a3b8; width: 50%; height: 34px;
+  border-top: 2px solid #94a3b8; width: 50%; height: 28px;
 }
 .org-tree li::after { right: auto; left: 50%; border-left: 2px solid #94a3b8; }
-/* single child: just a straight vertical line */
-.org-tree li:only-child::after, .org-tree li:only-child::before { display: none; }
-.org-tree li:only-child { padding-top: 34px; }
-/* remove outer connectors on the ends */
 .org-tree li:first-child::before, .org-tree li:last-child::after { border: 0 none; }
-.org-tree li:last-child::before { border-right: 2px solid #94a3b8; border-radius: 0 8px 0 0; }
-.org-tree li:first-child::after { border-radius: 8px 0 0 0; }
-/* vertical line from a parent down to its children's horizontal bar */
+.org-tree li:last-child::before { border-right: 2px solid #94a3b8; border-radius: 0 10px 0 0; }
+.org-tree li:first-child::after { border-radius: 10px 0 0 0; }
+.org-tree li:only-child::before { display: none; }
+.org-tree li:only-child::after { border: 0 none; border-left: 2px solid #94a3b8; border-radius: 0; }
 .org-tree ul ul::before {
   content: ''; position: absolute; top: 0; left: 50%;
-  border-left: 2px solid #94a3b8; width: 0; height: 34px;
+  border-left: 2px solid #94a3b8; width: 0; height: 28px;
+}
+.org-tree ul ul.has-add::before { top: -34px; height: 62px; }
+.org-tree li > .org-add-btn::before {
+  content: ''; position: absolute; left: 50%; top: -8px; height: 8px; border-left: 2px solid #94a3b8; z-index: -1;
 }
 .org-tree > ul { padding-top: 0; }
+.org-tree > ul > li { padding-top: 0; }
 .org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
-/* dashed (advisor) relationship */
 .org-tree li.dashed::before, .org-tree li.dashed::after { border-top-style: dashed; border-left-style: dashed; border-right-style: dashed; }
-.org-tree ul ul.dashed-rail::before { border-left-style: dashed; }
 
 /* Printable KTP Card */
 @media print {

@@ -24,6 +24,7 @@ from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
+from email_guard import assert_safe_email, EMAIL_BASE_URL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1185,6 +1186,7 @@ class AnnouncementIn(BaseModel):
     category: Optional[str] = "Umum"
     image: Optional[str] = None
     pinned: Optional[bool] = False
+    show_on_login: Optional[bool] = False
 
 class AnnouncementUpdate(BaseModel):
     title: Optional[str] = None
@@ -1193,15 +1195,27 @@ class AnnouncementUpdate(BaseModel):
     category: Optional[str] = None
     image: Optional[str] = None
     pinned: Optional[bool] = None
+    show_on_login: Optional[bool] = None
+
+LOGIN_BANNER_ROLES = ["super_admin", "kepsek", "staff_tu"]
 
 @api.get("/announcements")
 async def list_ann(user=Depends(get_current_user)):
     return await db.announcements.find(dscope(user), {"_id": 0}).sort([("pinned", -1), ("created_at", -1)]).to_list(200)
 
+@api.get("/announcements/login")
+async def login_banner_ann():
+    return await db.announcements.find(
+        {"show_on_login": True, "is_demo": {"$ne": True}},
+        {"_id": 0, "id": 1, "title": 1, "content": 1, "category": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(5)
+
 @api.post("/announcements")
 async def add_ann(body: AnnouncementIn, user=Depends(get_current_user)):
     if user["role"] not in ["super_admin", "kepsek", "ketua_osis", "ketua_kelas", "staff_tu", "guru"]:
         raise HTTPException(403, "Forbidden")
+    if user["role"] not in LOGIN_BANNER_ROLES:
+        body.show_on_login = False
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "author": user["name"],
            "author_id": user["id"], "role": user["role"], "created_at": now_iso()}
     dstamp(doc, user)
@@ -1218,6 +1232,8 @@ async def edit_ann(aid: str, body: AnnouncementUpdate, user=Depends(get_current_
         raise HTTPException(404, "Pengumuman tidak ditemukan")
     if user["role"] != "super_admin" and ann.get("author_id") != user["id"]:
         raise HTTPException(403, "Tidak berwenang mengedit pengumuman ini")
+    if user["role"] not in LOGIN_BANNER_ROLES:
+        body.show_on_login = None
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     if upd:
         await db.announcements.update_one({"id": aid}, {"$set": upd})
@@ -1460,7 +1476,7 @@ async def send_reset_email(to_email: str, token: str):
     key = os.environ.get("EMERGENT_EMAIL_KEY", "")
     from_name = os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU")
     if not key or key.startswith("{") or not base.startswith("https://"):
-        logger.warning("Reset link (dev): %s", link)
+        logger.warning("Reset email not sent: email key or https FRONTEND_URL missing")
         return False
     brand = escape(from_name)
     html = (f'<div style="font-family:Arial;padding:24px;max-width:560px;margin:auto">'
@@ -1470,13 +1486,16 @@ async def send_reset_email(to_email: str, token: str):
             f'<p style="color:#64748B;font-size:12px">Link berlaku 1 jam dan hanya bisa dipakai sekali. '
             f'Abaikan email ini jika Anda tidak meminta reset — password Anda tetap aman.</p>'
             f'<p style="color:#94A3B8;font-size:11px;margin-top:24px">— Tim {brand}. Kami tidak pernah meminta password lewat email.</p></div>')
+    subject = f"Reset password {from_name}"
     try:
+        assert_safe_email(subject, html)
         async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(f"{STORAGE_BASE}/api/v1/email/send",
+            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
                              headers={"X-Email-Key": key},
-                             json={"to": [to_email], "subject": f"Reset password {from_name}",
+                             json={"to": [to_email], "subject": subject,
                                    "html": html, "from_name": from_name})
         r.raise_for_status()
+        logger.info("Reset email sent to %s", to_email)
         return True
     except Exception as e:
         logger.error(f"Reset email failed: {e}")
@@ -1563,8 +1582,9 @@ async def send_email(to_email: str, subject: str, html: str) -> bool:
         logger.warning("Email not configured; would send to %s: %s", to_email, subject)
         return False
     try:
+        assert_safe_email(subject, html)
         async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(f"{STORAGE_BASE}/api/v1/email/send",
+            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
                              headers={"X-Email-Key": key},
                              json={"to": [to_email], "subject": subject, "html": html, "from_name": from_name})
         r.raise_for_status(); return True
