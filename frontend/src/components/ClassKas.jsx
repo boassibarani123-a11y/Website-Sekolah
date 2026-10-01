@@ -6,6 +6,7 @@ import { PiggyBank, TrendingUp, TrendingDown, Pencil, Trash2, Download, Lock } f
 import { TxEditModal } from "@/components/TxEditModal";
 import { WeeklyKas } from "@/components/WeeklyKas";
 import { MonthlyKas } from "@/components/MonthlyKas";
+import { KasChart } from "@/components/KasChart";
 
 const rupiah = (n) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 
@@ -84,6 +85,7 @@ export function ClassKas({ klass }) {
       )}
 
       {canSeeWeekly && <WeeklyKas classId={klass.id} data={weekly} canPay={canManage} onPay={payWeekly} />}
+      <KasChart classId={klass.id} refreshKey={refreshKey} />
       {canSeeWeekly && <MonthlyKas classId={klass.id} refreshKey={refreshKey} />}
 
       <div className="flex justify-end">

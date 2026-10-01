@@ -6,10 +6,11 @@ import { X, Timer, AlertTriangle } from "lucide-react";
 const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
 export function QuizTakeModal({ quiz, onClose, onDone }) {
-  const [answers, setAnswers] = useState(() => Array(quiz.questions.length).fill(-1));
+  const [questions, setQuestions] = useState(null);
+  const [answers, setAnswers] = useState([]);
   const [left, setLeft] = useState(null);
   const [expired, setExpired] = useState(false);
-  const [ready, setReady] = useState(!quiz.time_limit);
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const answersRef = useRef(answers);
   const sentRef = useRef(false);
@@ -31,21 +32,25 @@ export function QuizTakeModal({ quiz, onClose, onDone }) {
   }, [quiz.id, onDone]);
 
   useEffect(() => {
-    if (!quiz.time_limit) return;
     let timer;
     api.post(`/quizzes/${quiz.id}/start`).then(r => {
-      const offset = new Date(r.data.server_now).getTime() - Date.now();
-      const deadline = new Date(r.data.deadline).getTime();
-      const tick = () => {
-        const s = Math.max(0, Math.round((deadline - (Date.now() + offset)) / 1000));
-        setLeft(s);
-        if (s === 0) { clearInterval(timer); submit(true); }
-      };
+      setQuestions(r.data.questions || []);
+      setAnswers(Array((r.data.questions || []).length).fill(-1));
       if (r.data.expired) { setExpired(true); setReady(true); return; }
-      setReady(true); tick(); timer = setInterval(tick, 1000);
+      setReady(true);
+      if (r.data.time_limit) {
+        const offset = new Date(r.data.server_now).getTime() - Date.now();
+        const deadline = new Date(r.data.deadline).getTime();
+        const tick = () => {
+          const s = Math.max(0, Math.round((deadline - (Date.now() + offset)) / 1000));
+          setLeft(s);
+          if (s === 0) { clearInterval(timer); submit(true); }
+        };
+        tick(); timer = setInterval(tick, 1000);
+      }
     }).catch(e => { toast.error(e.response?.data?.detail || "Gagal memulai quiz"); onClose(); });
     return () => clearInterval(timer);
-  }, [quiz.id, quiz.time_limit]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [quiz.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const warn = left !== null && left <= 60;
   return (
@@ -71,7 +76,7 @@ export function QuizTakeModal({ quiz, onClose, onDone }) {
         ) : (
           <div className="p-5 space-y-4">
             {quiz.time_limit > 0 && <p className="text-xs text-slate-500">Batas waktu {quiz.time_limit} menit. Jawaban dikirim otomatis saat waktu habis.</p>}
-            {quiz.questions.map((q, i) => (
+            {(questions || []).map((q, i) => (
               <div key={i} className="p-4 bg-slate-50 rounded-xl">
                 <p className="font-semibold text-sm mb-2">{i + 1}. {q.q}</p>
                 <div className="space-y-1.5">

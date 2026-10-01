@@ -11,6 +11,7 @@ import logging
 import hashlib
 import secrets
 import hmac
+import random
 import bcrypt
 import jwt
 import httpx
@@ -1186,6 +1187,15 @@ async def assert_quiz_open_for_student(user: dict, quiz: dict):
     if quiz.get("password_hash") and quiz["id"] not in (user.get("unlocked_quizzes") or []):
         raise HTTPException(423, "Quiz terkunci. Masukkan password quiz terlebih dahulu")
 
+def shuffled_questions(quiz: dict, sess: dict) -> list:
+    qs = quiz.get("questions") or []
+    out = []
+    for q_idx in sess["q_order"]:
+        q = qs[q_idx]
+        opts = q.get("options") or []
+        out.append({"q": q.get("q"), "options": [opts[o] for o in sess["opt_orders"][len(out)] if o < len(opts)]})
+    return out
+
 @api.post("/quizzes/{qid}/start")
 async def start_quiz(qid: str, user=Depends(require_roles("siswa"))):
     quiz = await db.quizzes.find_one({"id": qid, **dscope(user)})
@@ -1194,16 +1204,22 @@ async def start_quiz(qid: str, user=Depends(require_roles("siswa"))):
     await assert_quiz_open_for_student(user, quiz)
     limit = quiz.get("time_limit") or 0
     now = datetime.now(timezone.utc)
-    if not limit:
-        return {"time_limit": 0, "server_now": now.isoformat()}
+    qs = quiz.get("questions") or []
     sess = await db.quiz_sessions.find_one({"quiz_id": qid, "student_id": user["id"]}, {"_id": 0})
-    if not sess:
+    if not sess or len(sess.get("q_order", [])) != len(qs):
+        await db.quiz_sessions.delete_one({"quiz_id": qid, "student_id": user["id"]})
+        q_order = list(range(len(qs))); random.shuffle(q_order)
+        opt_orders = []
+        for q in qs:
+            o = list(range(len(q.get("options") or []))); random.shuffle(o); opt_orders.append(o)
         sess = {"quiz_id": qid, "student_id": user["id"], "started_at": now.isoformat(),
-                "deadline": (now + timedelta(minutes=limit)).isoformat()}
+                "deadline": (now + timedelta(minutes=limit)).isoformat() if limit else None,
+                "q_order": q_order, "opt_orders": opt_orders}
         await db.quiz_sessions.insert_one(dict(sess))
-    expired = now.isoformat() > sess["deadline"]
-    return {"time_limit": limit, "started_at": sess["started_at"], "deadline": sess["deadline"],
-            "server_now": now.isoformat(), "expired": expired}
+    expired = bool(limit and now.isoformat() > sess["deadline"])
+    return {"time_limit": limit, "started_at": sess["started_at"], "deadline": sess.get("deadline"),
+            "server_now": now.isoformat(), "expired": expired,
+            "questions": [] if expired else shuffled_questions(quiz, sess)}
 
 @api.get("/quizzes")
 async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
@@ -1251,7 +1267,7 @@ async def edit_quiz(qid: str, body: QuizUpdate, user=Depends(require_roles("guru
         raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit quiz ini")
     validate_time_limit(body.time_limit)
     upd = {k: v for k, v in body.model_dump(exclude={"password", "remove_password"}).items() if v is not None}
-    if "time_limit" in upd:
+    if "time_limit" in upd or "questions" in upd:
         await db.quiz_sessions.delete_many({"quiz_id": qid})
     pw = (body.password or "").strip()
     if body.remove_password:
@@ -1280,19 +1296,28 @@ async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))
     quiz = await db.quizzes.find_one({"id": body.quiz_id})
     if not quiz: raise HTTPException(404, "Quiz tidak ditemukan")
     await assert_quiz_open_for_student(user, quiz)
+    sess = await db.quiz_sessions.find_one({"quiz_id": body.quiz_id, "student_id": user["id"]})
     if quiz.get("time_limit"):
-        sess = await db.quiz_sessions.find_one({"quiz_id": body.quiz_id, "student_id": user["id"]})
         if not sess:
             raise HTTPException(400, "Quiz belum dimulai")
         late = datetime.now(timezone.utc) - datetime.fromisoformat(sess["deadline"])
         if late.total_seconds() > QUIZ_GRACE_SECONDS:
             raise HTTPException(400, "Waktu pengerjaan quiz sudah habis")
-        await db.quiz_sessions.delete_one({"quiz_id": body.quiz_id, "student_id": user["id"]})
     questions = quiz.get("questions", [])
     score = 0
-    for i, q in enumerate(questions):
-        if i < len(body.answers) and body.answers[i] == q.get("answer"):
-            score += 1
+    if sess:
+        await db.quiz_sessions.delete_one({"quiz_id": body.quiz_id, "student_id": user["id"]})
+        for i, q_idx in enumerate(sess.get("q_order", [])):
+            if i >= len(body.answers) or body.answers[i] is None or body.answers[i] < 0:
+                continue
+            opts = sess["opt_orders"][i]
+            chosen = opts[body.answers[i]] if body.answers[i] < len(opts) else None
+            if chosen is not None and q_idx < len(questions) and questions[q_idx].get("answer") == chosen:
+                score += 1
+    else:
+        for i, q in enumerate(questions):
+            if i < len(body.answers) and body.answers[i] == q.get("answer"):
+                score += 1
     total = len(questions)
     percent = (score / total * 100) if total else 0
     doc = {"id": str(uuid.uuid4()), "quiz_id": body.quiz_id, "student_id": user["id"],
@@ -1576,6 +1601,32 @@ async def cron_kas_reminder(request: Request, bg: BackgroundTasks):
     await db.cron_runs.insert_one({"run_id": run_id, "job": "kas-reminder", "created_at": now_iso()})
     bg.add_task(run_kas_reminder)
     return {"ok": True}
+
+@api.get("/classes/{cid}/kas/chart")
+async def kas_chart(cid: str, months: int = 6, user=Depends(get_current_user)):
+    await kas_class_for_view(cid, user)
+    months = max(3, min(months, 12))
+    now = datetime.now(WIB)
+    first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    for _ in range(months - 1):
+        prev = first - timedelta(days=1)
+        first = prev.replace(day=1)
+    pays = await db.uang_kas.find({"class_id": cid, "created_at": {"$gte": first.astimezone(timezone.utc).isoformat()}},
+                                  {"_id": 0, "amount": 1, "type": 1, "created_at": 1}).to_list(5000)
+    buckets, labels = {}, []
+    cur = first
+    for _ in range(months):
+        key = cur.strftime("%Y-%m")
+        buckets[key] = {"month": key, "masuk": 0.0, "keluar": 0.0}
+        labels.append(key)
+        nxt_month = cur.replace(day=28) + timedelta(days=7)
+        cur = nxt_month.replace(day=1)
+    for t in pays:
+        key = datetime.fromisoformat(t["created_at"]).astimezone(WIB).strftime("%Y-%m")
+        b = buckets.get(key)
+        if b:
+            b["masuk" if t.get("type") == "masuk" else "keluar"] += t.get("amount") or 0
+    return [buckets[k] for k in labels]
 
 async def kas_tx_for_manage(kid: str, user: dict) -> dict:
     tx = await db.uang_kas.find_one({"id": kid})
