@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash } from "lucide-react";
+import { BarcodeScanner } from "@/components/BarcodeScanner";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -61,7 +62,7 @@ export default function Attendance() {
       if (lockRef.current) return;          // debounce repeated detections
       lockRef.current = true;
       const photo = await captureSnapshot(); // snapshot proof before submitting
-      await submit({ qr_code: txt, photo });
+      await submit({ qr_code: txt, photo, method: "qr" });
       setTimeout(() => { lockRef.current = false; }, 2500);
     };
     try {
@@ -94,8 +95,8 @@ export default function Attendance() {
     <div className="space-y-6" data-testid="attendance-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi QR Code</h1>
-          <p className="mt-1 text-sm text-slate-500">Scan QR Kartu Pelajar untuk absensi real-time · {stats?.date}</p>
+          <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi QR Code & Barcode</h1>
+          <p className="mt-1 text-sm text-slate-500">Scan QR Kartu Pelajar atau barcode NISN (alat USB) untuk absensi real-time · {stats?.date}</p>
         </div>
         <button data-testid="attendance-export-excel-button" onClick={exportXlsx}
           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-2">
@@ -110,9 +111,10 @@ export default function Attendance() {
         <Counter label="Alpa" value={stats?.alpa} color="rose"/>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-6 items-start">
+        <div className="space-y-6">
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <h2 className="font-heading text-lg font-bold mb-4 flex items-center gap-2"><QrCode className="w-5 h-5 text-sky-600"/>Scanner</h2>
+          <h2 className="font-heading text-lg font-bold mb-4 flex items-center gap-2"><QrCode className="w-5 h-5 text-sky-600"/>Scan QR Code</h2>
           <div className="flex gap-2 mb-4">
             {["hadir","izin","sakit","alpa"].map(s=>(
               <button key={s} onClick={()=>setStatus(s)} data-testid={`att-status-${s}`}
@@ -134,7 +136,7 @@ export default function Attendance() {
               <div className="mt-1.5 flex gap-2">
                 <input value={manual} onChange={e=>setManual(e.target.value)} placeholder="SEKOLAHKU-xxxx"
                   className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-sky-500 outline-none text-sm"/>
-                <button data-testid="manual-scan-submit" onClick={()=>{if(manual){submit({qr_code:manual}); setManual("");}}}
+                <button data-testid="manual-scan-submit" onClick={()=>{if(manual){submit({qr_code:manual, method:"manual"}); setManual("");}}}
                   className="px-4 bg-sky-600 text-white rounded-lg font-semibold hover:bg-sky-700 flex items-center gap-1"><Check className="w-4 h-4"/></button>
               </div>
             </div>
@@ -144,7 +146,7 @@ export default function Attendance() {
                 <input value={manualNisn} onChange={e=>setManualNisn(e.target.value)} placeholder="mis. 0099887766"
                   data-testid="manual-nisn-input"
                   className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-emerald-500 outline-none text-sm"/>
-                <button data-testid="manual-nisn-submit" onClick={()=>{if(manualNisn){submit({nisn:manualNisn}); setManualNisn("");}}}
+                <button data-testid="manual-nisn-submit" onClick={()=>{if(manualNisn){submit({nisn:manualNisn, method:"manual"}); setManualNisn("");}}}
                   className="px-4 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 flex items-center gap-1"><Check className="w-4 h-4"/></button>
               </div>
             </div>
@@ -171,6 +173,8 @@ export default function Attendance() {
             </div>
           )}
         </div>
+        <BarcodeScanner onScan={(code)=>submit({ nisn: code, method: "barcode" })}/>
+        </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <h2 className="font-heading text-lg font-bold mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-sky-600"/>Log Presensi Hari Ini</h2>
@@ -187,7 +191,8 @@ export default function Attendance() {
                     )}
                     <div className="min-w-0">
                       <p className="font-semibold text-sm text-slate-900 truncate">{r.student_name}</p>
-                      <p className="text-[11px] text-slate-500">{r.kelas} · {new Date(r.scanned_at).toLocaleTimeString("id-ID")}</p>
+                      <p className="text-[11px] text-slate-500">{r.kelas} · {new Date(r.scanned_at).toLocaleTimeString("id-ID")}
+                        <span data-testid={`attendance-method-${r.id}`} className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${r.method==="barcode"?"bg-violet-100 text-violet-700":r.method==="manual"?"bg-slate-200 text-slate-600":"bg-sky-100 text-sky-700"}`}>{r.method==="barcode"?"Barcode":r.method==="manual"?"Manual":"QR"}</span></p>
                     </div>
                   </div>
                   <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${

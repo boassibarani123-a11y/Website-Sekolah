@@ -5,10 +5,21 @@ import { Network, GraduationCap, ArrowLeft } from "lucide-react";
 import { OrgTree, buildTree } from "@/components/OrgTree";
 
 export default function PublicOrg() {
+  const [structures, setStructures] = useState([]);
+  const [active, setActive] = useState(null);
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get("/org/public").then(r => setNodes(r.data)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    api.get("/org-structures/public").then(r => { setStructures(r.data); setActive(r.data[0]?.id || null); if (!r.data.length) setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  useEffect(() => {
+    if (!active) return;
+    setLoading(true);
+    api.get(`/org/public?structure_id=${active}`).then(r => setNodes(r.data)).finally(() => setLoading(false));
+  }, [active]);
   const tree = buildTree(nodes);
+  const current = structures.find(s => s.id === active);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -32,6 +43,16 @@ export default function PublicOrg() {
           <Network className="w-7 h-7 text-sky-600" />
           <h2 className="font-heading text-3xl font-extrabold text-slate-900">Bagan Organisasi</h2>
         </div>
+        {structures.length > 1 && (
+          <div className="flex flex-wrap gap-2 mb-6" data-testid="public-org-tabs">
+            {structures.map(st => (
+              <button key={st.id} data-testid={`public-org-tab-${st.id}`} onClick={() => setActive(st.id)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${active === st.id ? "bg-sky-600 text-white shadow" : "bg-white border border-slate-200 text-slate-600 hover:border-sky-400"}`}>
+                {st.name}
+              </button>
+            ))}
+          </div>
+        )}
         {loading ? (
           <p className="text-slate-400 py-20 text-center">Memuat struktur...</p>
         ) : tree.length === 0 ? (
@@ -41,6 +62,10 @@ export default function PublicOrg() {
           </div>
         ) : (
           <div className="bg-gradient-to-b from-slate-50 to-white border border-slate-200 rounded-2xl p-6 shadow-sm overflow-x-auto">
+            <div className="rounded-2xl bg-gradient-to-r from-sky-600 via-indigo-600 to-violet-600 px-6 py-5 text-center text-white mb-8">
+              <h3 data-testid="public-org-title" className="font-heading text-2xl font-extrabold uppercase">{current?.name}</h3>
+              {current?.subtitle && <p className="text-sm text-sky-100/90">{current.subtitle}</p>}
+            </div>
             <OrgTree tree={tree} testId="public-org-tree" />
           </div>
         )}

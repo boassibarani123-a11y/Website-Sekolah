@@ -414,16 +414,38 @@ class ClassIn(BaseModel):
     subjects: List[str] = []
     homeroom_teacher_id: Optional[str] = None
     description: Optional[str] = None
+    password: Optional[str] = None
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
     subjects: Optional[List[str]] = None
     homeroom_teacher_id: Optional[str] = None
     description: Optional[str] = None
+    password: Optional[str] = None
+
+class ClassUnlockIn(BaseModel):
+    password: str
+
+CLASS_PROJ = {"_id": 0, "password_hash": 0}
+
+def class_out(c: dict, user: dict) -> dict:
+    c["has_password"] = bool(c.pop("password_hash", None))
+    c["locked"] = class_locked_flag(c, user)
+    return c
+
+def class_locked_flag(c: dict, user: dict) -> bool:
+    return c.get("has_password", False) and user.get("role") != "super_admin" \
+        and c["id"] not in (user.get("unlocked_classes") or [])
+
+async def assert_class_unlocked(user: dict, klass: dict):
+    if klass.get("password_hash") and user.get("role") != "super_admin" \
+            and klass["id"] not in (user.get("unlocked_classes") or []):
+        raise HTTPException(423, "Kelas terkunci. Masukkan password kelas terlebih dahulu")
 
 @api.get("/classes")
 async def list_classes(user=Depends(get_current_user)):
     classes = await db.classes.find(dscope(user), {"_id": 0}).sort("name", 1).to_list(500)
+    classes = [class_out(c, user) for c in classes]
     # Students & class/osis leaders only see their own class
     if user["role"] in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
         classes = [c for c in classes if c.get("name") == user.get("kelas")]
@@ -444,10 +466,22 @@ async def get_class(cid: str, user=Depends(get_current_user)):
     if not c:
         raise HTTPException(404, "Kelas tidak ditemukan")
     await assert_class_view(user, c)
+    c = class_out(c, user)
+    if c["locked"]:
+        return {k: c.get(k) for k in ("id", "name", "description", "has_password", "locked")}
     if c.get("homeroom_teacher_id"):
         t = await db.users.find_one({"id": c["homeroom_teacher_id"]}, {"_id": 0, "name": 1})
         c["homeroom_teacher_name"] = t["name"] if t else None
     return c
+
+@api.post("/classes/{cid}/unlock")
+async def unlock_class(cid: str, body: ClassUnlockIn, user=Depends(get_current_user)):
+    c = await db.classes.find_one({"id": cid})
+    await assert_class_view(user, c)
+    if c.get("password_hash") and not verify_pw(body.password, c["password_hash"]):
+        raise HTTPException(400, "Password kelas salah")
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"unlocked_classes": cid}})
+    return {"ok": True}
 
 def guru_can_access_class(user: dict, klass: dict) -> bool:
     """Guru may access a class if they are its homeroom teacher OR they teach one
@@ -503,12 +537,16 @@ async def guru_assert_manages(user: dict, class_id: Optional[str], kelas_name: O
 async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))):
     if await db.classes.find_one({"name": body.name, **dscope(user)}):
         raise HTTPException(400, "Nama kelas sudah ada")
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_by": user["id"],
+    data = body.model_dump()
+    pw = (data.pop("password") or "").strip()
+    doc = {"id": str(uuid.uuid4()), **data, "created_by": user["id"],
            "created_by_name": user["name"], "created_at": now_iso()}
+    if pw:
+        doc["password_hash"] = hash_pw(pw)
     dstamp(doc, user)
     await db.classes.insert_one(doc)
     doc.pop("_id", None)
-    return doc
+    return class_out(doc, user)
 
 @api.patch("/classes/{cid}")
 async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin"))):
@@ -518,8 +556,13 @@ async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("
     if not can_manage_class(user, klass):
         raise HTTPException(403, "Anda hanya dapat mengelola kelas milik/wali Anda sendiri")
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
-    await db.classes.update_one({"id": cid}, {"$set": upd})
-    return await db.classes.find_one({"id": cid}, {"_id": 0})
+    pw = (upd.pop("password", None) or "").strip()
+    if pw:
+        upd["password_hash"] = hash_pw(pw)
+        await db.users.update_many({"unlocked_classes": cid}, {"$pull": {"unlocked_classes": cid}})
+    if upd:
+        await db.classes.update_one({"id": cid}, {"$set": upd})
+    return class_out(await db.classes.find_one({"id": cid}, {"_id": 0}), user)
 
 @api.delete("/classes/{cid}")
 async def delete_class(cid: str, user=Depends(require_roles("super_admin"))):
@@ -564,6 +607,10 @@ async def list_org_structures(user=Depends(get_current_user)):
     for s in structures:
         s["member_count"] = await db.org_nodes.count_documents({"structure_id": s["id"]})
     return structures
+
+@api.get("/org-structures/public")
+async def list_org_structures_public():
+    return await db.org_structures.find({"is_demo": {"$ne": True}}, {"_id": 0}).sort("created_at", 1).to_list(500)
 
 @api.get("/org-structures/{sid}")
 async def get_org_structure(sid: str, user=Depends(get_current_user)):
@@ -666,11 +713,14 @@ class ScanIn(BaseModel):
     nisn: Optional[str] = None  # manual fallback using student's NISN on the card
     status: str = "hadir"  # hadir | izin | sakit | alpa
     photo: Optional[str] = None  # URL of webcam snapshot for anti-titip proof
+    method: str = "qr"  # qr | barcode | manual
 
 @api.post("/attendance/scan")
 async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "guru", "super_admin"))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
+    if body.method not in ("qr", "barcode", "manual"):
+        raise HTTPException(400, "Metode tidak valid")
     q = {"role": "siswa", **dscope(user)}
     if body.qr_code and body.qr_code.strip():
         q["qr_code"] = body.qr_code.strip()
@@ -684,13 +734,13 @@ async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "guru", "sup
     today = datetime.now(timezone.utc).date().isoformat()
     existing = await db.attendance.find_one({"student_id": student["id"], "date": today})
     if existing:
-        upd = {"status": body.status, "scanned_at": now_iso()}
+        upd = {"status": body.status, "scanned_at": now_iso(), "method": body.method}
         if body.photo: upd["photo"] = body.photo
         await db.attendance.update_one({"id": existing["id"]}, {"$set": upd})
         return {"ok": True, "student": strip(student), "status": body.status, "updated": True}
     rec = {"id": str(uuid.uuid4()), "student_id": student["id"], "student_name": student["name"],
            "kelas": student.get("kelas"), "date": today, "status": body.status, "scanned_at": now_iso(),
-           "scanned_by": user["name"], "photo": body.photo, "is_demo": bool(user.get("is_demo"))}
+           "scanned_by": user["name"], "photo": body.photo, "method": body.method, "is_demo": bool(user.get("is_demo"))}
     await db.attendance.insert_one(rec)
     return {"ok": True, "student": strip(student), "status": body.status}
 
@@ -720,9 +770,10 @@ async def export_attendance(date: Optional[str] = None, user=Depends(get_current
     q = dscope(user)
     if date: q["date"] = date
     docs = await db.attendance.find(q, {"_id": 0}).sort("scanned_at", -1).to_list(5000)
-    columns = ["Tanggal", "Nama Siswa", "Kelas", "Status", "Waktu Scan", "Petugas"]
+    columns = ["Tanggal", "Nama Siswa", "Kelas", "Status", "Metode", "Waktu Scan", "Petugas"]
     rows = [{"Tanggal": d.get("date"), "Nama Siswa": d.get("student_name"),
              "Kelas": d.get("kelas") or "-", "Status": (d.get("status") or "").upper(),
+             "Metode": {"barcode": "Barcode USB", "manual": "Manual"}.get(d.get("method"), "QR Code"),
              "Waktu Scan": d.get("scanned_at","")[:19].replace("T"," "),
              "Petugas": d.get("scanned_by") or "-"} for d in docs]
     from collections import Counter
@@ -1251,25 +1302,72 @@ async def del_ann(aid: str, user=Depends(get_current_user)):
 
 # ---------------- UANG KAS ----------------
 class KasIn(BaseModel):
-    kelas: str
+    kelas: str = ""
     amount: float
     note: str = ""
     type: str = "masuk"  # masuk | keluar
 
-@api.get("/kas")
-async def list_kas(kelas: Optional[str] = None, user=Depends(get_current_user)):
-    q = dict(dscope(user))
-    if kelas: q["kelas"] = kelas
-    elif user["role"] == "siswa" and user.get("kelas"): q["kelas"] = user["kelas"]
-    return await db.uang_kas.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+class KasUpdate(BaseModel):
+    kelas: Optional[str] = None
+    amount: Optional[float] = None
+    note: Optional[str] = None
+    type: Optional[str] = None
 
-@api.post("/kas")
-async def add_kas(body: KasIn, user=Depends(get_current_user)):
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(),
-           "recorded_by": user["name"], "created_at": now_iso()}
+def validate_tx(amount, type_):
+    if amount is not None and amount <= 0:
+        raise HTTPException(400, "Jumlah harus lebih dari 0")
+    if type_ is not None and type_ not in ("masuk", "keluar"):
+        raise HTTPException(400, "Tipe tidak valid")
+
+async def kas_class_for_view(cid: str, user: dict) -> dict:
+    klass = await db.classes.find_one({"id": cid})
+    await assert_class_view(user, klass)
+    await assert_class_unlocked(user, klass)
+    return klass
+
+def assert_kas_manager(user: dict, klass: dict):
+    if user.get("role") != "ketua_kelas" or user.get("kelas") != klass.get("name"):
+        raise HTTPException(403, "Hanya Ketua Kelas dari kelas ini yang dapat mengatur uang kas")
+
+@api.get("/classes/{cid}/kas")
+async def list_class_kas(cid: str, user=Depends(get_current_user)):
+    await kas_class_for_view(cid, user)
+    return await db.uang_kas.find({"class_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+@api.post("/classes/{cid}/kas")
+async def add_class_kas(cid: str, body: KasIn, user=Depends(get_current_user)):
+    klass = await kas_class_for_view(cid, user)
+    assert_kas_manager(user, klass)
+    validate_tx(body.amount, body.type)
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "kelas": klass["name"], "class_id": cid,
+           "recorded_by": user["name"], "recorded_by_id": user["id"], "created_at": now_iso()}
     dstamp(doc, user)
     await db.uang_kas.insert_one(doc); doc.pop("_id", None)
     return doc
+
+async def kas_tx_for_manage(kid: str, user: dict) -> dict:
+    tx = await db.uang_kas.find_one({"id": kid})
+    if not tx or not tx.get("class_id"):
+        raise HTTPException(404, "Transaksi tidak ditemukan")
+    klass = await kas_class_for_view(tx["class_id"], user)
+    assert_kas_manager(user, klass)
+    return tx
+
+@api.patch("/kas/{kid}")
+async def edit_kas(kid: str, body: KasUpdate, user=Depends(get_current_user)):
+    await kas_tx_for_manage(kid, user)
+    validate_tx(body.amount, body.type)
+    upd = {k: v for k, v in body.model_dump(exclude={"kelas"}).items() if v is not None}
+    if upd:
+        upd["updated_at"] = now_iso()
+        await db.uang_kas.update_one({"id": kid}, {"$set": upd})
+    return await db.uang_kas.find_one({"id": kid}, {"_id": 0})
+
+@api.delete("/kas/{kid}")
+async def delete_kas(kid: str, user=Depends(get_current_user)):
+    await kas_tx_for_manage(kid, user)
+    await db.uang_kas.delete_one({"id": kid})
+    return {"ok": True}
 
 # ---------------- SOCIAL FUND ----------------
 @api.get("/social-fund")
@@ -1278,11 +1376,30 @@ async def list_sf(user=Depends(get_current_user)):
 
 @api.post("/social-fund")
 async def add_sf(body: KasIn, user=Depends(require_roles("ketua_osis", "super_admin"))):
+    validate_tx(body.amount, body.type)
     doc = {"id": str(uuid.uuid4()), **body.model_dump(),
            "recorded_by": user["name"], "created_at": now_iso()}
     dstamp(doc, user)
     await db.social_fund.insert_one(doc); doc.pop("_id", None)
     return doc
+
+@api.patch("/social-fund/{sid}")
+async def edit_sf(sid: str, body: KasUpdate, user=Depends(require_roles("ketua_osis", "super_admin"))):
+    if not await db.social_fund.find_one({"id": sid, **dscope(user)}):
+        raise HTTPException(404, "Transaksi tidak ditemukan")
+    validate_tx(body.amount, body.type)
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        upd["updated_at"] = now_iso()
+        await db.social_fund.update_one({"id": sid}, {"$set": upd})
+    return await db.social_fund.find_one({"id": sid}, {"_id": 0})
+
+@api.delete("/social-fund/{sid}")
+async def delete_sf(sid: str, user=Depends(require_roles("ketua_osis", "super_admin"))):
+    res = await db.social_fund.delete_one({"id": sid, **dscope(user)})
+    if not res.deleted_count:
+        raise HTTPException(404, "Transaksi tidak ditemukan")
+    return {"ok": True}
 
 # ---------------- OSIS ELECTIONS ----------------
 class CandidateIn(BaseModel):
@@ -1836,10 +1953,11 @@ async def export_sf(user=Depends(get_current_user)):
                         columns, rows, summary, "Dana Sosial")
     return xlsx_response(data, "Dana_Sosial_OSIS.xlsx")
 
-@api.get("/kas/export")
-async def export_kas(kelas: Optional[str] = None, user=Depends(get_current_user)):
-    q = {}
-    if kelas: q["kelas"] = kelas
+@api.get("/classes/{cid}/kas/export")
+async def export_kas(cid: str, user=Depends(get_current_user)):
+    klass = await kas_class_for_view(cid, user)
+    kelas = klass["name"]
+    q = {"class_id": cid}
     docs = await db.uang_kas.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
     columns = ["Tanggal", "Kelas", "Tipe", "Jumlah (Rp)", "Keterangan", "Dicatat Oleh"]
     rows = [{"Tanggal": d.get("created_at","")[:10], "Kelas": d.get("kelas") or "-",
@@ -1998,6 +2116,10 @@ async def ppdb_export(user=Depends(require_roles("super_admin","kepsek","staff_t
 @app.on_event("startup")
 async def startup():
     init_storage()
+    async for tx in db.uang_kas.find({"class_id": {"$exists": False}}, {"_id": 0, "id": 1, "kelas": 1, "is_demo": 1}):
+        c = await db.classes.find_one({"name": tx.get("kelas"), "is_demo": True if tx.get("is_demo") else {"$ne": True}}, {"id": 1})
+        if c:
+            await db.uang_kas.update_one({"id": tx["id"]}, {"$set": {"class_id": c["id"]}})
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
     await db.users.create_index("qr_code")

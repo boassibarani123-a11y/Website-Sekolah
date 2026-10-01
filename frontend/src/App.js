@@ -11,7 +11,7 @@ import Schoolgram from "@/pages/Schoolgram";
 import Inventory from "@/pages/Inventory";
 import Assignments from "@/pages/Assignments";
 import Quizzes from "@/pages/Quizzes";
-import UangKas from "@/pages/UangKas";
+import PublicOrg from "@/pages/PublicOrg";
 import SocialFund from "@/pages/SocialFund";
 import Elections from "@/pages/Elections";
 import Achievements from "@/pages/Achievements";
@@ -51,6 +51,7 @@ function AppInner() {
         <Route path="/forgot-password" element={<ForgotPassword/>}/>
         <Route path="/reset-password" element={<ResetPassword/>}/>
         <Route path="/ppdb" element={<PpdbPublic/>}/>
+        <Route path="/struktur-organisasi" element={<PublicOrg/>}/>
         <Route path="/" element={<Protected><DashboardLayout/></Protected>}>
           <Route index element={<Dashboard/>}/>
           <Route path="accounts" element={<MasterAccounts/>}/>
@@ -65,7 +66,7 @@ function AppInner() {
           <Route path="school-info" element={<SchoolInfo/>}/>
           <Route path="org-structure" element={<OrgStructure/>}/>
           <Route path="org-structure/:id" element={<OrgStructureEditor/>}/>
-          <Route path="uang-kas" element={<UangKas/>}/>
+          <Route path="uang-kas" element={<Navigate to="/classes" replace/>}/>
           <Route path="social-fund" element={<SocialFund/>}/>
           <Route path="elections" element={<Elections/>}/>
           <Route path="achievements" element={<Achievements/>}/>

@@ -4,7 +4,9 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank } from "lucide-react";
+import { ClassKas } from "@/components/ClassKas";
+import { ClassUnlock } from "@/components/ClassUnlock";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -44,12 +46,14 @@ export default function ClassDetail() {
   const loadReschedules = useCallback(() => {
     api.get(`/reschedules?class_id=${id}`).then(r => setReschedules(r.data)).catch(()=>{});
   }, [id]);
-  useEffect(() => {
-    api.get(`/classes/${id}`).then(r => setKlass(r.data)).catch(()=>toast.error("Anda tidak memiliki akses ke kelas ini"));
-    loadReschedules();
+  const loadClass = useCallback(() => {
+    api.get(`/classes/${id}`).then(r => { setKlass(r.data); if (!r.data.locked) loadReschedules(); })
+      .catch(()=>toast.error("Anda tidak memiliki akses ke kelas ini"));
   }, [id, loadReschedules]);
+  useEffect(() => { loadClass(); }, [loadClass]);
 
   if (!klass) return <div className="text-slate-400 py-20 text-center">Memuat kelas...</div>;
+  if (klass.locked) return <ClassUnlock klass={klass} onUnlocked={loadClass}/>;
 
   // Class only loads if the user may access it, so any teacher here can manage tugas/quiz.
   const canManage = user.role === "super_admin" || user.role === "guru";
@@ -135,6 +139,10 @@ export default function ClassDetail() {
           className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="quiz"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
           <BrainCircuit className="w-4 h-4"/>Mini-Quiz
         </button>
+        <button data-testid="tab-kas" onClick={()=>setTab("kas")}
+          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="kas"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <PiggyBank className="w-4 h-4"/>Uang Kas
+        </button>
       </div>
 
       {isTeacher && !canManage && (
@@ -143,7 +151,7 @@ export default function ClassDetail() {
         </div>
       )}
 
-      {tab === "tugas"
+      {tab === "kas" ? <ClassKas klass={klass}/> : tab === "tugas"
         ? <TugasTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
         : <QuizTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
 

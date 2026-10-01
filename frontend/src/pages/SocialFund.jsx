@@ -2,12 +2,19 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { HandCoins, Download } from "lucide-react";
+import { HandCoins, Download, Pencil, Trash2 } from "lucide-react";
+import { TxEditModal } from "@/components/TxEditModal";
 
 export default function SocialFund() {
   const { user } = useAuth();
   const isOfficial = ["ketua_osis","super_admin"].includes(user.role);
   const [rows,setRows]=useState([]);
+  const [editing,setEditing]=useState(null);
+  const remove = async (r) => {
+    if (!window.confirm(`Hapus transaksi "${r.note||r.type}" sebesar Rp ${r.amount.toLocaleString("id-ID")}?`)) return;
+    try { await api.delete(`/social-fund/${r.id}`); toast.success("Transaksi dihapus"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
+  };
   const [f,setF]=useState({kelas:"", amount:0, note:"", type:"masuk"});
   const load = () => api.get("/social-fund").then(r=>setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -35,18 +42,26 @@ export default function SocialFund() {
         <select value={f.type} onChange={e=>setF({...f,type:e.target.value})} className="px-3 py-2 border-2 rounded-lg">
           <option value="masuk">Masuk</option><option value="keluar">Keluar</option></select>
         <input placeholder="Keterangan" value={f.note} onChange={e=>setF({...f,note:e.target.value})} className="px-3 py-2 border-2 rounded-lg lg:col-span-1"/>
-        <button onClick={async()=>{await api.post("/social-fund",f); toast.success("Tercatat"); load(); setF({...f,amount:0,note:""});}}
+        <button data-testid="sf-add-button" onClick={async()=>{if(!f.amount||f.amount<=0)return toast.error("Isi jumlah");try{await api.post("/social-fund",f); toast.success("Tercatat"); load(); setF({...f,amount:0,note:""});}catch(e){toast.error(e.response?.data?.detail||"Gagal mencatat");}}}
           className="bg-slate-900 text-white rounded-lg font-semibold px-4">Simpan</button>
       </div>
     </div>}
     <div className="bg-white border rounded-2xl divide-y">
       {rows.map(r=>(
-        <div key={r.id} className="p-4 flex justify-between">
+        <div key={r.id} data-testid={`sf-row-${r.id}`} className="p-4 flex justify-between items-center gap-3">
           <div><p className="font-semibold text-sm">{r.note||"—"}</p>
             <p className="text-xs text-slate-500">{r.kelas} · {new Date(r.created_at).toLocaleDateString("id-ID")}</p></div>
-          <p className={`font-bold ${r.type==="masuk"?"text-emerald-600":"text-rose-600"}`}>{r.type==="masuk"?"+":"−"} Rp {r.amount.toLocaleString("id-ID")}</p>
+          <div className="flex items-center gap-2 shrink-0">
+            <p className={`font-bold ${r.type==="masuk"?"text-emerald-600":"text-rose-600"}`}>{r.type==="masuk"?"+":"−"} Rp {r.amount.toLocaleString("id-ID")}</p>
+            {isOfficial && <>
+              <button data-testid={`sf-edit-${r.id}`} onClick={()=>setEditing(r)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"><Pencil className="w-4 h-4"/></button>
+              <button data-testid={`sf-delete-${r.id}`} onClick={()=>remove(r)} className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50"><Trash2 className="w-4 h-4"/></button>
+            </>}
+          </div>
         </div>
       ))}
     </div>
+    {editing && <TxEditModal tx={editing} showSource onClose={()=>setEditing(null)}
+      onSave={async(body)=>{await api.patch(`/social-fund/${editing.id}`, body); toast.success("Transaksi diperbarui"); setEditing(null); load();}}/>}
   </div>;
 }

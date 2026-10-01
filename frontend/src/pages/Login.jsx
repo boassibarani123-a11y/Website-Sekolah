@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { GraduationCap, LogIn, Eye, EyeOff } from "lucide-react";
+import { GraduationCap, LogIn, Eye, EyeOff, Network, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { LoginAnnouncementBanner } from "@/components/LoginAnnouncementBanner";
 
@@ -109,7 +109,17 @@ export default function Login() {
             </div>
           </div>
 
-          <div className="mt-6 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
+          <a href="/struktur-organisasi" data-testid="public-org-link"
+            className="mt-6 flex items-center justify-between gap-3 p-4 bg-white border-2 border-slate-200 hover:border-indigo-400 rounded-2xl transition-colors group">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><Network className="w-5 h-5"/></div>
+              <div><p className="text-sm font-heading font-bold text-slate-900">Struktur Organisasi Sekolah</p>
+                <p className="text-xs text-slate-500">Lihat bagan organisasi tanpa perlu login</p></div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-indigo-500 group-hover:translate-x-1 transition-transform"/>
+          </a>
+
+          <div className="mt-4 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
             <p className="text-sm font-heading font-bold text-slate-900">📥 Calon Siswa Baru?</p>
             <p className="text-xs text-slate-600 mt-1">Daftar online tanpa perlu akun, upload berkas, dan pantau status kelulusan.</p>
             <a href="/ppdb" data-testid="ppdb-cta-link"

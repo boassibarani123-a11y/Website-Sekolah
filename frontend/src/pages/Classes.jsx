@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight, UserCog } from "lucide-react";
+import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight, UserCog, Lock } from "lucide-react";
 
 export default function Classes() {
   const { user } = useAuth();
@@ -76,6 +76,11 @@ export default function Classes() {
             </div>
             <h3 className="font-heading font-extrabold text-lg text-slate-900 mt-3 flex items-center gap-2 flex-wrap">
               {c.name}
+              {c.has_password && (
+                <span data-testid={`class-lock-badge-${c.id}`} title={c.locked ? "Butuh password" : "Dilindungi password"} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${c.locked ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                  <Lock className="w-3 h-3"/>{c.locked ? "Terkunci" : "Berpassword"}
+                </span>
+              )}
               {user.role === "guru" && c.homeroom_teacher_id === user.id && (
                 <span data-testid={`wali-badge-${c.id}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200">
                   <UserCog className="w-3 h-3"/>Wali Anda
@@ -127,6 +132,7 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
   const [description, setDescription] = useState(klass.description || "");
   const [subjects, setSubjects] = useState(klass.subjects || []);
   const [homeroom, setHomeroom] = useState(klass.homeroom_teacher_id || "");
+  const [password, setPassword] = useState("");
   const [allSubjects, setAllSubjects] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -137,6 +143,7 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
     setBusy(true);
     try {
       const body = { name: name.trim(), description, subjects, homeroom_teacher_id: homeroom || null };
+      if (password.trim()) body.password = password.trim();
       if (isEdit) await api.patch(`/classes/${klass.id}`, body);
       else await api.post("/classes", body);
       toast.success(isEdit ? "Kelas diperbarui" : "Kelas dibuat");
@@ -163,6 +170,13 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Deskripsi (opsional)</label>
             <textarea rows={2} value={description} onChange={e=>setDescription(e.target.value)}
               className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1"><Lock className="w-3 h-3"/>Password Kelas</label>
+            <input data-testid="class-password-field" type="text" value={password} onChange={e=>setPassword(e.target.value)}
+              placeholder={klass.has_password ? "Kosongkan jika tidak ingin mengubah" : "Buat password kelas (opsional)"}
+              className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
+            <p className="mt-1 text-[10px] text-slate-400">{klass.has_password ? "Kelas ini sudah berpassword. Mengubah password akan meminta semua anggota memasukkan password baru." : "Anggota kelas cukup memasukkan password ini sekali saat pertama masuk kelas."}</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Wali Kelas (opsional)</label>
