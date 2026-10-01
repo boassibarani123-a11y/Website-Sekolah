@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 14 covers monthly kas recap, quiz time-limit, super-admin remove class password, and Friday kas-reminder cron. 15/15 backend tests pass; all critical frontend flows validated with Playwright.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter14_monthly_quiz_pwrm_cron.py",
+    "/app/test_reports/pytest/iter14_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 2452 lines — recommend splitting into modules (quizzes.py, kas.py, cron.py) per 700-line guideline.",
+    "run_kas_reminder() does not filter weekday — endpoint relies on the cron scheduler (crons.yml Friday 08:00 WIB) to only fire Fridays. Manual POST (admin trigger) can send reminders on any day, which is intended but worth documenting.",
+    "cron_kas_reminder uses hmac.compare_digest on secret but returns raw 401 (correct). Good idempotency via db.cron_runs {run_id}."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter14_monthly_quiz_pwrm_cron.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all critical flows)"},
+  "test_credentials": "admin.demo / guru.demo / siswa.demo / kelas.demo @sekolahku.id with Demo12345",
+  "seed_data_creation": "Created and cleaned up: TEST_timed quiz and TEST_UI_timed quiz (deleted). Class XI IPA 1 password was temporarily set then removed (returned to no-password state).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests at /app/backend/tests/test_iter14_monthly_quiz_pwrm_cron.py (15 tests). Login response uses 'token' key (not 'access_token'). Notifications API returns {items:[], unread:N} object (not list). WEBHOOK_CRON_SECRET read from /app/backend/.env. Demo class XI IPA 1 (97194f55-894d-44dc-957a-1c2a8522e2b0) left WITHOUT password as per convention.",
+  "verified_flows": [
+    "GET /api/classes/{cid}/kas/monthly: 403 siswa, 403 guru, 400 bad-month, 200 super_admin+ketua_kelas with month/weeks/students structure and paid/unpaid/future cell statuses.",
+    "Frontend: monthly-kas-card visible for admin and ketua_kelas, hidden for siswa; monthly-row-* and monthly-cell-{id}-{i} with data-status populated; month input YYYY-MM reloads table.",
+    "PATCH /api/classes/{cid} remove_password: 403 guru, 200 super_admin; verified has_password toggles True→False and lock badge removed in UI.",
+    "Quiz time_limit validation 0–600 (999 returns 400). POST /quizzes/{qid}/start creates session; re-calling returns SAME deadline (resume). POST /quizzes/attempt without start → 400 'Quiz belum dimulai'. Submit before deadline returns score/total/percent.",
+    "Frontend: quiz card shows '⏱ 1 menit' badge; quiz-take-modal + quiz-timer countdown works (00:59→reopened 00:54 confirming resume).",
+    "POST /api/cron/kas-reminder: 401 missing/wrong auth; 400 missing run id; 200 ok with duplicate detection; background task delivered 'Pengingat Kas XI IPA 1' notification to unpaid siswa.demo."
+  ]
+}

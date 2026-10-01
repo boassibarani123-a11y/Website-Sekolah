@@ -22,5 +22,10 @@ Note: the repo's babel plugin crashes on recursive JSX. Use React.createElement 
   - Quiz password: the guru who created the quiz, or super_admin, can set, change or remove it. Students unlock it once (stored in users.unlocked_quizzes). Locked quizzes are returned without their questions.
   - Weekly kas billing: GET /api/classes/{cid}/kas/weekly, for ketua_kelas and super_admin, with a Monday–Sunday WIB week. The "Tandai Bayar" button records a masuk transaction with student_id. Optional "Dari siswa" select in the kas form.
 
+- Iter 5:
+  - Monthly kas recap: GET /api/classes/{cid}/kas/monthly?month=YYYY-MM. Uses Mon–Sun WIB weeks that overlap the month. Table shows each student's status per week (paid / unpaid / future).
+  - Quiz time limit (time_limit in minutes): POST /api/quizzes/{id}/start creates a server-side session. Timer counts down and answers auto-submit at 0. Attempts are rejected after the deadline + 20s.
+  - Super admin can remove a class password (remove_password).
+  - Friday 08:00 WIB cron (.emergent/crons.yml) calls POST /api/cron/kas-reminder (Bearer WEBHOOK_CRON_SECRET, idempotent via cron_runs). It sends an in-app notification to unpaid students in classes that use weekly billing.
+
 ## Backlog
-- P1: Option to remove a class password (currently it can only be set or changed).
