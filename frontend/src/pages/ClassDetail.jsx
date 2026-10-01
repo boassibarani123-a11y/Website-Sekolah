@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
   FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock } from "lucide-react";
 import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
+import { QuizTakeModal, QuizTimeField } from "@/components/QuizTake";
 import { ClassKas } from "@/components/ClassKas";
 import { ClassUnlock } from "@/components/ClassUnlock";
 
@@ -508,10 +509,9 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [taking, setTaking] = useState(null);
-  const [answers, setAnswers] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [unlocking, setUnlocking] = useState(null);
-  const startQuiz = (q) => { if (q.locked) return setUnlocking(q); setTaking(q); setAnswers(Array(q.questions.length).fill(-1)); };
+  const startQuiz = (q) => { if (q.locked) return setUnlocking(q); setTaking(q); };
 
   const load = useCallback(() => {
     const q = subject !== "all" ? `&subject=${encodeURIComponent(subject)}` : "";
@@ -519,11 +519,6 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
   }, [klass.id, subject]);
   useEffect(() => { load(); }, [load]);
 
-  const submit = async () => {
-    const r = await api.post("/quizzes/attempt", { quiz_id: taking.id, answers });
-    toast.success(`Skor: ${r.data.score}/${r.data.total} (${r.data.percent.toFixed(0)}%)`);
-    setTaking(null);
-  };
 
   return (
     <div className="space-y-4">
@@ -553,7 +548,7 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
               )}
             </div>
             <h3 className="font-heading font-bold mt-3">{q.title}</h3>
-            <p className="text-xs text-slate-500 mt-1">{q.question_count ?? (q.questions||[]).length} soal</p>
+            <p className="text-xs text-slate-500 mt-1">{q.question_count ?? (q.questions||[]).length} soal{q.time_limit ? ` · ⏱ ${q.time_limit} menit` : ""}</p>
             {!isTeacher && <button data-testid={`take-quiz-${q.id}`} onClick={()=>startQuiz(q)}
               className="mt-3 w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800">Kerjakan</button>}
           </div>
@@ -563,29 +558,7 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
       {showNew && <NewQuizModal klass={klass} subjects={teachSubjects} onClose={()=>setShowNew(false)} onDone={()=>{load();setShowNew(false);}}/>}
       {editItem && <NewQuizModal klass={klass} subjects={teachSubjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load();setEditItem(null);}}/>}
       {unlocking && <QuizUnlockModal quiz={unlocking} onClose={()=>setUnlocking(null)} onUnlocked={(qz)=>{setUnlocking(null); load(); startQuiz(qz);}}/>}
-      {taking && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold">{taking.title}</h3>
-              <button onClick={()=>setTaking(null)} className="p-1.5"><X className="w-5 h-5"/></button></div>
-            <div className="p-5 space-y-4">
-              {taking.questions.map((q,i)=>(
-                <div key={i} className="p-4 bg-slate-50 rounded-xl">
-                  <p className="font-semibold text-sm mb-2">{i+1}. {q.q}</p>
-                  <div className="space-y-1.5">
-                    {q.options.map((o,oi)=>(
-                      <label key={oi} className="flex items-center gap-2 text-sm p-2 rounded-lg hover:bg-white cursor-pointer">
-                        <input type="radio" checked={answers[i]===oi} onChange={()=>{const a=[...answers];a[i]=oi;setAnswers(a);}}/>{o}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <button data-testid="submit-quiz-button" onClick={submit} className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold">Kirim Jawaban</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {taking && <QuizTakeModal quiz={taking} onClose={()=>setTaking(null)} onDone={()=>setTaking(null)}/>}
     </div>
   );
 }
@@ -598,13 +571,14 @@ function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState("");
   const [removePw, setRemovePw] = useState(false);
+  const [timeLimit, setTimeLimit] = useState(initial?.time_limit || "");
   const add = () => setQs([...qs, { q:"", options:["","","",""], answer:0 }]);
   const submit = async () => {
     if (!title.trim()) return toast.error("Judul quiz wajib diisi");
     setBusy(true);
     try {
-      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs, ...quizPasswordBody(password, removePw) }); toast.success("Quiz diperbarui"); }
-      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); }
+      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs, time_limit: +timeLimit || 0, ...quizPasswordBody(password, removePw) }); toast.success("Quiz diperbarui"); }
+      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs, time_limit: +timeLimit || 0, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); }
       onDone();
     }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
@@ -627,6 +601,7 @@ function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
               <input placeholder="Mapel" value={subject} onChange={e=>setSubject(e.target.value)} className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
             )}
           </div>
+          <QuizTimeField value={timeLimit} onChange={setTimeLimit}/>
           <QuizPasswordField hasPassword={!!initial?.has_password} value={password} onChange={setPassword} remove={removePw} onRemove={setRemovePw}/>
           {qs.map((q,qi)=>(
             <div key={qi} className="p-3 bg-slate-50 rounded-xl space-y-2 relative">

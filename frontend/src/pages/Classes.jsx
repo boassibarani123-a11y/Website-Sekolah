@@ -133,6 +133,7 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
   const [subjects, setSubjects] = useState(klass.subjects || []);
   const [homeroom, setHomeroom] = useState(klass.homeroom_teacher_id || "");
   const [password, setPassword] = useState("");
+  const [removePw, setRemovePw] = useState(false);
   const [allSubjects, setAllSubjects] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -143,7 +144,8 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
     setBusy(true);
     try {
       const body = { name: name.trim(), description, subjects, homeroom_teacher_id: homeroom || null };
-      if (password.trim()) body.password = password.trim();
+      if (removePw) body.remove_password = true;
+      else if (password.trim()) body.password = password.trim();
       if (isEdit) await api.patch(`/classes/${klass.id}`, body);
       else await api.post("/classes", body);
       toast.success(isEdit ? "Kelas diperbarui" : "Kelas dibuat");
@@ -173,9 +175,15 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1"><Lock className="w-3 h-3"/>Password Kelas</label>
-            <input data-testid="class-password-field" type="text" value={password} onChange={e=>setPassword(e.target.value)}
+            <input data-testid="class-password-field" type="text" value={password} disabled={removePw} onChange={e=>setPassword(e.target.value)}
               placeholder={klass.has_password ? "Kosongkan jika tidak ingin mengubah" : "Buat password kelas (opsional)"}
-              className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
+              className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none disabled:bg-slate-50"/>
+            {klass.has_password && (
+              <button type="button" data-testid="class-remove-password-button" onClick={()=>{setRemovePw(v=>!v); setPassword("");}}
+                className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors ${removePw ? "bg-rose-600 border-rose-600 text-white" : "border-rose-200 text-rose-600 hover:bg-rose-50"}`}>
+                <Trash2 className="w-3.5 h-3.5"/>{removePw ? "Password akan dihapus saat disimpan (klik untuk batal)" : "Hapus Password Kelas"}
+              </button>
+            )}
             <p className="mt-1 text-[10px] text-slate-400">{klass.has_password ? "Kelas ini sudah berpassword. Mengubah password akan meminta semua anggota memasukkan password baru." : "Anggota kelas cukup memasukkan password ini sekali saat pertama masuk kelas."}</p>
           </div>
           <div>

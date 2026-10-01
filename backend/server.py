@@ -10,6 +10,7 @@ import base64
 import logging
 import hashlib
 import secrets
+import hmac
 import bcrypt
 import jwt
 import httpx
@@ -422,6 +423,7 @@ class ClassUpdate(BaseModel):
     homeroom_teacher_id: Optional[str] = None
     description: Optional[str] = None
     password: Optional[str] = None
+    remove_password: Optional[bool] = None
 
 class ClassUnlockIn(BaseModel):
     password: str
@@ -576,7 +578,10 @@ async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("
         raise HTTPException(403, "Anda hanya dapat mengelola kelas milik/wali Anda sendiri")
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     pw = (upd.pop("password", None) or "").strip()
-    if pw:
+    if upd.pop("remove_password", None):
+        await db.classes.update_one({"id": cid}, {"$unset": {"password_hash": ""}})
+        await db.users.update_many({"unlocked_classes": cid}, {"$pull": {"unlocked_classes": cid}})
+    elif pw:
         upd["password_hash"] = hash_pw(pw)
         await db.users.update_many({"unlocked_classes": cid}, {"$pull": {"unlocked_classes": cid}})
     if upd:
@@ -1139,6 +1144,7 @@ class QuizIn(BaseModel):
     subject: Optional[str] = None
     class_id: Optional[str] = None
     password: Optional[str] = None
+    time_limit: Optional[int] = None  # minutes; None/0 = no limit
 
 class QuizUnlockIn(BaseModel):
     password: str
@@ -1167,6 +1173,37 @@ class QuizUpdate(BaseModel):
     questions: Optional[List[dict]] = None
     password: Optional[str] = None
     remove_password: Optional[bool] = None
+    time_limit: Optional[int] = None
+
+QUIZ_GRACE_SECONDS = 20
+
+def validate_time_limit(v):
+    if v is not None and not (0 <= v <= 600):
+        raise HTTPException(400, "Batas waktu harus 0-600 menit")
+
+async def assert_quiz_open_for_student(user: dict, quiz: dict):
+    await assert_doc_class_unlocked(user, quiz)
+    if quiz.get("password_hash") and quiz["id"] not in (user.get("unlocked_quizzes") or []):
+        raise HTTPException(423, "Quiz terkunci. Masukkan password quiz terlebih dahulu")
+
+@api.post("/quizzes/{qid}/start")
+async def start_quiz(qid: str, user=Depends(require_roles("siswa"))):
+    quiz = await db.quizzes.find_one({"id": qid, **dscope(user)})
+    if not quiz:
+        raise HTTPException(404, "Quiz tidak ditemukan")
+    await assert_quiz_open_for_student(user, quiz)
+    limit = quiz.get("time_limit") or 0
+    now = datetime.now(timezone.utc)
+    if not limit:
+        return {"time_limit": 0, "server_now": now.isoformat()}
+    sess = await db.quiz_sessions.find_one({"quiz_id": qid, "student_id": user["id"]}, {"_id": 0})
+    if not sess:
+        sess = {"quiz_id": qid, "student_id": user["id"], "started_at": now.isoformat(),
+                "deadline": (now + timedelta(minutes=limit)).isoformat()}
+        await db.quiz_sessions.insert_one(dict(sess))
+    expired = now.isoformat() > sess["deadline"]
+    return {"time_limit": limit, "started_at": sess["started_at"], "deadline": sess["deadline"],
+            "server_now": now.isoformat(), "expired": expired}
 
 @api.get("/quizzes")
 async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
@@ -1194,6 +1231,7 @@ async def unlock_quiz(qid: str, body: QuizUnlockIn, user=Depends(get_current_use
 @api.post("/quizzes")
 async def create_quiz(body: QuizIn, user=Depends(require_roles("guru", "super_admin"))):
     await guru_assert_manages(user, body.class_id, body.kelas, body.subject)
+    validate_time_limit(body.time_limit)
     data = body.model_dump()
     pw = (data.pop("password") or "").strip()
     doc = {"id": str(uuid.uuid4()), **data, "teacher_id": user["id"],
@@ -1211,7 +1249,10 @@ async def edit_quiz(qid: str, body: QuizUpdate, user=Depends(require_roles("guru
         raise HTTPException(404, "Quiz tidak ditemukan")
     if user["role"] != "super_admin" and qz.get("teacher_id") != user["id"]:
         raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit quiz ini")
+    validate_time_limit(body.time_limit)
     upd = {k: v for k, v in body.model_dump(exclude={"password", "remove_password"}).items() if v is not None}
+    if "time_limit" in upd:
+        await db.quiz_sessions.delete_many({"quiz_id": qid})
     pw = (body.password or "").strip()
     if body.remove_password:
         await db.quizzes.update_one({"id": qid}, {"$unset": {"password_hash": ""}})
@@ -1231,15 +1272,22 @@ async def delete_quiz(qid: str, user=Depends(require_roles("guru", "super_admin"
         raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus quiz ini")
     await db.quizzes.delete_one({"id": qid})
     await db.quiz_attempts.delete_many({"quiz_id": qid})
+    await db.quiz_sessions.delete_many({"quiz_id": qid})
     return {"ok": True}
 
 @api.post("/quizzes/attempt")
 async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))):
     quiz = await db.quizzes.find_one({"id": body.quiz_id})
     if not quiz: raise HTTPException(404, "Quiz tidak ditemukan")
-    await assert_doc_class_unlocked(user, quiz)
-    if quiz.get("password_hash") and body.quiz_id not in (user.get("unlocked_quizzes") or []):
-        raise HTTPException(423, "Quiz terkunci. Masukkan password quiz terlebih dahulu")
+    await assert_quiz_open_for_student(user, quiz)
+    if quiz.get("time_limit"):
+        sess = await db.quiz_sessions.find_one({"quiz_id": body.quiz_id, "student_id": user["id"]})
+        if not sess:
+            raise HTTPException(400, "Quiz belum dimulai")
+        late = datetime.now(timezone.utc) - datetime.fromisoformat(sess["deadline"])
+        if late.total_seconds() > QUIZ_GRACE_SECONDS:
+            raise HTTPException(400, "Waktu pengerjaan quiz sudah habis")
+        await db.quiz_sessions.delete_one({"quiz_id": body.quiz_id, "student_id": user["id"]})
     questions = quiz.get("questions", [])
     score = 0
     for i, q in enumerate(questions):
@@ -1423,27 +1471,111 @@ async def add_class_kas(cid: str, body: KasIn, user=Depends(get_current_user)):
 
 WIB = timezone(timedelta(hours=7))
 
-@api.get("/classes/{cid}/kas/weekly")
-async def weekly_kas_status(cid: str, user=Depends(get_current_user)):
+def week_start_wib(dt: datetime) -> datetime:
+    dt = dt.astimezone(WIB)
+    return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+async def class_students(klass: dict) -> list:
+    q = {"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": klass["name"],
+         "is_demo": True if klass.get("is_demo") else {"$ne": True}}
+    return await db.users.find(q, {"_id": 0, "id": 1, "name": 1, "nisn": 1}).sort("name", 1).to_list(1000)
+
+async def kas_paid_map(cid: str, start: datetime, end: datetime) -> dict:
+    pays = await db.uang_kas.find({"class_id": cid, "type": "masuk", "student_id": {"$ne": None},
+                                   "created_at": {"$gte": start.astimezone(timezone.utc).isoformat(),
+                                                  "$lt": end.astimezone(timezone.utc).isoformat()}},
+                                  {"_id": 0, "student_id": 1, "amount": 1}).to_list(5000)
+    out = {}
+    for p in pays:
+        out[p["student_id"]] = out.get(p["student_id"], 0) + p["amount"]
+    return out
+
+async def kas_report_class(cid: str, user: dict) -> dict:
     klass = await kas_class_for_view(cid, user)
     if user.get("role") != "super_admin":
         assert_kas_manager(user, klass)
-    now = datetime.now(WIB)
-    start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return klass
+
+@api.get("/classes/{cid}/kas/weekly")
+async def weekly_kas_status(cid: str, user=Depends(get_current_user)):
+    klass = await kas_report_class(cid, user)
+    start = week_start_wib(datetime.now(timezone.utc))
     end = start + timedelta(days=7)
-    start_utc = start.astimezone(timezone.utc).isoformat()
-    end_utc = end.astimezone(timezone.utc).isoformat()
-    students = await db.users.find({"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": klass["name"], **dscope(user)},
-                                   {"_id": 0, "id": 1, "name": 1, "nisn": 1}).sort("name", 1).to_list(1000)
-    pays = await db.uang_kas.find({"class_id": cid, "type": "masuk", "student_id": {"$ne": None},
-                                   "created_at": {"$gte": start_utc, "$lt": end_utc}}, {"_id": 0}).to_list(2000)
-    paid_map = {}
-    for p in pays:
-        paid_map[p["student_id"]] = paid_map.get(p["student_id"], 0) + p["amount"]
+    students = await class_students(klass)
+    paid_map = await kas_paid_map(cid, start, end)
     paid = [{**s, "amount": paid_map[s["id"]]} for s in students if s["id"] in paid_map]
     unpaid = [s for s in students if s["id"] not in paid_map]
     return {"week_start": start.date().isoformat(), "week_end": (end - timedelta(days=1)).date().isoformat(),
             "total": len(students), "paid": paid, "unpaid": unpaid}
+
+@api.get("/classes/{cid}/kas/monthly")
+async def monthly_kas_recap(cid: str, month: Optional[str] = None, user=Depends(get_current_user)):
+    klass = await kas_report_class(cid, user)
+    now = datetime.now(WIB)
+    try:
+        y, m = (int(x) for x in (month or now.strftime("%Y-%m")).split("-"))
+        first = datetime(y, m, 1, tzinfo=WIB)
+    except ValueError:
+        raise HTTPException(400, "Format bulan harus YYYY-MM")
+    nxt = datetime(y + (m == 12), m % 12 + 1, 1, tzinfo=WIB)
+    cur_week = week_start_wib(now)
+    weeks, ws = [], week_start_wib(first)
+    while ws < nxt:
+        weeks.append(ws)
+        ws += timedelta(days=7)
+    students = await class_students(klass)
+    week_maps = [await kas_paid_map(cid, w, w + timedelta(days=7)) for w in weeks]
+    rows = []
+    for st in students:
+        cells = []
+        for w, pm in zip(weeks, week_maps):
+            amt = pm.get(st["id"], 0)
+            cells.append({"amount": amt, "status": "paid" if amt else ("future" if w > cur_week else "unpaid")})
+        rows.append({**st, "weeks": cells, "paid_count": sum(1 for c in cells if c["status"] == "paid"),
+                     "total_amount": sum(c["amount"] for c in cells)})
+    return {"month": f"{y:04d}-{m:02d}", "current_week_start": cur_week.date().isoformat(),
+            "weeks": [{"start": w.date().isoformat(), "end": (w + timedelta(days=6)).date().isoformat(),
+                       "label": f"Minggu {i + 1}"} for i, w in enumerate(weeks)],
+            "students": rows}
+
+# ---------------- CRON: Friday kas reminder ----------------
+async def run_kas_reminder():
+    start = week_start_wib(datetime.now(timezone.utc))
+    end = start + timedelta(days=7)
+    class_ids = await db.uang_kas.distinct("class_id", {"student_id": {"$ne": None}})
+    sent = 0
+    for cid in class_ids:
+        klass = await db.classes.find_one({"id": cid}, {"_id": 0})
+        if not klass:
+            continue
+        paid = await kas_paid_map(cid, start, end)
+        unpaid = [s["id"] for s in await class_students(klass) if s["id"] not in paid]
+        if unpaid:
+            await notify(unpaid, f"Pengingat Kas {klass['name']}",
+                         "Kamu belum membayar uang kas minggu ini. Segera setor ke Ketua Kelas ya!",
+                         f"/classes/{cid}")
+            sent += len(unpaid)
+    logger.info("Kas reminder: %s notifikasi terkirim", sent)
+
+@api.post("/cron/kas-reminder")
+async def cron_kas_reminder(request: Request, bg: BackgroundTasks):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    if not secret or not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], secret):
+        raise HTTPException(401, "Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid body")
+    run_id = request.headers.get("X-Webhook-Id") or (body or {}).get("run_id")
+    if not run_id:
+        raise HTTPException(400, "Missing run id")
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return {"ok": True, "duplicate": True}
+    await db.cron_runs.insert_one({"run_id": run_id, "job": "kas-reminder", "created_at": now_iso()})
+    bg.add_task(run_kas_reminder)
+    return {"ok": True}
 
 async def kas_tx_for_manage(kid: str, user: dict) -> dict:
     tx = await db.uang_kas.find_one({"id": kid})

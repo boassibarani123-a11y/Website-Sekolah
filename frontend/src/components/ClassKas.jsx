@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PiggyBank, TrendingUp, TrendingDown, Pencil, Trash2, Download, Lock } from "lucide-react";
 import { TxEditModal } from "@/components/TxEditModal";
 import { WeeklyKas } from "@/components/WeeklyKas";
+import { MonthlyKas } from "@/components/MonthlyKas";
 
 const rupiah = (n) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 
@@ -15,9 +16,11 @@ export function ClassKas({ klass }) {
   const [f, setF] = useState({ amount: 0, note: "", type: "masuk" });
   const [editing, setEditing] = useState(null);
   const [weekly, setWeekly] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const canSeeWeekly = canManage || user.role === "super_admin";
   const load = () => {
     api.get(`/classes/${klass.id}/kas`).then(r => setRows(r.data)).catch(() => {});
+    setRefreshKey(k => k + 1);
     if (canSeeWeekly) api.get(`/classes/${klass.id}/kas/weekly`).then(r => setWeekly(r.data)).catch(() => {});
   };
   const payWeekly = async (s, amount) => {
@@ -81,6 +84,7 @@ export function ClassKas({ klass }) {
       )}
 
       {canSeeWeekly && <WeeklyKas classId={klass.id} data={weekly} canPay={canManage} onPay={payWeekly} />}
+      {canSeeWeekly && <MonthlyKas classId={klass.id} refreshKey={refreshKey} />}
 
       <div className="flex justify-end">
         <button data-testid="kas-export-button" onClick={exportXlsx} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl flex items-center gap-2"><Download className="w-4 h-4" />Export Excel</button>
