@@ -32,6 +32,7 @@ import Classes from "@/pages/Classes";
 import ClassDetail from "@/pages/ClassDetail";
 import SchoolInfo from "@/pages/SchoolInfo";
 import OrgStructure from "@/pages/OrgStructure";
+import OrgStructureEditor from "@/pages/OrgStructureEditor";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -63,6 +64,7 @@ function AppInner() {
           <Route path="classes/:id" element={<ClassDetail/>}/>
           <Route path="school-info" element={<SchoolInfo/>}/>
           <Route path="org-structure" element={<OrgStructure/>}/>
+          <Route path="org-structure/:id" element={<OrgStructureEditor/>}/>
           <Route path="uang-kas" element={<UangKas/>}/>
           <Route path="social-fund" element={<SocialFund/>}/>
           <Route path="elections" element={<Elections/>}/>

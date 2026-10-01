@@ -230,3 +230,31 @@ agent_communication_v2:
     -message: "Implemented class-feature enhancements. Please test backend with super_admin (boassibarani123@gmail.com / Boas12345io). Scenarios: (1) Subjects CRUD + duplicate 400. (2) Create a subject 'Matematika', create class 'XI IPA 1' with subjects=[Matematika], create a guru with subjects=[Matematika] -> as that guru GET /classes should include XI IPA 1; create another class 'XII IPS 1' with subjects=['Sejarah'] -> guru should NOT see it and GET that class id -> 403. (3) Create guru/siswa and verify siswa of one kelas gets 403 on another class id. (4) guru create_assign for subject they teach -> 200; for subject they don't teach -> 403. (5) class create/patch/delete as guru -> 403. (6) submissions/status returns roster without content for a student; (7) reschedules POST/GET/DELETE. Clean up any QA accounts/classes/subjects you create."
     -agent: "testing"
     -message: "✅ BACKEND TESTING COMPLETE - ALL 38 TESTS PASSED. Comprehensive testing of Class Enhancement features completed successfully. All scenarios A-F passed: (A) Subjects CRUD with duplicate validation, (B) Guru subject-based class access filtering and super_admin-only class management, (C) Student class isolation, (D) Assignment subject permission enforcement, (E) Submission warehouse with privacy controls (students see WHO submitted but not content/attachments), (F) Reschedule notices with proper access control. All test data cleaned up. Backend is production-ready for Class Enhancement features."
+
+# ============ FEATURE: Multiple Org Structures (July 2025) ============
+backend_v3:
+  - task: "Org Structures CRUD (/api/org-structures) + /org structure_id filtering"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New collection org_structures. GET/POST/PATCH/DELETE /api/org-structures (write=super_admin). GET returns member_count per structure. DELETE cascades delete of its org_nodes. OrgNode now has structure_id; GET /org?structure_id=X filters; POST /org validates structure exists and stores structure_id. Migrated 2 legacy demo nodes into a default structure."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL 11 TESTS PASSED - Multiple Org Structures feature working perfectly. Comprehensive testing completed: (1) POST /api/org-structures creates structure with id, name, subtitle, member_count=0 (200), (2) GET /api/org-structures includes new structure in list, (3) GET /api/org-structures/{id} returns 200 for valid ID and 404 for non-existent ID, (4) POST /api/org creates root node with structure_id set correctly, (5) POST /api/org creates child node with parent_id and structure_id, (6) GET /api/org?structure_id=X filters correctly (returns exactly 2 nodes) and member_count updates to 2 in structure list, (7) PATCH /api/org-structures/{id} updates name successfully, (8) POST /api/org with invalid structure_id returns 404 as expected, (9) Auth permissions working: guru POST /api/org-structures returns 403 (write restricted to super_admin), guru GET /api/org-structures returns 200 (read allowed), (10) DELETE /api/org-structures/{id} returns 200 and cascades correctly (nodes deleted, structure removed from list), (11) Demo filtering verified: super_admin sees only non-demo structures (is_demo filtering working). All QA data cleaned up (guru account deleted, structure deletion auto-cascaded nodes). Backend is production-ready."
+
+test_plan_v3:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v3:
+    -agent: "main"
+    -message: "Test new org-structures feature with super_admin (boassibarani123@gmail.com / Boas12345io). Scenarios: (1) POST /api/org-structures {name:'QA Struktur', subtitle:'TA 2025'} -> 200 with id + member_count:0. (2) GET /api/org-structures includes it. (3) GET /api/org-structures/{id} -> 200; invalid id -> 404. (4) POST /api/org {name,title,structure_id:<id>} (root) -> 200; POST a child with parent_id + structure_id -> 200. (5) GET /api/org?structure_id=<id> returns only those nodes; GET /api/org-structures shows member_count:2. (6) PATCH /api/org-structures/{id} {name:'Renamed'} -> 200. (7) POST /api/org with structure_id=non-existent -> 404. (8) non-super_admin (create a guru, login) POST /api/org-structures -> 403. (9) DELETE /api/org-structures/{id} -> 200 and cascades (GET /org?structure_id=<id> empty). Clean up any QA data (structures auto-cascade nodes; delete QA guru account)."
+    -agent: "testing"
+    -message: "✅ BACKEND TESTING COMPLETE - ALL 11 TESTS PASSED. Multiple Org Structures feature is fully functional and production-ready. All scenarios tested successfully: structure CRUD operations, node creation with structure_id, filtering by structure_id, member_count calculation, auth permissions (super_admin write-only, all users read), cascade deletion, and demo filtering. No issues found. Backend implementation is correct and robust."

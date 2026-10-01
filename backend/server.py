@@ -531,6 +531,14 @@ async def delete_class(cid: str, user=Depends(require_roles("super_admin"))):
     return {"ok": True}
 
 # ---------------- ORGANIZATION STRUCTURE (Struktur Organisasi) ----------------
+class OrgStructureIn(BaseModel):
+    name: str
+    subtitle: Optional[str] = None
+
+class OrgStructureUpdate(BaseModel):
+    name: Optional[str] = None
+    subtitle: Optional[str] = None
+
 class OrgNodeIn(BaseModel):
     name: str
     title: str
@@ -538,6 +546,7 @@ class OrgNodeIn(BaseModel):
     parent_id: Optional[str] = None
     dashed: bool = False  # dashed connector (advisory roles e.g. Komite)
     order: int = 0
+    structure_id: Optional[str] = None
 
 class OrgNodeUpdate(BaseModel):
     name: Optional[str] = None
@@ -547,17 +556,68 @@ class OrgNodeUpdate(BaseModel):
     dashed: Optional[bool] = None
     order: Optional[int] = None
 
+# ---------------- ORG STRUCTURES (multiple named charts) ----------------
+@api.get("/org-structures")
+async def list_org_structures(user=Depends(get_current_user)):
+    structures = await db.org_structures.find(dscope(user), {"_id": 0}).sort("created_at", 1).to_list(500)
+    for s in structures:
+        s["member_count"] = await db.org_nodes.count_documents({"structure_id": s["id"]})
+    return structures
+
+@api.get("/org-structures/{sid}")
+async def get_org_structure(sid: str, user=Depends(get_current_user)):
+    s = await db.org_structures.find_one({"id": sid, **dscope(user)}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Struktur tidak ditemukan")
+    return s
+
+@api.post("/org-structures")
+async def create_org_structure(body: OrgStructureIn, user=Depends(require_roles("super_admin"))):
+    if not body.name.strip():
+        raise HTTPException(400, "Nama struktur wajib diisi")
+    doc = {"id": str(uuid.uuid4()), "name": body.name.strip(), "subtitle": body.subtitle,
+           "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.org_structures.insert_one(doc); doc.pop("_id", None)
+    doc["member_count"] = 0
+    return doc
+
+@api.patch("/org-structures/{sid}")
+async def update_org_structure(sid: str, body: OrgStructureUpdate, user=Depends(require_roles("super_admin"))):
+    if not await db.org_structures.find_one({"id": sid, **dscope(user)}):
+        raise HTTPException(404, "Struktur tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if upd:
+        await db.org_structures.update_one({"id": sid}, {"$set": upd})
+    return await db.org_structures.find_one({"id": sid}, {"_id": 0})
+
+@api.delete("/org-structures/{sid}")
+async def delete_org_structure(sid: str, user=Depends(require_roles("super_admin"))):
+    if not await db.org_structures.find_one({"id": sid, **dscope(user)}):
+        raise HTTPException(404, "Struktur tidak ditemukan")
+    await db.org_nodes.delete_many({"structure_id": sid})
+    await db.org_structures.delete_one({"id": sid})
+    return {"ok": True}
+
 @api.get("/org")
-async def list_org(user=Depends(get_current_user)):
-    return await db.org_nodes.find(dscope(user), {"_id": 0}).sort("order", 1).to_list(2000)
+async def list_org(structure_id: Optional[str] = None, user=Depends(get_current_user)):
+    q = dscope(user)
+    if structure_id:
+        q["structure_id"] = structure_id
+    return await db.org_nodes.find(q, {"_id": 0}).sort("order", 1).to_list(2000)
 
 @api.get("/org/public")
-async def list_org_public():
+async def list_org_public(structure_id: Optional[str] = None):
     """Public read of the real (non-demo) organization chart for visitors."""
-    return await db.org_nodes.find({"is_demo": {"$ne": True}}, {"_id": 0}).sort("order", 1).to_list(2000)
+    q = {"is_demo": {"$ne": True}}
+    if structure_id:
+        q["structure_id"] = structure_id
+    return await db.org_nodes.find(q, {"_id": 0}).sort("order", 1).to_list(2000)
 
 @api.post("/org")
 async def create_org(body: OrgNodeIn, user=Depends(require_roles("super_admin"))):
+    if body.structure_id and not await db.org_structures.find_one({"id": body.structure_id, **dscope(user)}):
+        raise HTTPException(404, "Struktur tidak ditemukan")
     if body.parent_id and not await db.org_nodes.find_one({"id": body.parent_id, **dscope(user)}):
         raise HTTPException(404, "Atasan (parent) tidak ditemukan")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
