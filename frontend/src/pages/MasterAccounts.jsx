@@ -90,7 +90,12 @@ function CreateModal({onClose, onCreated}) {
   useEffect(() => { if (form.role === "orang_tua") api.get("/users?role=siswa").then(r=>setSiswaList(r.data)); }, [form.role]);
   const submit = async e => {
     e.preventDefault(); setBusy(true);
-    try { await api.post("/users", form); toast.success("Akun berhasil dibuat"); onCreated(); }
+    // Drop empty optional fields so EmailStr/validators don't reject "" values
+    const payload = {};
+    Object.entries(form).forEach(([k, v]) => {
+      if (typeof v === "string" ? v.trim() !== "" : v != null) payload[k] = v;
+    });
+    try { await api.post("/users", payload); toast.success("Akun berhasil dibuat"); onCreated(); }
     catch (err) { toast.error(err.response?.data?.detail || "Gagal membuat akun"); }
     finally { setBusy(false); }
   };
