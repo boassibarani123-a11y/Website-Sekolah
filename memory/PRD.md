@@ -32,4 +32,6 @@ Note: the repo's babel plugin crashes on recursive JSX. Use React.createElement 
   - Quiz shuffle: per-student shuffled question and option order, stored in quiz_sessions. POST /api/quizzes/{id}/start returns the shuffled quiz; attempt maps answers back. Editing questions or the time limit resets sessions.
   - Kas chart: GET /api/classes/{cid}/kas/chart?months=N (3–12, WIB months) and a recharts bar chart in the kas tab for every class viewer.
 
+- Iter 7: Per-class BPH org chart (collection class_bph, endpoints /api/classes/{cid}/bph). Same OrgTree design and interactions (add child, layers, dashed, drag-drop, photo). Only the ketua_kelas of that class can add/edit/delete; everyone else read-only. BPH tab in class detail.
+
 ## Backlog
