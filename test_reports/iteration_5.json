@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 5 verified: (1) Settings API + Super Admin Pengaturan page, (2) Excel exports emoji-free & branded, (3) siswa MyCard + permanent QR. All 10 backend pytest cases pass. All frontend flows work: sidebar propagates school_name live (SMAN TESTFIX visible after PATCH), Pengaturan menu shown only to super_admin, Kartu Saya shown only to siswa/ketua_kelas/ketua_osis (verified hidden for guru & super_admin), add/delete rule works without crash, MyCard renders KTP card with QR starting 'SEKOLAHKU-c6244d29-...', Print button present. Excel exports (6 endpoints) open cleanly in openpyxl, contain 'SEKOLAHKU', and contain NO emoji characters (regex-scanned sharedStrings.xml + sheet1.xml).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MyCard KTP preview", "issues": ["QR code image renders as SVG (0 <img> tags detected) — user-facing render is correct visually per screenshot, minor cosmetic note only"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_settings_exports.py",
+    "/app/test_reports/pytest/iter5.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py still 1481 lines — should be split into routers (settings, exports, ppdb, kas, auth). Same recommendation as iteration_4.",
+    "SettingsPage save() sends the full form incl. id_card_rules — if user opens page, another admin edits concurrently, this save() will overwrite. Consider optimistic concurrency or PATCH only dirty fields.",
+    "pretty_excel() correctly uses ASCII '-' separator (line 144) instead of the previous emoji — verified emoji-free in generated files."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "cassandramarsada@gmail.com / Admin@Sekolah2026 (super_admin), siswa@sekolahku.id / Siswa@2026, guru@sekolahku.id / Guru@2026 — all working",
+  "seed_data_creation": "none — cleanup: restored school_name to 'SEKOLAHKU' and school_full_name to 'SMA NEGERI 1 SEKOLAHKU' via PATCH after tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 6 export endpoints (attendance, social-fund, kas, inventory, users?role=siswa, ppdb/xlsx) return valid emoji-free branded xlsx. Public GET /api/settings works no-auth. PATCH /api/settings super_admin-only (403 for siswa). Siswa auto-generated qr_code prefix 'SEKOLAHKU-'. Sidebar/settings context reflects updates live. Test file test_iter5_settings_exports.py is reusable for regression.",
+  "rca of the issue": "N/A — no bugs found in this iteration."
+}
