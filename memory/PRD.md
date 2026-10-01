@@ -28,4 +28,8 @@ Note: the repo's babel plugin crashes on recursive JSX. Use React.createElement 
   - Super admin can remove a class password (remove_password).
   - Friday 08:00 WIB cron (.emergent/crons.yml) calls POST /api/cron/kas-reminder (Bearer WEBHOOK_CRON_SECRET, idempotent via cron_runs). It sends an in-app notification to unpaid students in classes that use weekly billing.
 
+- Iter 6:
+  - Quiz shuffle: per-student shuffled question and option order, stored in quiz_sessions. POST /api/quizzes/{id}/start returns the shuffled quiz; attempt maps answers back. Editing questions or the time limit resets sessions.
+  - Kas chart: GET /api/classes/{cid}/kas/chart?months=N (3–12, WIB months) and a recharts bar chart in the kas tab for every class viewer.
+
 ## Backlog

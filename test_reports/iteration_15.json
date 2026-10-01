@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 15: Tested Quiz-shuffle (session-based) and Kas-chart features. Backend: 10/10 pytest cases pass covering shuffle persistence per student, re-start same order, scoring with reverse mapping (confirmed 100% when choosing correct option text), session reset on question edit, time_limit metadata, role gate (siswa-only), and kas chart (siswa/guru/ketua/admin access, months clamping 3<=N<=12, bucket shape, chart reflects new tx). Frontend UI validated: kas-chart-card visible for siswa (viewer), kas-chart-months selector functional (3/6/12), kas-chart-empty shown when no tx, bar chart renders after ketua adds a tx (refreshKey triggers reload). No quizzes available in demo DB so quiz modal UI was not visually exercised, but backend start/attempt API fully verified end-to-end via a created+deleted TEST quiz.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "KasChart (empty state)", "issues": ["Recharts warns 'width(-1)/height(-1)' once because container is hidden during initial render; harmless but noisy in console."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_quiz_shuffle_kas_chart.py",
+    "/app/test_reports/pytest/iter15.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:1190 shuffled_questions uses len(out) for opt_orders index — correct but fragile; using enumerate(sess['q_order']) would be clearer.",
+    "server.py:1319 non-session (legacy) scoring path still exists for quizzes created before shuffling; good backward-compat but ensure new quizzes always have a session (currently guaranteed because /start creates one).",
+    "QuizIn.questions is List[dict] without inner validation — a mistyped 'answer' (string vs int) silently scores 0. Consider a nested Pydantic model to validate option index."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_quiz_shuffle_kas_chart.py"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (chart + tx add/delete flow)"},
+  "test_credentials": "Demo accounts (Demo12345): admin.demo@, guru.demo@, siswa.demo@, kelas.demo@ at @sekolahku.id. XI IPA 1 id=97194f55-894d-44dc-957a-1c2a8522e2b0.",
+  "seed_data_creation": "Each test creates and deletes its own TEST_ quiz / TEST_chart_tx kas transaction. No residual data left (verified by delete calls in fixtures and in UI).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression file: test_iter15_quiz_shuffle_kas_chart.py. Quiz 'answer' is stored as an integer option index (not text). Kas chart buckets are months in WIB, length clamped to [3,12]. Siswa can view chart but not manage; add via ketua only. For UI quiz-modal verification, you need to first create a quiz via guru.demo and then switch to siswa.demo (there are no demo-seeded quizzes)."
+}
