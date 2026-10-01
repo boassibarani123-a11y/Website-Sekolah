@@ -224,8 +224,8 @@ export default function OrgStructureEditor() {
               )}
             </div>
           ) : (
-            <div className="org-vtree" data-testid="org-tree">
-              <div className="ov-root">
+            <div className="org-tree" data-testid="org-tree">
+              <ul>
                 {tree.map(n => (
                   <OrgNode key={n.id} node={n} depth={0} isAdmin={isAdmin}
                     onAdd={(parent) => setModal({ mode: "add", parent })}
@@ -233,7 +233,7 @@ export default function OrgStructureEditor() {
                     onDelete={remove}
                     dragRef={dragRef} onDropNode={onDropNode} />
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </div>
