@@ -732,6 +732,84 @@ async def delete_org(nid: str, user=Depends(require_roles("super_admin"))):
     await _delete_subtree(nid)
     return {"ok": True}
 
+# ---------------- CLASS BPH (Badan Pengurus Harian) ----------------
+class BphNodeIn(BaseModel):
+    name: str
+    title: str
+    photo: Optional[str] = None
+    parent_id: Optional[str] = None
+    dashed: bool = False
+    order: int = 0
+
+class BphNodeUpdate(BaseModel):
+    name: Optional[str] = None
+    title: Optional[str] = None
+    photo: Optional[str] = None
+    parent_id: Optional[str] = None
+    dashed: Optional[bool] = None
+    order: Optional[int] = None
+
+def assert_bph_manager(user: dict, klass: dict):
+    if user.get("role") != "ketua_kelas" or user.get("kelas") != klass.get("name"):
+        raise HTTPException(403, "Hanya Ketua Kelas yang dapat mengatur bagan BPH kelas ini")
+
+async def bph_class(cid: str, user: dict) -> dict:
+    klass = await db.classes.find_one({"id": cid})
+    await assert_class_view(user, klass)
+    await assert_class_unlocked(user, klass)
+    return klass
+
+@api.get("/classes/{cid}/bph")
+async def list_bph(cid: str, user=Depends(get_current_user)):
+    await bph_class(cid, user)
+    return await db.class_bph.find({"class_id": cid}, {"_id": 0}).sort("order", 1).to_list(2000)
+
+@api.post("/classes/{cid}/bph")
+async def create_bph(cid: str, body: BphNodeIn, user=Depends(get_current_user)):
+    klass = await bph_class(cid, user)
+    assert_bph_manager(user, klass)
+    if body.parent_id and not await db.class_bph.find_one({"id": body.parent_id, "class_id": cid}):
+        raise HTTPException(404, "Atasan (parent) tidak ditemukan")
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "class_id": cid, "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.class_bph.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+@api.patch("/classes/{cid}/bph/{nid}")
+async def update_bph(cid: str, nid: str, body: BphNodeUpdate, user=Depends(get_current_user)):
+    klass = await bph_class(cid, user)
+    assert_bph_manager(user, klass)
+    if not await db.class_bph.find_one({"id": nid, "class_id": cid}):
+        raise HTTPException(404, "Anggota tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    if "parent_id" in upd and upd["parent_id"]:
+        cur, seen = upd["parent_id"], set()
+        while cur:
+            if cur == nid:
+                raise HTTPException(400, "Tidak dapat memindahkan anggota ke dalam bawahannya sendiri")
+            if cur in seen:
+                break
+            seen.add(cur)
+            p = await db.class_bph.find_one({"id": cur, "class_id": cid}, {"_id": 0, "parent_id": 1})
+            cur = p.get("parent_id") if p else None
+    if upd:
+        await db.class_bph.update_one({"id": nid}, {"$set": upd})
+    return await db.class_bph.find_one({"id": nid}, {"_id": 0})
+
+@api.delete("/classes/{cid}/bph/{nid}")
+async def delete_bph(cid: str, nid: str, user=Depends(get_current_user)):
+    klass = await bph_class(cid, user)
+    assert_bph_manager(user, klass)
+    if not await db.class_bph.find_one({"id": nid, "class_id": cid}):
+        raise HTTPException(404, "Anggota tidak ditemukan")
+    async def _del(node_id):
+        children = await db.class_bph.find({"parent_id": node_id, "class_id": cid}, {"_id": 0, "id": 1}).to_list(2000)
+        for c in children:
+            await _del(c["id"])
+        await db.class_bph.delete_one({"id": node_id})
+    await _del(nid)
+    return {"ok": True}
+
 # ---------------- ATTENDANCE ----------------
 class ScanIn(BaseModel):
     qr_code: Optional[str] = None

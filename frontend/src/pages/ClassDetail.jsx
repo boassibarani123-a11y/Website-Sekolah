@@ -4,11 +4,12 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock, Network } from "lucide-react";
 import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
 import { QuizTakeModal, QuizTimeField } from "@/components/QuizTake";
 import { ClassKas } from "@/components/ClassKas";
 import { ClassUnlock } from "@/components/ClassUnlock";
+import { ClassBPH } from "@/components/ClassBPH";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -145,6 +146,10 @@ export default function ClassDetail() {
           className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="kas"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
           <PiggyBank className="w-4 h-4"/>Uang Kas
         </button>
+        <button data-testid="tab-bph" onClick={()=>setTab("bph")}
+          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="bph"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <Network className="w-4 h-4"/>BPH
+        </button>
       </div>
 
       {isTeacher && !canManage && (
@@ -153,7 +158,7 @@ export default function ClassDetail() {
         </div>
       )}
 
-      {tab === "kas" ? <ClassKas klass={klass}/> : tab === "tugas"
+      {tab === "bph" ? <ClassBPH klass={klass}/> : tab === "kas" ? <ClassKas klass={klass}/> : tab === "tugas"
         ? <TugasTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
         : <QuizTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
 
