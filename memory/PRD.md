@@ -17,6 +17,10 @@ Note: the repo's babel plugin crashes on recursive JSX. Use React.createElement 
   - Uang Kas moved into a "Uang Kas" tab inside each class (/api/classes/{cid}/kas). Only the ketua_kelas of that class can add, edit or delete; everyone else is read-only. The old /uang-kas page and menu were removed.
   - Attendance: USB barcode (keyboard-wedge, NISN) card below the QR card. One shared log, with a method badge (QR / Barcode / Manual) and a Metode column in Excel.
 
+- Iter 4:
+  - Class lock is now enforced on the server for tugas/quiz. List endpoints filter out items from locked classes. Submit, submission status, quiz attempt and quiz unlock return 423.
+  - Quiz password: the guru who created the quiz, or super_admin, can set, change or remove it. Students unlock it once (stored in users.unlocked_quizzes). Locked quizzes are returned without their questions.
+  - Weekly kas billing: GET /api/classes/{cid}/kas/weekly, for ketua_kelas and super_admin, with a Monday–Sunday WIB week. The "Tandai Bayar" button records a masuk transaction with student_id. Optional "Dari siswa" select in the kas form.
+
 ## Backlog
 - P1: Option to remove a class password (currently it can only be set or changed).
-- P2: Enforce class lock on the tugas/quiz API endpoints. Currently it is only enforced on the kas endpoints and by the frontend.
