@@ -163,3 +163,70 @@ agent_communication:
     -message: "Backend testing complete. All primary endpoints PASSED. Account creation works correctly for all tested roles (siswa, guru, orang_tua). The bug was frontend-side: MasterAccounts.jsx now strips empty optional fields before POST, preventing parent_email='' from reaching the backend. Backend correctly validates EmailStr per Pydantic spec. Auth flow working. All major read endpoints healthy except /calendar (404 - endpoint doesn't exist, minor issue). No password_hash leaks detected. CRUD operations on /api/users all working. Backend is production-ready. Frontend testing still needed to verify the UI flow doesn't crash."
     -agent: "testing"
     -message: "✅ FRONTEND TESTING COMPLETE - Bug fix fully verified. Account creation flow on /accounts page works perfectly end-to-end with NO React crashes. Successfully created SISWA account with empty parent_email (the original crash trigger). Both fixes working correctly: (1) apiClient.js response interceptor normalizes Pydantic error objects to readable strings, (2) MasterAccounts.jsx strips empty optional fields before POST. Success toast appears, modal closes, new account shows in list. Extra validation: invalid email handled gracefully without crash. All tests PASSED. Bug completely resolved. Ready for production."
+
+# ============ FEATURE: Class Enhancements (July 2025) ============
+backend_v2:
+  - task: "Subjects master CRUD (/api/subjects)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New GET/POST/DELETE /api/subjects. POST+DELETE super_admin only; GET any auth. Duplicate name -> 400."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED (4/4). Tested: (1) POST /api/subjects creates subject with id+name returned, (2) Duplicate POST returns 400 as expected, (3) GET /api/subjects includes created subject in list, (4) Created second subject 'Sejarah QA' successfully. All CRUD operations working correctly with proper super_admin authorization."
+  - task: "Guru subject-based class access + class CRUD super_admin only"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "User now has subjects[] (guru mapel). GET /classes filters guru to classes where they are homeroom OR teach a listed subject; siswa only own kelas. GET /classes/{cid} returns 403 if not allowed. create/patch/delete classes now super_admin only (guru -> 403). create_assign/create_quiz require guru to teach the subject (unless homeroom)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED (11/11). Tested: (1) Created classes with subject associations, (2) Created guru with subjects=['Matematika QA'], (3) Guru GET /classes correctly includes only classes where they teach a subject (XI IPA 1 included, XII IPS 1 excluded), (4) Guru GET /classes/{id} returns 200 for authorized class and 403 for unauthorized class, (5) Guru POST/PATCH/DELETE /classes all correctly return 403 (only super_admin can manage classes). Subject-based filtering working perfectly."
+  - task: "Submission warehouse (/api/submissions/status)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /api/submissions/status?assignment_id=X returns roster {student_name, submitted, submitted_at, is_me} for all class students. Students see WHO submitted but NO content/attachments (only privileged roles get grade). Students in a different kelas -> 403. Also /api/submissions now restricts student-type roles to own submission only."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED (8/8). Tested: (1) Siswa A successfully submitted assignment, (2) GET /api/submissions/status returns correct structure with roster/submitted_count/total/privileged fields, (3) Student has privileged=false (correct), (4) Roster entries contain student_name/submitted/submitted_at/is_me fields, (5) Roster entries do NOT contain content/attachments (privacy protection working), (6) Siswa A shows submitted=true in roster, (7) Siswa B from different class gets 403 (isolation working), (8) Super admin has privileged=true. Warehouse feature working perfectly with proper access control and privacy."
+  - task: "Reschedule / teacher-absence notices (/api/reschedules)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/reschedules (guru/super_admin, guru must access class) creates notice {reason_type, reason, date, new_date, new_time} + notifies all students in class. GET /api/reschedules?class_id=X lists active. DELETE marks cancelled (creator or super_admin)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED (7/7). Tested: (1) Guru successfully creates reschedule notice for class they can access, (2) GET /api/reschedules?class_id=X includes the created notice, (3) Siswa in the class sees the reschedule notice when calling GET /api/reschedules without class_id (auto-filtered to their class), (4) Guru successfully deletes reschedule notice, (5) Deleted notice no longer appears in active list (status=cancelled), (6) Guru gets 403 when trying to create reschedule for class they don't access. All CRUD operations and access control working correctly."
+
+test_plan_v2:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v2:
+    -agent: "main"
+    -message: "Implemented class-feature enhancements. Please test backend with super_admin (boassibarani123@gmail.com / Boas12345io). Scenarios: (1) Subjects CRUD + duplicate 400. (2) Create a subject 'Matematika', create class 'XI IPA 1' with subjects=[Matematika], create a guru with subjects=[Matematika] -> as that guru GET /classes should include XI IPA 1; create another class 'XII IPS 1' with subjects=['Sejarah'] -> guru should NOT see it and GET that class id -> 403. (3) Create guru/siswa and verify siswa of one kelas gets 403 on another class id. (4) guru create_assign for subject they teach -> 200; for subject they don't teach -> 403. (5) class create/patch/delete as guru -> 403. (6) submissions/status returns roster without content for a student; (7) reschedules POST/GET/DELETE. Clean up any QA accounts/classes/subjects you create."
+    -agent: "testing"
+    -message: "✅ BACKEND TESTING COMPLETE - ALL 38 TESTS PASSED. Comprehensive testing of Class Enhancement features completed successfully. All scenarios A-F passed: (A) Subjects CRUD with duplicate validation, (B) Guru subject-based class access filtering and super_admin-only class management, (C) Student class isolation, (D) Assignment subject permission enforcement, (E) Submission warehouse with privacy controls (students see WHO submitted but not content/attachments), (F) Reschedule notices with proper access control. All test data cleaned up. Backend is production-ready for Class Enhancement features."

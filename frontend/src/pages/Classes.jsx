@@ -7,10 +7,8 @@ import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight, UserCog }
 
 export default function Classes() {
   const { user } = useAuth();
-  const isAdmin = ["super_admin", "guru"].includes(user.role);
   const isSuperAdmin = user.role === "super_admin";
-  const canManageClass = (c) => user.role === "super_admin" ||
-    (user.role === "guru" && (c.created_by === user.id || c.homeroom_teacher_id === user.id));
+  const canManageClass = () => isSuperAdmin; // only super admin creates/edits/deletes classes
   const assignHomeroom = async (classId, teacherId) => {
     try {
       await api.patch(`/classes/${classId}`, { homeroom_teacher_id: teacherId || null });
@@ -22,11 +20,12 @@ export default function Classes() {
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [editing, setEditing] = useState(null); // null | {} (new) | class obj
+  const [showSubjects, setShowSubjects] = useState(false);
   const load = () => api.get("/classes").then(r => setClasses(r.data));
   useEffect(() => {
     load();
-    if (isAdmin) api.get("/users?role=guru").then(r => setTeachers(r.data)).catch(()=>{});
-  }, [isAdmin]);
+    if (isSuperAdmin) api.get("/users?role=guru").then(r => setTeachers(r.data)).catch(()=>{});
+  }, [isSuperAdmin]);
 
   const teacherName = (id) => teachers.find(t => t.id === id)?.name || "—";
 
@@ -39,11 +38,17 @@ export default function Classes() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">Setiap kelas adalah wadah tugas, pengumpulan tugas per mata pelajaran, dan mini-quiz.</p>
         </div>
-        {isAdmin && (
-          <button data-testid="create-class-button" onClick={()=>setEditing({})}
-            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-xl shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all">
-            <Plus className="w-4 h-4"/>Buat Kelas Baru
-          </button>
+        {isSuperAdmin && (
+          <div className="flex gap-2">
+            <button data-testid="manage-subjects-button" onClick={()=>setShowSubjects(true)}
+              className="px-4 py-2.5 bg-white border-2 border-slate-200 hover:border-sky-400 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition-all">
+              <BookOpen className="w-4 h-4"/>Kelola Mapel
+            </button>
+            <button data-testid="create-class-button" onClick={()=>setEditing({})}
+              className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-xl shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all">
+              <Plus className="w-4 h-4"/>Buat Kelas Baru
+            </button>
+          </div>
         )}
       </div>
 
@@ -51,7 +56,7 @@ export default function Classes() {
         <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
           <School className="w-10 h-10 text-slate-300 mx-auto"/>
           <p className="mt-3 text-slate-500 font-medium">Belum ada kelas.</p>
-          {isAdmin && <p className="text-sm text-slate-400">Klik "Buat Kelas Baru" untuk memulai.</p>}
+          {isSuperAdmin && <p className="text-sm text-slate-400">Klik tombol Buat Kelas Baru untuk memulai.</p>}
         </div>
       )}
 
@@ -71,7 +76,7 @@ export default function Classes() {
             </div>
             <h3 className="font-heading font-extrabold text-lg text-slate-900 mt-3 flex items-center gap-2 flex-wrap">
               {c.name}
-              {user.role === "guru" && canManageClass(c) && (
+              {user.role === "guru" && c.homeroom_teacher_id === user.id && (
                 <span data-testid={`wali-badge-${c.id}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200">
                   <UserCog className="w-3 h-3"/>Wali Anda
                 </span>
@@ -111,6 +116,7 @@ export default function Classes() {
       </div>
 
       {editing && <ClassModal klass={editing} teachers={teachers} onClose={()=>setEditing(null)} onDone={()=>{load(); setEditing(null);}}/>}
+      {showSubjects && <SubjectsModal onClose={()=>setShowSubjects(false)}/>}
     </div>
   );
 }
@@ -121,14 +127,11 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
   const [description, setDescription] = useState(klass.description || "");
   const [subjects, setSubjects] = useState(klass.subjects || []);
   const [homeroom, setHomeroom] = useState(klass.homeroom_teacher_id || "");
-  const [subjInput, setSubjInput] = useState("");
+  const [allSubjects, setAllSubjects] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  const addSubject = () => {
-    const v = subjInput.trim();
-    if (v && !subjects.includes(v)) setSubjects([...subjects, v]);
-    setSubjInput("");
-  };
+  useEffect(() => { api.get("/subjects").then(r=>setAllSubjects(r.data)).catch(()=>{}); }, []);
+  const toggleSubject = (n) => setSubjects(s => s.includes(n) ? s.filter(x=>x!==n) : [...s, n]);
   const save = async () => {
     if (!name.trim()) return toast.error("Nama kelas wajib diisi");
     setBusy(true);
@@ -154,7 +157,7 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Nama Kelas *</label>
             <input data-testid="class-name-input" value={name} onChange={e=>setName(e.target.value)} placeholder="XI IPA 1"
               className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
-            <p className="mt-1 text-[10px] text-slate-400">Harus sama persis dengan isian "Kelas" di akun siswa agar tugas & quiz terhubung.</p>
+            <p className="mt-1 text-[10px] text-slate-400">Siswa dengan kelas yang sama persis otomatis menjadi anggota kelas ini.</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Deskripsi (opsional)</label>
@@ -170,20 +173,20 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Mata Pelajaran</label>
-            <div className="mt-1 flex gap-2">
-              <input data-testid="subject-input" value={subjInput} onChange={e=>setSubjInput(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addSubject();}}} placeholder="mis. Matematika"
-                className="flex-1 px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
-              <button data-testid="add-subject-button" type="button" onClick={addSubject} className="px-4 bg-sky-600 text-white rounded-xl font-semibold">Tambah</button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {subjects.map((s,i)=>(
-                <span key={i} className="px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-700 flex items-center gap-1">
-                  {s}<button onClick={()=>setSubjects(subjects.filter((_,idx)=>idx!==i))}><X className="w-3 h-3"/></button>
-                </span>
-              ))}
-            </div>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Mata Pelajaran di Kelas Ini</label>
+            {allSubjects.length === 0 ? (
+              <p className="mt-1.5 text-[11px] text-amber-600">Belum ada mapel. Tutup dialog ini lalu buka menu Kelola Mapel untuk menambah daftar mapel dulu.</p>
+            ) : (
+              <div className="mt-1.5 flex flex-wrap gap-2" data-testid="class-subjects-picker">
+                {allSubjects.map(s=>(
+                  <button type="button" key={s.id} data-testid={`class-subject-${s.name}`} onClick={()=>toggleSubject(s.name)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${subjects.includes(s.name) ? "bg-sky-600 border-sky-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-sky-400"}`}>
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="mt-1.5 text-[10px] text-slate-400">Guru yang mengampu mapel ini otomatis dapat mengakses kelas ini.</p>
           </div>
           <div className="flex gap-2 pt-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 border-2 border-slate-200 rounded-xl font-semibold hover:bg-slate-50">Batal</button>
@@ -196,3 +199,51 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
     </div>
   );
 }
+
+function SubjectsModal({ onClose }) {
+  const [subjects, setSubjects] = useState([]);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get("/subjects").then(r=>setSubjects(r.data)).catch(()=>{});
+  useEffect(() => { load(); }, []);
+  const add = async () => {
+    const v = name.trim();
+    if (!v) return;
+    setBusy(true);
+    try { await api.post("/subjects", { name: v }); setName(""); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal menambah mapel"); }
+    finally { setBusy(false); }
+  };
+  const del = async (id) => {
+    try { await api.delete(`/subjects/${id}`); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
+  };
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-slate-200">
+          <h3 className="font-heading text-xl font-bold flex items-center gap-2"><BookOpen className="w-5 h-5 text-sky-600"/>Kelola Mata Pelajaran</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="flex gap-2">
+            <input data-testid="new-subject-input" value={name} onChange={e=>setName(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();add();}}} placeholder="mis. Matematika"
+              className="flex-1 px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
+            <button data-testid="add-subject-button" type="button" disabled={busy} onClick={add} className="px-4 bg-sky-600 text-white rounded-xl font-semibold disabled:opacity-60">Tambah</button>
+          </div>
+          <div className="space-y-2">
+            {subjects.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Belum ada mapel. Tambahkan di atas.</p>}
+            {subjects.map(s=>(
+              <div key={s.id} data-testid={`subject-row-${s.name}`} className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-xl">
+                <span className="font-semibold text-sm text-slate-700">{s.name}</span>
+                <button data-testid={`delete-subject-${s.name}`} onClick={()=>del(s.id)} className="p-1.5 text-rose-500 hover:bg-rose-100 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

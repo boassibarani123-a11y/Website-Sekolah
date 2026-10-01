@@ -323,6 +323,7 @@ class UserCreate(BaseModel):
     parent_email: Optional[EmailStr] = None
     parent_phone: Optional[str] = None
     student_id: Optional[str] = None  # for orang_tua linking
+    subjects: Optional[List[str]] = None  # mapel yang diampu (guru)
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -336,6 +337,7 @@ class UserUpdate(BaseModel):
     parent_email: Optional[EmailStr] = None
     parent_phone: Optional[str] = None
     student_id: Optional[str] = None
+    subjects: Optional[List[str]] = None
 
 # ---------------- AUTH ----------------
 @api.post("/auth/login")
@@ -382,6 +384,7 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
         "photo": body.photo, "qr_code": qr_payload,
         "parent_name": body.parent_name, "parent_email": body.parent_email, "parent_phone": body.parent_phone,
         "student_id": body.student_id,
+        "subjects": body.subjects or [],
         "created_at": now_iso(),
     }
     dstamp(doc, user)
@@ -423,6 +426,9 @@ async def list_classes(user=Depends(get_current_user)):
     # Students & class/osis leaders only see their own class
     if user["role"] in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
         classes = [c for c in classes if c.get("name") == user.get("kelas")]
+    # Guru only see classes they teach a subject in, or are homeroom of
+    if user["role"] == "guru":
+        classes = [c for c in classes if guru_can_access_class(user, c)]
     # attach student count + homeroom teacher name
     for c in classes:
         c["student_count"] = await db.users.count_documents({"role": "siswa", "kelas": c["name"], **dscope(user)})
@@ -436,18 +442,49 @@ async def get_class(cid: str, user=Depends(get_current_user)):
     c = await db.classes.find_one({"id": cid}, {"_id": 0})
     if not c:
         raise HTTPException(404, "Kelas tidak ditemukan")
+    await assert_class_view(user, c)
+    if c.get("homeroom_teacher_id"):
+        t = await db.users.find_one({"id": c["homeroom_teacher_id"]}, {"_id": 0, "name": 1})
+        c["homeroom_teacher_name"] = t["name"] if t else None
     return c
 
-def can_manage_class(user: dict, klass: dict) -> bool:
-    """super_admin manages all; a guru manages only classes they created or are homeroom of."""
+def guru_can_access_class(user: dict, klass: dict) -> bool:
+    """Guru may access a class if they are its homeroom teacher OR they teach one
+    of the subjects defined on the class. Super admin: always."""
+    if klass is None:
+        return False
     if user.get("role") == "super_admin":
         return True
     if user.get("role") == "guru":
-        return klass.get("created_by") == user["id"] or klass.get("homeroom_teacher_id") == user["id"]
+        if klass.get("homeroom_teacher_id") == user["id"]:
+            return True
+        mine = set(user.get("subjects") or [])
+        cls_subjects = set(klass.get("subjects") or [])
+        return bool(mine & cls_subjects)
     return False
 
-async def guru_assert_manages(user: dict, class_id: Optional[str], kelas_name: Optional[str]):
-    """Guru may only add tugas/quiz to their own/homeroom class; super_admin unrestricted."""
+def can_manage_class(user: dict, klass: dict) -> bool:
+    """Only super_admin may create/edit/delete a class (per requirement)."""
+    return user.get("role") == "super_admin"
+
+async def assert_class_view(user: dict, klass: Optional[dict]):
+    """Enforce who may view/enter a class."""
+    if klass is None:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    role = user.get("role")
+    if role in ("super_admin", "kepsek", "staff_tu"):
+        return
+    if role == "guru":
+        if not guru_can_access_class(user, klass):
+            raise HTTPException(403, "Anda tidak mengampu mata pelajaran di kelas ini")
+        return
+    # siswa / ketua_kelas / ketua_osis / orang_tua -> must belong to the class
+    if klass.get("name") != user.get("kelas"):
+        raise HTTPException(403, "Anda bukan anggota kelas ini")
+
+async def guru_assert_manages(user: dict, class_id: Optional[str], kelas_name: Optional[str], subject: Optional[str] = None):
+    """Guru may only add tugas/quiz to classes they can access (homeroom or teach a
+    subject in). If a subject is given, a non-homeroom guru must teach that subject."""
     if user.get("role") == "super_admin":
         return
     klass = None
@@ -455,11 +492,14 @@ async def guru_assert_manages(user: dict, class_id: Optional[str], kelas_name: O
         klass = await db.classes.find_one({"id": class_id})
     if not klass and kelas_name:
         klass = await db.classes.find_one({"name": kelas_name, **dscope(user)})
-    if not klass or not can_manage_class(user, klass):
-        raise HTTPException(403, "Anda hanya dapat menambah tugas/quiz pada kelas milik/wali Anda sendiri")
+    if not klass or not guru_can_access_class(user, klass):
+        raise HTTPException(403, "Anda hanya dapat menambah tugas/quiz pada kelas yang Anda ampu")
+    if subject and user.get("role") == "guru" and klass.get("homeroom_teacher_id") != user["id"]:
+        if subject not in (user.get("subjects") or []):
+            raise HTTPException(403, f"Anda tidak mengampu mata pelajaran {subject}")
 
 @api.post("/classes")
-async def create_class(body: ClassIn, user=Depends(require_roles("super_admin", "guru"))):
+async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))):
     if await db.classes.find_one({"name": body.name, **dscope(user)}):
         raise HTTPException(400, "Nama kelas sudah ada")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_by": user["id"],
@@ -470,7 +510,7 @@ async def create_class(body: ClassIn, user=Depends(require_roles("super_admin", 
     return doc
 
 @api.patch("/classes/{cid}")
-async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin", "guru"))):
+async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("super_admin"))):
     klass = await db.classes.find_one({"id": cid})
     if not klass:
         raise HTTPException(404, "Kelas tidak ditemukan")
@@ -481,7 +521,7 @@ async def update_class(cid: str, body: ClassUpdate, user=Depends(require_roles("
     return await db.classes.find_one({"id": cid}, {"_id": 0})
 
 @api.delete("/classes/{cid}")
-async def delete_class(cid: str, user=Depends(require_roles("super_admin", "guru"))):
+async def delete_class(cid: str, user=Depends(require_roles("super_admin"))):
     klass = await db.classes.find_one({"id": cid})
     if not klass:
         raise HTTPException(404, "Kelas tidak ditemukan")
@@ -755,7 +795,7 @@ async def list_assign(class_id: Optional[str] = None, subject: Optional[str] = N
 
 @api.post("/assignments")
 async def create_assign(body: AssignmentIn, user=Depends(require_roles("guru", "super_admin"))):
-    await guru_assert_manages(user, body.class_id, body.kelas)
+    await guru_assert_manages(user, body.class_id, body.kelas, body.subject)
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
     dstamp(doc, user)
@@ -802,8 +842,58 @@ async def submit(body: SubmissionIn, user=Depends(require_roles("siswa"))):
 async def list_subs(assignment_id: Optional[str] = None, user=Depends(get_current_user)):
     q = dscope(user)
     if assignment_id: q["assignment_id"] = assignment_id
-    if user["role"] == "siswa": q["student_id"] = user["id"]
+    # student-type roles may only ever read their own full submission (content/files)
+    if user["role"] in ("siswa", "ketua_kelas", "ketua_osis", "orang_tua"):
+        q["student_id"] = user["id"]
     return await db.submissions.find(q, {"_id": 0}).to_list(1000)
+
+@api.get("/submissions/status")
+async def submissions_status(assignment_id: str, user=Depends(get_current_user)):
+    """Submission 'warehouse' roster: everyone in the class can see WHO submitted and
+    when, but students never receive other students' content/attachments."""
+    a = await db.assignments.find_one({"id": assignment_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(404, "Tugas tidak ditemukan")
+    role = user["role"]
+    # access control
+    if role in ("siswa", "ketua_kelas", "ketua_osis"):
+        if user.get("kelas") != a.get("kelas"):
+            raise HTTPException(403, "Anda bukan anggota kelas ini")
+    elif role == "guru":
+        klass = None
+        if a.get("class_id"):
+            klass = await db.classes.find_one({"id": a["class_id"]})
+        if not klass and a.get("kelas"):
+            klass = await db.classes.find_one({"name": a["kelas"], **dscope(user)})
+        if not guru_can_access_class(user, klass):
+            raise HTTPException(403, "Anda tidak mengampu kelas ini")
+    # privileged roles (super_admin/kepsek/staff_tu) pass through
+    privileged = role in ("guru", "super_admin", "kepsek", "staff_tu")
+    students = await db.users.find(
+        {"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": a.get("kelas"), **dscope(user)},
+        {"_id": 0, "id": 1, "name": 1},
+    ).sort("name", 1).to_list(1000)
+    subs = await db.submissions.find({"assignment_id": assignment_id}, {"_id": 0}).to_list(1000)
+    submap = {s["student_id"]: s for s in subs}
+    roster = []
+    for st in students:
+        s = submap.get(st["id"])
+        row = {
+            "student_id": st["id"], "student_name": st["name"],
+            "submitted": bool(s),
+            "submitted_at": s.get("submitted_at") if s else None,
+            "graded": bool(s and s.get("grade") is not None),
+            "is_me": st["id"] == user["id"],
+        }
+        if privileged and s and s.get("grade") is not None:
+            row["grade"] = s.get("grade")
+        roster.append(row)
+    submitted_count = sum(1 for r in roster if r["submitted"])
+    return {
+        "assignment": {"id": a["id"], "title": a.get("title"), "kelas": a.get("kelas"), "subject": a.get("subject")},
+        "total": len(roster), "submitted_count": submitted_count,
+        "privileged": privileged, "roster": roster,
+    }
 
 @api.patch("/submissions/{sid}/grade")
 async def grade_sub(sid: str, grade: float, user=Depends(require_roles("guru", "super_admin"))):
@@ -813,6 +903,94 @@ async def grade_sub(sid: str, grade: float, user=Depends(require_roles("guru", "
         assign = await db.assignments.find_one({"id": sub["assignment_id"]})
         await notify([sub["student_id"]], "Tugas dinilai",
                      f"Tugas '{assign['title'] if assign else ''}' mendapat nilai {grade}", "/assignments")
+    return {"ok": True}
+
+# ---------------- SUBJECTS (Master Mapel) ----------------
+class SubjectIn(BaseModel):
+    name: str
+
+@api.get("/subjects")
+async def list_subjects(user=Depends(get_current_user)):
+    return await db.subjects.find(dscope(user), {"_id": 0}).sort("name", 1).to_list(500)
+
+@api.post("/subjects")
+async def create_subject(body: SubjectIn, user=Depends(require_roles("super_admin"))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Nama mapel wajib diisi")
+    if await db.subjects.find_one({"name": name, **dscope(user)}):
+        raise HTTPException(400, "Mapel sudah ada")
+    doc = {"id": str(uuid.uuid4()), "name": name, "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.subjects.insert_one(doc)
+    return strip(doc)
+
+@api.delete("/subjects/{sid}")
+async def delete_subject(sid: str, user=Depends(require_roles("super_admin"))):
+    await db.subjects.delete_one({"id": sid})
+    return {"ok": True}
+
+# ---------------- RESCHEDULE / KETIDAKHADIRAN GURU ----------------
+class RescheduleIn(BaseModel):
+    class_id: str
+    subject: Optional[str] = None
+    reason_type: str  # sakit | rapat | berhalangan | lainnya
+    reason: str
+    date: Optional[str] = None       # tanggal berhalangan
+    new_date: Optional[str] = None   # jadwal pengganti (opsional)
+    new_time: Optional[str] = None
+
+@api.get("/reschedules")
+async def list_reschedules(class_id: Optional[str] = None, user=Depends(get_current_user)):
+    q = dscope(user)
+    q["status"] = "active"
+    if class_id:
+        q["class_id"] = class_id
+    elif user["role"] in ("siswa", "ketua_kelas", "ketua_osis"):
+        # students without explicit class_id: show notices for their own class
+        klass = await db.classes.find_one({"name": user.get("kelas"), **dscope(user)}, {"_id": 0, "id": 1})
+        q["class_id"] = klass["id"] if klass else "__none__"
+    return await db.reschedules.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+@api.post("/reschedules")
+async def create_reschedule(body: RescheduleIn, user=Depends(require_roles("guru", "super_admin"))):
+    klass = await db.classes.find_one({"id": body.class_id})
+    if not klass:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    if user["role"] == "guru" and not guru_can_access_class(user, klass):
+        raise HTTPException(403, "Anda tidak mengampu kelas ini")
+    if not body.reason.strip():
+        raise HTTPException(400, "Alasan wajib diisi")
+    doc = {
+        "id": str(uuid.uuid4()), "class_id": body.class_id, "class_name": klass.get("name"),
+        "subject": body.subject, "reason_type": body.reason_type, "reason": body.reason.strip(),
+        "date": body.date, "new_date": body.new_date, "new_time": body.new_time,
+        "teacher_id": user["id"], "teacher_name": user["name"], "status": "active",
+        "created_at": now_iso(),
+    }
+    dstamp(doc, user)
+    await db.reschedules.insert_one(doc)
+    # notify all students in the class
+    students = await db.users.find(
+        {"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": klass.get("name"), **dscope(user)},
+        {"_id": 0, "id": 1},
+    ).to_list(1000)
+    sid_list = [s["id"] for s in students]
+    subj = f" ({body.subject})" if body.subject else ""
+    extra = f" Pengganti: {body.new_date or ''} {body.new_time or ''}".rstrip() if (body.new_date or body.new_time) else ""
+    await notify(sid_list, f"Kelas {klass.get('name')}: guru berhalangan",
+                 f"{user['name']}{subj} — {body.reason_type}: {body.reason.strip()}.{extra}",
+                 f"/classes/{body.class_id}")
+    return strip(doc)
+
+@api.delete("/reschedules/{rid}")
+async def delete_reschedule(rid: str, user=Depends(require_roles("guru", "super_admin"))):
+    r = await db.reschedules.find_one({"id": rid})
+    if not r:
+        raise HTTPException(404, "Data tidak ditemukan")
+    if user["role"] != "super_admin" and r.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus")
+    await db.reschedules.update_one({"id": rid}, {"$set": {"status": "cancelled"}})
     return {"ok": True}
 
 # ---------------- QUIZZES ----------------
@@ -847,7 +1025,7 @@ async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = Non
 
 @api.post("/quizzes")
 async def create_quiz(body: QuizIn, user=Depends(require_roles("guru", "super_admin"))):
-    await guru_assert_manages(user, body.class_id, body.kelas)
+    await guru_assert_manages(user, body.class_id, body.kelas, body.subject)
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
     dstamp(doc, user)
