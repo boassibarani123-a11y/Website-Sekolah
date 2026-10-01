@@ -8,6 +8,16 @@ import jsPDF from "jspdf";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
+const LEVELS = [
+  { bar: "bg-sky-500", ring: "ring-sky-300", grad: "from-sky-50", pill: "bg-sky-100 text-sky-700" },
+  { bar: "bg-indigo-500", ring: "ring-indigo-300", grad: "from-indigo-50", pill: "bg-indigo-100 text-indigo-700" },
+  { bar: "bg-emerald-500", ring: "ring-emerald-300", grad: "from-emerald-50", pill: "bg-emerald-100 text-emerald-700" },
+  { bar: "bg-amber-500", ring: "ring-amber-300", grad: "from-amber-50", pill: "bg-amber-100 text-amber-700" },
+  { bar: "bg-rose-500", ring: "ring-rose-300", grad: "from-rose-50", pill: "bg-rose-100 text-rose-700" },
+  { bar: "bg-violet-500", ring: "ring-violet-300", grad: "from-violet-50", pill: "bg-violet-100 text-violet-700" },
+];
+const lvl = (d) => LEVELS[d % LEVELS.length];
+
 async function uploadPhoto(file) {
   const fd = new FormData();
   fd.append("file", file);
@@ -129,7 +139,7 @@ export default function OrgStructure() {
             <Network className="w-7 h-7 text-sky-600" />Struktur Organisasi
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Bagan organisasi sekolah — tak terbatas, memanjang ke bawah.
+            Bagan organisasi sekolah — memanjang ke bawah tanpa batas (unlimited).
             {isAdmin && " Seret kartu untuk mengubah induk atau urutan."}
           </p>
         </div>
@@ -161,26 +171,26 @@ export default function OrgStructure() {
         <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
           <Network className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="mt-3 text-slate-500 font-medium">Belum ada struktur organisasi.</p>
-          {isAdmin && <p className="text-sm text-slate-400">Klik "Tambah Anggota Puncak" untuk mulai (mis. Kepala Sekolah).</p>}
+          {isAdmin && <p className="text-sm text-slate-400">Klik tombol Tambah Anggota Puncak untuk mulai (mis. Kepala Sekolah).</p>}
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm overflow-x-auto">
+        <div className="bg-gradient-to-b from-slate-50 to-white border border-slate-200 rounded-2xl p-6 shadow-sm overflow-x-auto">
           {isAdmin && (
             <div data-testid="org-root-dropzone" onDragOver={e => e.preventDefault()} onDrop={onDropRoot}
-              className="mb-4 text-center text-xs font-semibold text-slate-400 border-2 border-dashed border-slate-200 rounded-xl py-2">
+              className="mb-5 text-center text-xs font-semibold text-slate-400 border-2 border-dashed border-slate-200 rounded-xl py-2.5 hover:border-sky-300 hover:text-sky-500 transition-colors">
               Tarik ke sini untuk menjadikan anggota sebagai puncak
             </div>
           )}
-          <div className="org-tree" data-testid="org-tree" ref={chartRef}>
-            <ul>
+          <div className="org-vtree" data-testid="org-tree" ref={chartRef}>
+            <div className="ov-root">
               {tree.map(n => (
-                <OrgNode key={n.id} node={n} isAdmin={isAdmin}
+                <OrgNode key={n.id} node={n} depth={0} isAdmin={isAdmin}
                   onAdd={(parent) => setModal({ mode: "add", parent })}
                   onEdit={(node) => setModal({ mode: "edit", node })}
                   onDelete={remove}
                   dragRef={dragRef} onDropNode={onDropNode} />
               ))}
-            </ul>
+            </div>
           </div>
         </div>
       )}
@@ -193,25 +203,30 @@ export default function OrgStructure() {
   );
 }
 
-function OrgNode({ node, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }) {
+function OrgNode({ node, depth, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }) {
   const [over, setOver] = useState(false);
+  const c = lvl(depth);
   return (
-    <li className={node.dashed ? "dashed" : ""}>
+    <div className={`ov-item ${node.dashed ? "dashed" : ""}`}>
       <div data-testid={`org-node-${node.id}`}
         draggable={isAdmin}
         onDragStart={isAdmin ? (e) => { dragRef.current = node.id; e.stopPropagation(); } : undefined}
         onDragOver={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); setOver(true); } : undefined}
         onDragLeave={isAdmin ? () => setOver(false) : undefined}
         onDrop={isAdmin ? (e) => { e.preventDefault(); e.stopPropagation(); setOver(false); onDropNode(node.id); } : undefined}
-        className={`group inline-flex flex-col items-center bg-white border-2 rounded-2xl px-4 py-3 shadow-sm hover:shadow-md transition-all w-44 ${over ? "border-sky-500 ring-2 ring-sky-200" : "border-slate-200 hover:border-sky-400"} ${isAdmin ? "cursor-move" : ""}`}>
-        <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center">
+        className={`group relative flex items-center gap-3 bg-gradient-to-r ${c.grad} to-white border rounded-2xl pl-5 pr-3 py-3 mb-4 w-full max-w-md shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all ${over ? "border-sky-500 ring-2 ring-sky-200" : "border-slate-200 hover:border-sky-300"} ${isAdmin ? "cursor-move" : ""}`}>
+        <span className={`absolute left-0 top-3 bottom-3 w-1.5 rounded-full ${c.bar}`} />
+        <div className={`w-14 h-14 shrink-0 rounded-full overflow-hidden bg-white border border-slate-200 ring-2 ${c.ring} ring-offset-2 flex items-center justify-center`}>
           {node.photo ? <img src={node.photo} alt={node.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
-            : <User className="w-7 h-7 text-slate-300" />}
+            : <User className="w-6 h-6 text-slate-300" />}
         </div>
-        <p className="mt-2 font-heading font-bold text-sm text-slate-900 leading-tight">{node.name}</p>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-600 leading-tight mt-0.5">{node.title}</p>
+        <div className="min-w-0 flex-1">
+          <p className="font-heading font-bold text-[15px] text-slate-900 leading-tight truncate">{node.name}</p>
+          <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${c.pill}`}>{node.title}</span>
+          {node.dashed && <span className="ml-1.5 text-[10px] text-slate-400 italic">penasihat</span>}
+        </div>
         {isAdmin && (
-          <div className="mt-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
             <button data-testid={`org-add-child-${node.id}`} onClick={() => onAdd(node)} title="Tambah bawahan"
               className="p-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100"><UserPlus className="w-3.5 h-3.5" /></button>
             <button data-testid={`org-edit-${node.id}`} onClick={() => onEdit(node)} title="Edit"
@@ -222,11 +237,11 @@ function OrgNode({ node, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }
         )}
       </div>
       {node.children.length > 0 && (
-        <ul>
-          {node.children.map(c => React.createElement(OrgNode, { key: c.id, node: c, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }))}
-        </ul>
+        <div className="ov-children">
+          {node.children.map(ch => React.createElement(OrgNode, { key: ch.id, node: ch, depth: depth + 1, isAdmin, onAdd, onEdit, onDelete, dragRef, onDropNode }))}
+        </div>
       )}
-    </li>
+    </div>
   );
 }
 
