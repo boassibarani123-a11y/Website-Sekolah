@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { BrainCircuit, Plus, X, Trash2 } from "lucide-react";
+import { BrainCircuit, Plus, X, Trash2, Lock } from "lucide-react";
+import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
 
 export default function Quizzes() {
   const { user } = useAuth();
@@ -11,6 +12,8 @@ export default function Quizzes() {
   const [showNew, setShowNew] = useState(false);
   const [taking, setTaking] = useState(null);
   const [answers, setAnswers] = useState([]);
+  const [unlocking, setUnlocking] = useState(null);
+  const startQuiz = (q) => { if (q.locked) return setUnlocking(q); setTaking(q); setAnswers(Array(q.questions.length).fill(-1)); };
   const load = () => api.get("/quizzes").then(r=>setList(r.data));
   useEffect(() => { load(); }, []);
 
@@ -31,15 +34,16 @@ export default function Quizzes() {
         {list.map(q=>(
           <div key={q.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center"><BrainCircuit className="w-5 h-5"/></div>
-            <h3 className="font-heading font-bold mt-3">{q.title}</h3>
-            <p className="text-xs text-slate-500 mt-1">{(q.questions||[]).length} soal · {q.kelas}</p>
-            {!isTeacher && <button onClick={()=>{setTaking(q); setAnswers(Array(q.questions.length).fill(-1));}}
+            <h3 className="font-heading font-bold mt-3">{q.title}{q.has_password && <span data-testid={`quiz-lock-${q.id}`} className={`ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.locked?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}><Lock className="w-3 h-3"/>{q.locked?"Terkunci":"Berpassword"}</span>}</h3>
+            <p className="text-xs text-slate-500 mt-1">{q.question_count ?? (q.questions||[]).length} soal · {q.kelas}</p>
+            {!isTeacher && <button data-testid={`take-quiz-${q.id}`} onClick={()=>startQuiz(q)}
               className="mt-3 w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold">Kerjakan</button>}
           </div>
         ))}
       </div>
 
       {showNew && <NewQuizModal onClose={()=>setShowNew(false)} onDone={()=>{load();setShowNew(false);}}/>}
+      {unlocking && <QuizUnlockModal quiz={unlocking} onClose={()=>setUnlocking(null)} onUnlocked={(qz)=>{setUnlocking(null); load(); startQuiz(qz);}}/>}
       {taking && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -70,10 +74,11 @@ export default function Quizzes() {
 function NewQuizModal({onClose,onDone}) {
   const [title,setTitle]=useState(""); const [kelas,setKelas]=useState("");
   const [qs, setQs] = useState([{q:"",options:["","","",""],answer:0}]);
+  const [password, setPassword] = useState("");
   const add = () => setQs([...qs, {q:"",options:["","","",""],answer:0}]);
   const submit = async () => {
-    await api.post("/quizzes", { title, kelas, questions: qs });
-    toast.success("Quiz dibuat"); onDone();
+    try { await api.post("/quizzes", { title, kelas, questions: qs, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); onDone(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal membuat quiz"); }
   };
   return <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
     <div className="bg-white rounded-2xl max-w-xl w-full max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -82,6 +87,7 @@ function NewQuizModal({onClose,onDone}) {
       <div className="p-5 space-y-3">
         <input placeholder="Judul quiz" value={title} onChange={e=>setTitle(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
         <input placeholder="Kelas (XI IPA 1)" value={kelas} onChange={e=>setKelas(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
+        <QuizPasswordField hasPassword={false} value={password} onChange={setPassword} remove={false} onRemove={()=>{}}/>
         {qs.map((q,qi)=>(
           <div key={qi} className="p-3 bg-slate-50 rounded-xl space-y-2 relative">
             <button onClick={()=>setQs(qs.filter((_,i)=>i!==qi))} className="absolute top-2 right-2 text-rose-500"><Trash2 className="w-4 h-4"/></button>

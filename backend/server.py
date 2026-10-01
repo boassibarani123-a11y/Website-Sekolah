@@ -437,6 +437,25 @@ def class_locked_flag(c: dict, user: dict) -> bool:
     return c.get("has_password", False) and user.get("role") != "super_admin" \
         and c["id"] not in (user.get("unlocked_classes") or [])
 
+async def locked_class_query(user: dict) -> list:
+    if user.get("role") == "super_admin":
+        return []
+    unlocked = user.get("unlocked_classes") or []
+    locked = await db.classes.find({"password_hash": {"$exists": True}, "id": {"$nin": unlocked}, **dscope(user)},
+                                   {"_id": 0, "id": 1, "name": 1}).to_list(500)
+    if not locked:
+        return []
+    return [{"class_id": {"$nin": [c["id"] for c in locked]}}, {"kelas": {"$nin": [c["name"] for c in locked]}}]
+
+async def assert_doc_class_unlocked(user: dict, doc: dict):
+    klass = None
+    if doc.get("class_id"):
+        klass = await db.classes.find_one({"id": doc["class_id"]})
+    if not klass and doc.get("kelas"):
+        klass = await db.classes.find_one({"name": doc["kelas"], **dscope(user)})
+    if klass:
+        await assert_class_unlocked(user, klass)
+
 async def assert_class_unlocked(user: dict, klass: dict):
     if klass.get("password_hash") and user.get("role") != "super_admin" \
             and klass["id"] not in (user.get("unlocked_classes") or []):
@@ -903,6 +922,8 @@ async def list_assign(class_id: Optional[str] = None, subject: Optional[str] = N
         q["kelas"] = user.get("kelas")
     if class_id: q["class_id"] = class_id
     if subject: q["subject"] = subject
+    lock = await locked_class_query(user)
+    if lock: q["$and"] = lock
     return await db.assignments.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.post("/assignments")
@@ -939,6 +960,10 @@ async def delete_assign(aid: str, user=Depends(require_roles("guru", "super_admi
 
 @api.post("/submissions")
 async def submit(body: SubmissionIn, user=Depends(require_roles("siswa"))):
+    a = await db.assignments.find_one({"id": body.assignment_id})
+    if not a:
+        raise HTTPException(404, "Tugas tidak ditemukan")
+    await assert_doc_class_unlocked(user, a)
     existing = await db.submissions.find_one({"assignment_id": body.assignment_id, "student_id": user["id"]})
     payload = {"content": body.content or "", "attachments": body.attachments or [], "submitted_at": now_iso()}
     if existing:
@@ -966,6 +991,7 @@ async def submissions_status(assignment_id: str, user=Depends(get_current_user))
     a = await db.assignments.find_one({"id": assignment_id}, {"_id": 0})
     if not a:
         raise HTTPException(404, "Tugas tidak ditemukan")
+    await assert_doc_class_unlocked(user, a)
     role = user["role"]
     # access control
     if role in ("siswa", "ketua_kelas", "ketua_osis"):
@@ -1112,6 +1138,24 @@ class QuizIn(BaseModel):
     questions: List[dict]  # [{q, options[], answer}]
     subject: Optional[str] = None
     class_id: Optional[str] = None
+    password: Optional[str] = None
+
+class QuizUnlockIn(BaseModel):
+    password: str
+
+QUIZ_STAFF = ("super_admin", "guru")
+
+def quiz_out(qz: dict, user: dict) -> dict:
+    qz["has_password"] = bool(qz.pop("password_hash", None))
+    qz["question_count"] = len(qz.get("questions") or [])
+    qz["locked"] = qz["has_password"] and user.get("role") not in QUIZ_STAFF \
+        and qz["id"] not in (user.get("unlocked_quizzes") or [])
+    if user.get("role") not in QUIZ_STAFF:
+        for question in qz.get("questions", []):
+            question.pop("answer", None)
+    if qz["locked"]:
+        qz["questions"] = []
+    return qz
 
 class QuizAttemptIn(BaseModel):
     quiz_id: str
@@ -1121,6 +1165,8 @@ class QuizUpdate(BaseModel):
     title: Optional[str] = None
     subject: Optional[str] = None
     questions: Optional[List[dict]] = None
+    password: Optional[str] = None
+    remove_password: Optional[bool] = None
 
 @api.get("/quizzes")
 async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
@@ -1128,21 +1174,35 @@ async def list_quiz(class_id: Optional[str] = None, subject: Optional[str] = Non
     if user["role"] == "siswa": q["kelas"] = user.get("kelas")
     if class_id: q["class_id"] = class_id
     if subject: q["subject"] = subject
+    lock = await locked_class_query(user)
+    if lock: q["$and"] = lock
     quizzes = await db.quizzes.find(q, {"_id": 0}).to_list(500)
-    if user["role"] == "siswa":
-        for qz in quizzes:
-            for question in qz.get("questions", []):
-                question.pop("answer", None)
-    return quizzes
+    return [quiz_out(qz, user) for qz in quizzes]
+
+@api.post("/quizzes/{qid}/unlock")
+async def unlock_quiz(qid: str, body: QuizUnlockIn, user=Depends(get_current_user)):
+    qz = await db.quizzes.find_one({"id": qid, **dscope(user)}, {"_id": 0})
+    if not qz:
+        raise HTTPException(404, "Quiz tidak ditemukan")
+    await assert_doc_class_unlocked(user, qz)
+    if qz.get("password_hash") and not verify_pw(body.password, qz["password_hash"]):
+        raise HTTPException(400, "Password quiz salah")
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"unlocked_quizzes": qid}})
+    user["unlocked_quizzes"] = (user.get("unlocked_quizzes") or []) + [qid]
+    return quiz_out(qz, user)
 
 @api.post("/quizzes")
 async def create_quiz(body: QuizIn, user=Depends(require_roles("guru", "super_admin"))):
     await guru_assert_manages(user, body.class_id, body.kelas, body.subject)
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "teacher_id": user["id"],
+    data = body.model_dump()
+    pw = (data.pop("password") or "").strip()
+    doc = {"id": str(uuid.uuid4()), **data, "teacher_id": user["id"],
            "teacher_name": user["name"], "created_at": now_iso()}
+    if pw:
+        doc["password_hash"] = hash_pw(pw)
     dstamp(doc, user)
     await db.quizzes.insert_one(doc); doc.pop("_id", None)
-    return doc
+    return quiz_out(doc, user)
 
 @api.patch("/quizzes/{qid}")
 async def edit_quiz(qid: str, body: QuizUpdate, user=Depends(require_roles("guru", "super_admin"))):
@@ -1151,10 +1211,16 @@ async def edit_quiz(qid: str, body: QuizUpdate, user=Depends(require_roles("guru
         raise HTTPException(404, "Quiz tidak ditemukan")
     if user["role"] != "super_admin" and qz.get("teacher_id") != user["id"]:
         raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit quiz ini")
-    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    upd = {k: v for k, v in body.model_dump(exclude={"password", "remove_password"}).items() if v is not None}
+    pw = (body.password or "").strip()
+    if body.remove_password:
+        await db.quizzes.update_one({"id": qid}, {"$unset": {"password_hash": ""}})
+    elif pw:
+        upd["password_hash"] = hash_pw(pw)
+        await db.users.update_many({"unlocked_quizzes": qid}, {"$pull": {"unlocked_quizzes": qid}})
     if upd:
         await db.quizzes.update_one({"id": qid}, {"$set": upd})
-    return await db.quizzes.find_one({"id": qid}, {"_id": 0})
+    return quiz_out(await db.quizzes.find_one({"id": qid}, {"_id": 0}), user)
 
 @api.delete("/quizzes/{qid}")
 async def delete_quiz(qid: str, user=Depends(require_roles("guru", "super_admin"))):
@@ -1171,6 +1237,9 @@ async def delete_quiz(qid: str, user=Depends(require_roles("guru", "super_admin"
 async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))):
     quiz = await db.quizzes.find_one({"id": body.quiz_id})
     if not quiz: raise HTTPException(404, "Quiz tidak ditemukan")
+    await assert_doc_class_unlocked(user, quiz)
+    if quiz.get("password_hash") and body.quiz_id not in (user.get("unlocked_quizzes") or []):
+        raise HTTPException(423, "Quiz terkunci. Masukkan password quiz terlebih dahulu")
     questions = quiz.get("questions", [])
     score = 0
     for i, q in enumerate(questions):
@@ -1306,6 +1375,7 @@ class KasIn(BaseModel):
     amount: float
     note: str = ""
     type: str = "masuk"  # masuk | keluar
+    student_id: Optional[str] = None
 
 class KasUpdate(BaseModel):
     kelas: Optional[str] = None
@@ -1339,11 +1409,41 @@ async def add_class_kas(cid: str, body: KasIn, user=Depends(get_current_user)):
     klass = await kas_class_for_view(cid, user)
     assert_kas_manager(user, klass)
     validate_tx(body.amount, body.type)
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "kelas": klass["name"], "class_id": cid,
+    data = body.model_dump()
+    if data.get("student_id"):
+        st = await db.users.find_one({"id": data["student_id"], "kelas": klass["name"], **dscope(user)}, {"_id": 0, "name": 1})
+        if not st or body.type != "masuk":
+            raise HTTPException(400, "Siswa tidak ditemukan di kelas ini / pembayaran harus bertipe masuk")
+        data["student_name"] = st["name"]
+    doc = {"id": str(uuid.uuid4()), **data, "kelas": klass["name"], "class_id": cid,
            "recorded_by": user["name"], "recorded_by_id": user["id"], "created_at": now_iso()}
     dstamp(doc, user)
     await db.uang_kas.insert_one(doc); doc.pop("_id", None)
     return doc
+
+WIB = timezone(timedelta(hours=7))
+
+@api.get("/classes/{cid}/kas/weekly")
+async def weekly_kas_status(cid: str, user=Depends(get_current_user)):
+    klass = await kas_class_for_view(cid, user)
+    if user.get("role") != "super_admin":
+        assert_kas_manager(user, klass)
+    now = datetime.now(WIB)
+    start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=7)
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    students = await db.users.find({"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": klass["name"], **dscope(user)},
+                                   {"_id": 0, "id": 1, "name": 1, "nisn": 1}).sort("name", 1).to_list(1000)
+    pays = await db.uang_kas.find({"class_id": cid, "type": "masuk", "student_id": {"$ne": None},
+                                   "created_at": {"$gte": start_utc, "$lt": end_utc}}, {"_id": 0}).to_list(2000)
+    paid_map = {}
+    for p in pays:
+        paid_map[p["student_id"]] = paid_map.get(p["student_id"], 0) + p["amount"]
+    paid = [{**s, "amount": paid_map[s["id"]]} for s in students if s["id"] in paid_map]
+    unpaid = [s for s in students if s["id"] not in paid_map]
+    return {"week_start": start.date().isoformat(), "week_end": (end - timedelta(days=1)).date().isoformat(),
+            "total": len(students), "paid": paid, "unpaid": unpaid}
 
 async def kas_tx_for_manage(kid: str, user: dict) -> dict:
     tx = await db.uang_kas.find_one({"id": kid})

@@ -4,7 +4,8 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock } from "lucide-react";
+import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
 import { ClassKas } from "@/components/ClassKas";
 import { ClassUnlock } from "@/components/ClassUnlock";
 
@@ -509,6 +510,8 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
   const [taking, setTaking] = useState(null);
   const [answers, setAnswers] = useState([]);
   const [editItem, setEditItem] = useState(null);
+  const [unlocking, setUnlocking] = useState(null);
+  const startQuiz = (q) => { if (q.locked) return setUnlocking(q); setTaking(q); setAnswers(Array(q.questions.length).fill(-1)); };
 
   const load = useCallback(() => {
     const q = subject !== "all" ? `&subject=${encodeURIComponent(subject)}` : "";
@@ -537,6 +540,7 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
               <div className="flex items-center gap-2">
                 <span className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center"><BrainCircuit className="w-5 h-5"/></span>
                 {q.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{q.subject}</span>}
+                {q.has_password && <span data-testid={`quiz-lock-${q.id}`} className={`ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.locked?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}><Lock className="w-3 h-3"/>{q.locked?"Terkunci":"Berpassword"}</span>}
               </div>
               {canManage && (
                 <div className="flex gap-1">
@@ -549,8 +553,8 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
               )}
             </div>
             <h3 className="font-heading font-bold mt-3">{q.title}</h3>
-            <p className="text-xs text-slate-500 mt-1">{(q.questions||[]).length} soal</p>
-            {!isTeacher && <button data-testid={`take-quiz-${q.id}`} onClick={()=>{setTaking(q); setAnswers(Array(q.questions.length).fill(-1));}}
+            <p className="text-xs text-slate-500 mt-1">{q.question_count ?? (q.questions||[]).length} soal</p>
+            {!isTeacher && <button data-testid={`take-quiz-${q.id}`} onClick={()=>startQuiz(q)}
               className="mt-3 w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800">Kerjakan</button>}
           </div>
         ))}
@@ -558,6 +562,7 @@ function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage
 
       {showNew && <NewQuizModal klass={klass} subjects={teachSubjects} onClose={()=>setShowNew(false)} onDone={()=>{load();setShowNew(false);}}/>}
       {editItem && <NewQuizModal klass={klass} subjects={teachSubjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load();setEditItem(null);}}/>}
+      {unlocking && <QuizUnlockModal quiz={unlocking} onClose={()=>setUnlocking(null)} onUnlocked={(qz)=>{setUnlocking(null); load(); startQuiz(qz);}}/>}
       {taking && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -591,13 +596,15 @@ function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
   const [subject, setSubject] = useState(initial?.subject || subjects[0] || "");
   const [qs, setQs] = useState(initial?.questions?.length ? initial.questions.map(q=>({q:q.q,options:[...(q.options||["","","",""])],answer:q.answer ?? 0})) : [{ q:"", options:["","","",""], answer:0 }]);
   const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState("");
+  const [removePw, setRemovePw] = useState(false);
   const add = () => setQs([...qs, { q:"", options:["","","",""], answer:0 }]);
   const submit = async () => {
     if (!title.trim()) return toast.error("Judul quiz wajib diisi");
     setBusy(true);
     try {
-      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs }); toast.success("Quiz diperbarui"); }
-      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs }); toast.success("Quiz dibuat"); }
+      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs, ...quizPasswordBody(password, removePw) }); toast.success("Quiz diperbarui"); }
+      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); }
       onDone();
     }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
@@ -620,6 +627,7 @@ function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
               <input placeholder="Mapel" value={subject} onChange={e=>setSubject(e.target.value)} className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
             )}
           </div>
+          <QuizPasswordField hasPassword={!!initial?.has_password} value={password} onChange={setPassword} remove={removePw} onRemove={setRemovePw}/>
           {qs.map((q,qi)=>(
             <div key={qi} className="p-3 bg-slate-50 rounded-xl space-y-2 relative">
               <button onClick={()=>setQs(qs.filter((_,i)=>i!==qi))} className="absolute top-2 right-2 text-rose-500"><Trash2 className="w-4 h-4"/></button>
