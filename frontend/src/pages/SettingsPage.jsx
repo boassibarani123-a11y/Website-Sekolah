@@ -74,6 +74,9 @@ export default function SettingsPage() {
             <Field label="Tagline / Deskripsi">
               <input value={form.footer_text || ""} onChange={e=>upd("footer_text", e.target.value)} className={inp}/>
             </Field>
+            <Field label="Tahun Ajaran" hint="Muncul di cover presentasi & PPTX">
+              <input data-testid="academic-year-input" value={form.academic_year || ""} onChange={e=>upd("academic_year", e.target.value)} placeholder="2026/2027" className={inp}/>
+            </Field>
           </Section>
 
           <Section title="D. Teks Halaman Login" icon="✍️">

@@ -104,6 +104,7 @@ DEFAULT_SETTINGS = {
     ],
     "footer_text": "Sistem Manajemen Sekolah Terpadu",
     "primary_color": "#0284C7",
+    "academic_year": "2026/2027",
     # ---- Editable login page text ----
     "login_badge": "SISTEM MANAJEMEN SEKOLAH TERPADU",
     "login_headline": "Satu Platform.\nTujuh Peran.\nSekolah Modern.",
@@ -2937,6 +2938,7 @@ class SettingsIn(BaseModel):
     id_card_rules: Optional[List[str]] = None
     footer_text: Optional[str] = None
     primary_color: Optional[str] = None
+    academic_year: Optional[str] = None
     about: Optional[str] = None
     vision: Optional[str] = None
     mission: Optional[List[str]] = None
@@ -3102,6 +3104,242 @@ async def _seed():
                 "date": date, "type": etype, "kelas": kelas,
                 "created_by": "Admin Demo", "is_demo": True, "created_at": now_iso(),
             })
+
+# ---------------- GALERI PRESTASI & KEGIATAN ----------------
+class GalleryIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    category: str = "Prestasi"  # "Prestasi" | "Kegiatan"
+    level: Optional[str] = ""   # e.g. Kabupaten / Provinsi / Nasional
+    date: Optional[str] = ""
+    image_url: Optional[str] = ""
+
+@api.get("/gallery")
+async def list_gallery(category: Optional[str] = None):
+    """Public: daftar prestasi & dokumentasi kegiatan untuk halaman publik."""
+    q = {"is_demo": {"$ne": True}}
+    if category in ("Prestasi", "Kegiatan"):
+        q["category"] = category
+    items = await db.gallery.find(q, {"_id": 0}).sort("date", -1).to_list(500)
+    items.sort(key=lambda x: (x.get("date") or "", x.get("created_at") or ""), reverse=True)
+    return items
+
+@api.post("/gallery")
+async def add_gallery(body: GalleryIn, user=Depends(require_roles("kepsek", "staff_tu", "ketua_osis"))):
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(),
+           "created_by": user["name"], "created_at": now_iso()}
+    await db.gallery.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+@api.patch("/gallery/{gid}")
+async def edit_gallery(gid: str, body: GalleryIn, user=Depends(require_roles("kepsek", "staff_tu", "ketua_osis"))):
+    r = await db.gallery.update_one({"id": gid}, {"$set": body.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Item galeri tidak ditemukan")
+    return await db.gallery.find_one({"id": gid}, {"_id": 0})
+
+@api.delete("/gallery/{gid}")
+async def del_gallery(gid: str, user=Depends(require_roles("kepsek", "staff_tu"))):
+    r = await db.gallery.delete_one({"id": gid})
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Item galeri tidak ditemukan")
+    return {"ok": True}
+
+# ---------------- UNDUH PRESENTASI (.pptx) ----------------
+def _build_presentation_pptx(s: dict) -> bytes:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt, Emu
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+
+    SKY = RGBColor(0x02, 0x84, 0xC7)
+    SKY_LIGHT = RGBColor(0x38, 0xBD, 0xF8)
+    NAVY = RGBColor(0x0F, 0x17, 0x2A)
+    SLATE = RGBColor(0x33, 0x41, 0x55)
+    WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+    MUTED = RGBColor(0xCB, 0xD5, 0xE1)
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    SW, SH = prs.slide_width, prs.slide_height
+    blank = prs.slide_layouts[6]
+
+    school_name = s.get("school_name") or "SEKOLAH"
+    school_full = s.get("school_full_name") or school_name
+
+    def bg(slide, color):
+        f = slide.background.fill
+        f.solid(); f.fore_color.rgb = color
+
+    def rect(slide, x, y, w, h, color):
+        from pptx.enum.shapes import MSO_SHAPE
+        sp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
+        sp.fill.solid(); sp.fill.fore_color.rgb = color
+        sp.line.fill.background()
+        sp.shadow.inherit = False
+        return sp
+
+    def txt(slide, x, y, w, h, text, size, color, bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False):
+        tb = slide.shapes.add_textbox(x, y, w, h)
+        tf = tb.text_frame; tf.word_wrap = True
+        tf.vertical_anchor = anchor
+        p = tf.paragraphs[0]; p.alignment = align
+        r = p.add_run(); r.text = text
+        r.font.size = Pt(size); r.font.bold = bold; r.font.italic = italic
+        r.font.color.rgb = color; r.font.name = "Calibri"
+        return tb
+
+    def bullets(slide, x, y, w, h, items, size=16, color=SLATE, gap=6):
+        tb = slide.shapes.add_textbox(x, y, w, h)
+        tf = tb.text_frame; tf.word_wrap = True
+        for i, it in enumerate(items):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.space_after = Pt(gap)
+            rb = p.add_run(); rb.text = "▸  "
+            rb.font.size = Pt(size); rb.font.bold = True; rb.font.color.rgb = SKY
+            r = p.add_run(); r.text = it
+            r.font.size = Pt(size); r.font.color.rgb = color; r.font.name = "Calibri"
+        return tb
+
+    def feature_slide(title, desc, points, tag="FITUR UTAMA"):
+        sl = prs.slides.add_slide(blank)
+        bg(sl, WHITE)
+        rect(sl, 0, 0, SW, Inches(1.55), SKY)
+        rect(sl, 0, Inches(1.55), SW, Emu(45720), NAVY)
+        txt(sl, Inches(0.6), Inches(0.28), Inches(12), Inches(0.4), tag, 12, SKY_LIGHT, bold=True)
+        txt(sl, Inches(0.6), Inches(0.62), Inches(12.1), Inches(0.85), title, 30, WHITE, bold=True)
+        txt(sl, Inches(0.6), Inches(1.85), Inches(12.1), Inches(0.9), desc, 17, SLATE)
+        txt(sl, Inches(0.6), Inches(2.95), Inches(6), Inches(0.4), "MANFAAT UTAMA", 13, SKY, bold=True)
+        bullets(sl, Inches(0.6), Inches(3.4), Inches(12), Inches(3.4), points, size=17, gap=8)
+        rect(sl, 0, SH - Emu(274320), SW, Emu(274320), NAVY)
+        txt(sl, Inches(0.6), SH - Emu(274320), Inches(12.1), Emu(274320),
+            f"{school_name} · Sistem Manajemen Sekolah Terpadu", 10, MUTED, anchor=MSO_ANCHOR.MIDDLE)
+        return sl
+
+    # 1) COVER
+    sl = prs.slides.add_slide(blank); bg(sl, NAVY)
+    rect(sl, 0, Inches(3.15), SW, Emu(64008), SKY)
+    txt(sl, Inches(0.8), Inches(0.9), Inches(11.7), Inches(0.5), "SISTEM MANAJEMEN SEKOLAH TERPADU", 16, SKY_LIGHT, bold=True, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(0.5), Inches(1.9), Inches(12.3), Inches(1.3), school_full, 44, WHITE, bold=True, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(1.5), Inches(3.45), Inches(10.3), Inches(0.7), "Satu Platform · Sembilan Peran · Nol Kertas", 20, MUTED, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(1.5), Inches(6.2), Inches(10.3), Inches(0.5),
+        f"Tahun Ajaran {s.get('academic_year') or '2026/2027'}", 16, SKY_LIGHT, align=PP_ALIGN.CENTER)
+
+    # 2) RINGKASAN & TUJUAN
+    sl = prs.slides.add_slide(blank); bg(sl, WHITE)
+    rect(sl, 0, 0, SW, Inches(1.3), SKY)
+    txt(sl, Inches(0.6), Inches(0.33), Inches(12), Inches(0.7), "Ringkasan Sistem & Tujuan Utama", 30, WHITE, bold=True)
+    txt(sl, Inches(0.6), Inches(1.6), Inches(12.1), Inches(1.0),
+        s.get("about") or "Platform terpadu berbasis web untuk mendigitalisasi operasional sekolah agar transparan, cepat, dan mudah diaudit.", 16, SLATE)
+    txt(sl, Inches(0.6), Inches(2.75), Inches(12), Inches(0.4), "TUJUAN UTAMA", 13, SKY, bold=True)
+    bullets(sl, Inches(0.6), Inches(3.2), Inches(12.1), Inches(3.6), [
+        "Presensi harian cepat & akurat lewat QR kartu pelajar dan barcode NISN.",
+        "Transparansi keuangan kas kelas dengan pencatatan digital oleh Ketua Kelas & Bendahara.",
+        "Struktur kelas/BPH yang rapi, konsisten, dan mudah dikelola.",
+        "Aset sekolah selalu terlacak dengan siklus peminjaman yang jelas.",
+        "Ujian daring yang jujur melalui sistem anti-cheat.",
+        "Satu dasbor terpadu untuk seluruh warga sekolah.",
+    ], size=17, gap=8)
+
+    # 3) PERAN PENGGUNA & HAK AKSES
+    sl = prs.slides.add_slide(blank); bg(sl, WHITE)
+    rect(sl, 0, 0, SW, Inches(1.3), SKY)
+    txt(sl, Inches(0.6), Inches(0.33), Inches(12), Inches(0.7), "Peran Pengguna & Hak Akses", 30, WHITE, bold=True)
+    roles = [
+        ("Super Admin", "Akses penuh seluruh modul, kelola akun & pengaturan sekolah."),
+        ("Kepala Sekolah", "Memantau analitik, laporan, dana sosial & pengumuman."),
+        ("Staff TU", "Administrasi PPDB, presensi, dan data siswa."),
+        ("Guru / Wali Kelas", "Tugas, mini-quiz, ujian, rapor, dan chat wali-ortu."),
+        ("Siswa", "Presensi, tugas, quiz, kartu pelajar, dan pengumuman."),
+        ("Ketua Kelas", "Mengelola struktur BPH & kas kelas."),
+        ("Bendahara", "Mencatat pemasukan/pengeluaran kas kelas."),
+        ("Ketua OSIS", "Dana sosial, pemilu OSIS, dan dokumentasi kegiatan."),
+        ("Orang Tua", "Memantau rapor & presensi anak, chat dengan wali kelas."),
+    ]
+    tb = sl.shapes.add_textbox(Inches(0.6), Inches(1.55), Inches(12.1), Inches(5.6))
+    tf = tb.text_frame; tf.word_wrap = True
+    for i, (role, acc) in enumerate(roles):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.space_after = Pt(7)
+        rr = p.add_run(); rr.text = f"{role} — "
+        rr.font.size = Pt(16); rr.font.bold = True; rr.font.color.rgb = SKY
+        ra = p.add_run(); ra.text = acc
+        ra.font.size = Pt(16); ra.font.color.rgb = SLATE
+
+    # 4-8) FITUR UTAMA
+    feature_slide("Absensi QR / Barcode",
+        "Presensi harian 800 siswa tanpa antre menggunakan QR kartu pelajar atau barcode scanner NISN.",
+        ["±73% lebih cepat dibanding presensi manual.",
+         "Anti-duplikat: satu siswa tercatat sekali per hari.",
+         "Metode manual tersedia sebagai cadangan dalam satu log.",
+         "Notifikasi kehadiran otomatis ke siswa & orang tua.",
+         "Rekap & ekspor Excel lengkap dengan kolom metode."])
+    feature_slide("Kas Kelas",
+        "Pencatatan keuangan kas kelas yang transparan, dikelola Ketua Kelas & Bendahara.",
+        ["Rekap mingguan per siswa + tombol 'Tandai Bayar'.",
+         "Grafik tren kas 3–12 bulan & rekap bulanan.",
+         "Pengingat otomatis tiap Jumat 08:00 WIB ke penunggak.",
+         "Setiap rupiah tercatat atas nama pembayar.",
+         "Anggota lain baca-saja — transparansi penuh."])
+    feature_slide("Manajemen Kelas & Struktur BPH",
+        "Bagan pengurus kelas berjenjang dengan foto, garis penghubung, dan drag-and-drop.",
+        ["Salin struktur BPH antar kelas dalam sekejap.",
+         "Password kelas sekali input untuk seluruh anggota.",
+         "Siswa sekelas otomatis menjadi anggota.",
+         "Kedalaman jabatan tak terbatas.",
+         "Hanya Ketua Kelas yang dapat mengubah struktur."])
+    feature_slide("Inventaris & Peminjaman",
+        "Pengelolaan aset sekolah yang selalu terlacak dengan siklus peminjaman penuh.",
+        ["Data lengkap: kode, kategori, lokasi, kondisi, stok.",
+         "Peringatan stok menipis otomatis.",
+         "Siklus ajukan → setujui/tolak → dikembalikan.",
+         "Notifikasi status ke pemohon.",
+         "Ekspor laporan Excel (tersedia, dipinjam, total)."])
+    feature_slide("Ujian Online Anti-Cheat",
+        "Ujian daring yang jujur dengan penguncian layar dan pencatatan pelanggaran di server.",
+        ["Password wajib; ujian mulai otomatis.",
+         "Mode layar penuh dipaksa selama pengerjaan.",
+         "Pindah tab/keluar fullscreen tercatat sebagai pelanggaran.",
+         "Batas pelanggaran → jawaban terkirim & ujian terkunci.",
+         "Soal & opsi diacak per siswa; timer live opsional."])
+
+    # 9) MODUL PENDUKUNG
+    sl = prs.slides.add_slide(blank); bg(sl, WHITE)
+    rect(sl, 0, 0, SW, Inches(1.3), SKY)
+    txt(sl, Inches(0.6), Inches(0.33), Inches(12), Inches(0.7), "Modul Pendukung", 30, WHITE, bold=True)
+    bullets(sl, Inches(0.6), Inches(1.7), Inches(12.1), Inches(5.3), [
+        "Tugas & Mini-Quiz — penilaian otomatis, soal diacak, quiz bulanan terjadwal.",
+        "PPDB Online — pendaftaran siswa baru tanpa akun, upload berkas, pantau status 24/7.",
+        "Kartu Pelajar Digital — QR permanen, cetak massal format KTP ter-branding sekolah.",
+        "Dana Sosial — penggalangan & pencatatan bantuan sosial yang transparan.",
+        "Pemilu OSIS — pemungutan suara digital yang aman dan real-time.",
+        "Schoolgram — galeri momen & kegiatan sekolah.",
+        "Kalender, Pengumuman, Rapor Digital, Chat Wali-Ortu, dan Papan Prestasi.",
+    ], size=17, gap=9)
+
+    # 10) PENUTUP
+    sl = prs.slides.add_slide(blank); bg(sl, NAVY)
+    rect(sl, 0, Inches(3.2), SW, Emu(64008), SKY)
+    txt(sl, Inches(1), Inches(2.1), Inches(11.3), Inches(1.1), "Sekolah Lebih Rapi, Mulai Hari Ini.", 38, WHITE, bold=True, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(1.5), Inches(3.5), Inches(10.3), Inches(1.2),
+        "Presensi dalam hitungan menit · Kas transparan · Aset terlacak · Ujian jujur.", 18, MUTED, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(1), Inches(6.3), Inches(11.3), Inches(0.5), school_full, 16, SKY_LIGHT, bold=True, align=PP_ALIGN.CENTER)
+
+    buf = io.BytesIO(); prs.save(buf); buf.seek(0)
+    return buf.getvalue()
+
+@api.get("/presentation/pptx")
+async def download_presentation_pptx():
+    """Public: unduh deck presentasi dalam format PowerPoint (.pptx)."""
+    s = await get_settings()
+    data = _build_presentation_pptx(s)
+    name = (s.get("school_name") or "Sekolah").replace(" ", "_")
+    headers = {"Content-Disposition": f'attachment; filename="Presentasi_{name}.pptx"'}
+    return StreamingResponse(io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers=headers)
+
 
 app.include_router(api)
 

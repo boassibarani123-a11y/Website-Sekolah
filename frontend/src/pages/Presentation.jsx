@@ -7,7 +7,7 @@ import {
   Timer, AlertTriangle, Lock, Bell, FileSpreadsheet, ArrowRightLeft,
   ClipboardList, BrainCircuit, IdCard, CalendarDays, Megaphone, CheckCircle2,
   TrendingUp, UserCheck, ArrowRight, Sparkles, HandCoins, Copy, BarChart3,
-  UserPlus, Upload, Printer, FileCheck, Clock, Shuffle,
+  UserPlus, Upload, Printer, FileCheck, Clock, Shuffle, Download,
 } from "lucide-react";
 
 /* ---------------- komponen visual kecil ---------------- */
@@ -487,6 +487,11 @@ export default function Presentation() {
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1.5">
               <Printer className="w-4 h-4" /><span className="hidden md:inline text-xs font-semibold">Cetak PDF</span>
             </button>
+            <a data-testid="slide-download-pptx" href={`${process.env.REACT_APP_BACKEND_URL}/api/presentation/pptx`} download
+              title="Unduh sebagai PowerPoint (.pptx)"
+              className="p-2 rounded-lg bg-emerald-500/90 hover:bg-emerald-400 transition-colors flex items-center gap-1.5">
+              <Download className="w-4 h-4" /><span className="hidden md:inline text-xs font-semibold">Unduh PPTX</span>
+            </a>
             <button data-testid="slide-prev" onClick={prev} disabled={idx === 0}
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
             <button data-testid="slide-next" onClick={next} disabled={idx === total - 1}

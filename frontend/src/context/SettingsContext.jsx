@@ -14,6 +14,7 @@ const DEFAULTS = {
   ],
   footer_text: "Sistem Manajemen Sekolah Terpadu",
   primary_color: "#0284C7",
+  academic_year: "2026/2027",
   login_badge: "SISTEM MANAJEMEN SEKOLAH TERPADU",
   login_headline: "Satu Platform.\nTujuh Peran.\nSekolah Modern.",
   login_description: "Absensi QR, Schoolgram, Inventaris, Tugas & Quiz, Uang Kas, Dana Sosial, Pemilu OSIS, dan Kartu Pelajar cetak KTP — semuanya dalam satu dashboard elegan.",
