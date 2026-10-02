@@ -1,0 +1,23 @@
+{
+  "summary": "Iter 13 validated two features: (1) Class-lock + Quiz-password enforcement on tugas/quiz endpoints — super_admin bypasses, non-unlocked non-super users have their class's items hidden from /api/assignments & /api/quizzes, /api/submissions/status returns 423, /api/quizzes/attempt returns 423 when quiz pw not unlocked. Guru CANNOT change class password (PATCH /api/classes/{id} -> 403). Quiz password lifecycle (create, patch to change, patch remove_password) all work; changing pw resets unlocked_quizzes for all students; siswa never receives 'answer' field or 'password_hash'; locked quiz returns questions=[] and question_count intact. (2) Weekly kas endpoint — Monday-Sunday WIB week range verified, siswa/guru -> 403, ketua_kelas (after unlock) + super_admin -> 200. Paying a student via POST /api/classes/{cid}/kas with student_id moves them from unpaid to paid. UI: guru.demo created a quiz with password (quiz-title-input, quiz-password-field, save-quiz-button) in XI IPA 1; siswa.demo saw quiz-lock-{id} badge + take-quiz button, opened quiz-unlock-modal, wrong pw got 400, correct pw opened quiz. Ketua kelas sees weekly-kas-card w/ summary 0/2, weekly-kas-amount, weekly-kas-unpaid-list, 2 weekly-pay-{id} buttons; kas-student-select enabled by default (masuk). Siswa does NOT see weekly-kas-card (count=0). Super admin DOES see weekly-kas-card but 0 pay buttons (read-only). Backend pytest: 12/12 PASSED.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_quiz_pw_weekly_kas.py",
+    "/app/test_reports/pytest/iter13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now ~2320 lines; past-iter threshold flag still applies — consider splitting classes/quizzes/kas routers.",
+    "ClassKas.jsx exportXlsx still misses URL.revokeObjectURL (carried over from iter12).",
+    "quiz_out() mutates incoming dict (pops password_hash/answer) which is fine for find_one results but could be surprising if someone passes a cached object. Low priority.",
+    "weekly_kas_status computes week in server local WIB offset correctly; relies on uang_kas.created_at being ISO UTC with offset — current now_iso() consistency assumed."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13_quiz_pw_weekly_kas.py", "/app/test_reports/iteration_13.json"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (all required selectors + role matrix verified)"},
+  "test_credentials": "*.demo@sekolahku.id / Demo12345; real admin boassibarani123@gmail.com / Boas12345io",
+  "seed_data_creation": "Transient TEST_iter13_* assignments & quizzes created and deleted within tests; UI test created TEST_UI_iter13_quiz and cleaned it up at end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "XI IPA 1 class id = 97194f55-894d-44dc-957a-1c2a8522e2b0, current class password = 'kunci1'. siswa.demo & kelas.demo were pre-unlocked; guru.demo got unlocked during iter13 UI test and remains unlocked thereafter. Weekly kas is Monday-Sunday WIB. Quiz lock flow: /api/quizzes returns locked=true, questions=[] for siswa when password set; POST /api/quizzes/{id}/unlock with correct password adds qid to user.unlocked_quizzes. Changing quiz password via PATCH resets ALL users' unlocked_quizzes for that quiz."
+}

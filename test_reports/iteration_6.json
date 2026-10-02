@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 6 (Kelas + assignments-with-attachments + Informasi Sekolah + print Kartu Pelajar fix + demo-accounts-removed) tested end-to-end. Backend: 17/17 pytest tests passed (auth, demo-account rejection, classes CRUD + siswa scoping, assignment with subject+class_id+attachments, submission with attachments + grade, quiz with subject + answer-key stripping for siswa, settings school-info fields, admin creates kepsek). Frontend: verified via Playwright — Super Admin login OK, Coba Akun Demo buttons removed from Login page, siswa@sekolahku.id login now returns 401 (demo removed), /classes visible for admin with Buat Kelas Baru, class create+delete works, XI IPA 1 detail page renders with subject filter chips (all/Matematika/Fisika), new-assignment modal with subject select+file upload works, new-quiz modal with subject select works, siswa sees only own class (1 card, no create button), siswa submission with file+text succeeds, /school-info edit button shown for admin & hidden for siswa. Print fixes verified: Kelola Akun → Kartu opens modal showing full gradient KTP card (name/NISN/kelas/QR all visible, not blank), and /print-cards?kelas=XI IPA 1 renders the student ID card in the A4 grid area with the Print Sekarang button.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_classes.py",
+    "/app/test_reports/pytest/iter6.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py has grown to ~1500 lines — split into routers (classes, assignments, submissions, quizzes, settings, files, exports, ppdb, chats). Recommended in previous iterations, still not done.",
+    "ClassDetail.jsx AttachmentChip builds URL from process.env.REACT_APP_BACKEND_URL + /api/files/... but /api/files requires auth cookie/query. When rendered as <a href> in a new tab the cookie is sent (samesite=none, secure) — works, but consider adding ?auth=<token> fallback or noting cookie dependency for future.",
+    "PATCH /submissions/{sid}/grade takes grade as query param not body; slightly inconsistent with rest of API but functional.",
+    "No delete endpoint for assignments or quizzes — teachers cannot remove created items; enhancement suggestion."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "boassibarani123@gmail.com / Boas12345io (super_admin), guru.test@sekolah.id / Guru12345, siswa.test@sekolah.id / Siswa12345 — all verified working. Legacy siswa@sekolahku.id / Siswa@2026 correctly rejected (401).",
+  "seed_data_creation": "Created and deleted transient class 'XII IPA 2 TEST' during test. Created assignment 'TEST Tugas UI' and quiz 'TEST Quiz UI' inside XI IPA 1 (retained; can be cleaned up manually). Applied settings PATCH with about='TEST about' during backend test — main agent may want to reset via SettingsPage.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter6_classes.py is the current authoritative regression suite for this iteration's features. XI IPA 1 class exists with Matematika/Fisika. If retesting the print bug, /print-cards?kelas=XI%20IPA%201 shows a properly rendered gradient card (not blank, not stacked in corner). Kartu button in /accounts opens Kartu Pelajar modal with correct KTP rendering.",
+  "rca of the issue": "N/A — no bugs found. Print Kartu Pelajar fix confirmed via visual verification (screenshots show full gradient KTP with all fields, QR code, and school branding rendering correctly both in modal and in bulk print A4 layout)."
+}

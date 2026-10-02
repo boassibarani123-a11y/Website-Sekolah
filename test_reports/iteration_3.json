@@ -1,0 +1,35 @@
+{
+  "summary": "Tested Phase 5: PPDB module (public form + admin) and branded Excel exports across 5 endpoints. Backend: 12/13 pytest passed (1 real bug: social-fund/export is not branded due to duplicate route). Frontend: PPDB public form → success screen with 8-char nomor, /admin-ppdb renders with stat cards + list + auto-select + export, sidebar visibility correct per role, login CTA present. 1 missing UI element: UangKas has no export button at all.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/social-fund/export", "issue": "Returns UNBRANDED plain-pandas Excel. Route is defined TWICE in /app/backend/server.py — line 672 (old plain pd.to_excel) and line 1207 (new pretty_excel branded). FastAPI keeps the first registration, so the branded version at 1207 is dead code. Verified by inspecting sheet1.xml: 'SEKOLAHKU' marker is absent from social-fund export but present in all other exports (attendance, kas, inventory, ppdb).", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "UangKas.jsx (/uang-kas)", "issue": "Export Excel button is completely missing from the page. Review request expected data-testid='kas-export-button' to trigger /api/kas/export download. Backend endpoint exists and works (verified with pytest), only frontend button missing.", "selector": "[data-testid=\"kas-export-button\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "DELETE the duplicate route at /app/backend/server.py line 672-681 (old plain-pandas /social-fund/export). Keep only the branded version at line 1207.",
+    "ADD Export Excel button to /app/frontend/src/pages/UangKas.jsx with data-testid='kas-export-button' that GETs /api/kas/export as blob and downloads (pattern already used in Inventory.jsx line 42)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: TWO endpoints registered at '/social-fund/export' — silent bug because FastAPI does not warn on duplicate routes. Search for any other duplicate route decorators.",
+    "server.py is 1439 lines — consider splitting per resource (ppdb.py, exports.py, etc.) for maintainability.",
+    "UangKas.jsx uses static toast import from 'sonner' correctly but doesn't handle export errors (feature missing anyway).",
+    "PpdbPublic.jsx form is uncontrolled about NEM min/max — accepts client-side, backend validates 0-100 which is good."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "92% (12/13)", "frontend": "90% (9/10 flows — kas-export missing)"},
+  "test_credentials": "Used cassandramarsada@gmail.com / Admin@Sekolah2026 (super_admin) and siswa@sekolahku.id / Siswa@2026",
+  "seed_data_creation": "Created PPDB entries via public /api/ppdb/register: TEST_Ahmad Rizki (via pytest), TEST_UI Ahmad (via Playwright). Both visible in /admin-ppdb.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes the two bugs: (1) re-run /app/backend/tests/backend_test.py -n 0 to verify test_export_social_fund now passes (SEKOLAHKU marker in sheet1.xml), (2) verify UangKas page shows a working Export button with data-testid='kas-export-button' that downloads a branded xlsx. All other Phase 5 features verified working.",
+  "rca of the issue": "Social-fund export: an older plain pandas export at line 672 was left in place when the branded version was added at line 1207. FastAPI silently accepts duplicate routes and serves the first-registered one. Fix: delete lines 672-681. UangKas export button: developer added backend /api/kas/export and mentioned data-testid='kas-export-button' in review, but never added the button element to UangKas.jsx (the file only contains 'kas-page' and 'uang-kas-add-transaction-button' testids)."
+}

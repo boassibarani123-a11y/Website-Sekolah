@@ -1,0 +1,9 @@
+crons:
+  - name: kas-reminder
+    description: "Mengirim notifikasi pengingat kas setiap Jumat 08:00 WIB ke siswa yang belum bayar minggu itu"
+    cron: "0 8 * * 5"
+    timezone: "Asia/Jakarta"
+    endpoint: "{{BASE_URL}}/api/cron/kas-reminder"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true
