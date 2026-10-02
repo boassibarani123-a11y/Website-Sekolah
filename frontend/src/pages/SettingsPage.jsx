@@ -143,9 +143,17 @@ export default function SettingsPage() {
         <div className="lg:sticky lg:top-6 lg:self-start space-y-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <h3 className="font-heading font-bold text-slate-900 mb-4">🔍 Live Preview Kartu Pelajar</h3>
-            <div className="flex flex-col items-center py-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl">
-              <StudentIdCard student={previewStudent} school={form.school_full_name || "SMA NEGERI 1 LAGUBOTI"}
-                validYears={form.id_card_valid_years} logoUrl={form.school_logo_url}/>
+            <div className="flex flex-col items-center gap-4 py-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Depan</span>
+                <StudentIdCard student={previewStudent} school={form.school_full_name || "SMA NEGERI 1 LAGUBOTI"}
+                  validYears={form.id_card_valid_years} logoUrl={form.school_logo_url} side="front"/>
+              </div>
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Belakang</span>
+                <StudentIdCard student={previewStudent} school={form.school_full_name || "SMA NEGERI 1 LAGUBOTI"}
+                  logoUrl={form.school_logo_url} rules={form.id_card_rules} side="back"/>
+              </div>
             </div>
             <p className="text-xs text-slate-500 text-center mt-4">
               Perubahan akan tampil di semua kartu siswa setelah disimpan.

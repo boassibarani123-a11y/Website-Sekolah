@@ -3168,6 +3168,16 @@ def _build_presentation_pptx(s: dict) -> bytes:
     school_name = s.get("school_name") or "SEKOLAH"
     school_full = s.get("school_full_name") or school_name
 
+    logo_bytes = None
+    _logo_url = (s.get("school_logo_url") or "").strip()
+    if _logo_url.startswith("http"):
+        try:
+            import urllib.request
+            _rq = urllib.request.Request(_logo_url, headers={"User-Agent": "Mozilla/5.0"})
+            logo_bytes = urllib.request.urlopen(_rq, timeout=8).read()
+        except Exception:
+            logo_bytes = None
+
     def bg(slide, color):
         f = slide.background.fill
         f.solid(); f.fore_color.rgb = color
@@ -3202,13 +3212,22 @@ def _build_presentation_pptx(s: dict) -> bytes:
             r.font.size = Pt(size); r.font.color.rgb = color; r.font.name = "Calibri"
         return tb
 
+    def add_logo(slide, left, top, height):
+        if not logo_bytes:
+            return
+        try:
+            slide.shapes.add_picture(io.BytesIO(logo_bytes), left, top, height=height)
+        except Exception:
+            pass
+
     def feature_slide(title, desc, points, tag="FITUR UTAMA"):
         sl = prs.slides.add_slide(blank)
         bg(sl, WHITE)
         rect(sl, 0, 0, SW, Inches(1.55), SKY)
         rect(sl, 0, Inches(1.55), SW, Emu(45720), NAVY)
-        txt(sl, Inches(0.6), Inches(0.28), Inches(12), Inches(0.4), tag, 12, SKY_LIGHT, bold=True)
-        txt(sl, Inches(0.6), Inches(0.62), Inches(12.1), Inches(0.85), title, 30, WHITE, bold=True)
+        txt(sl, Inches(0.6), Inches(0.28), Inches(10.5), Inches(0.4), tag, 12, SKY_LIGHT, bold=True)
+        txt(sl, Inches(0.6), Inches(0.62), Inches(10.6), Inches(0.85), title, 30, WHITE, bold=True)
+        add_logo(sl, SW - Inches(1.45), Inches(0.3), Inches(0.95))
         txt(sl, Inches(0.6), Inches(1.85), Inches(12.1), Inches(0.9), desc, 17, SLATE)
         txt(sl, Inches(0.6), Inches(2.95), Inches(6), Inches(0.4), "MANFAAT UTAMA", 13, SKY, bold=True)
         bullets(sl, Inches(0.6), Inches(3.4), Inches(12), Inches(3.4), points, size=17, gap=8)
@@ -3220,16 +3239,18 @@ def _build_presentation_pptx(s: dict) -> bytes:
     # 1) COVER
     sl = prs.slides.add_slide(blank); bg(sl, NAVY)
     rect(sl, 0, Inches(3.15), SW, Emu(64008), SKY)
-    txt(sl, Inches(0.8), Inches(0.9), Inches(11.7), Inches(0.5), "SISTEM MANAJEMEN SEKOLAH TERPADU", 16, SKY_LIGHT, bold=True, align=PP_ALIGN.CENTER)
-    txt(sl, Inches(0.5), Inches(1.9), Inches(12.3), Inches(1.3), school_full, 44, WHITE, bold=True, align=PP_ALIGN.CENTER)
-    txt(sl, Inches(1.5), Inches(3.45), Inches(10.3), Inches(0.7), "Satu Platform · Sembilan Peran · Nol Kertas", 20, MUTED, align=PP_ALIGN.CENTER)
+    add_logo(sl, int((SW - Inches(1.1)) / 2), Inches(0.55), Inches(1.1))
+    txt(sl, Inches(0.8), Inches(1.75), Inches(11.7), Inches(0.5), "SISTEM MANAJEMEN SEKOLAH TERPADU", 16, SKY_LIGHT, bold=True, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(0.5), Inches(2.25), Inches(12.3), Inches(1.3), school_full, 44, WHITE, bold=True, align=PP_ALIGN.CENTER)
+    txt(sl, Inches(1.5), Inches(3.5), Inches(10.3), Inches(0.7), "Satu Platform · Sembilan Peran · Nol Kertas", 20, MUTED, align=PP_ALIGN.CENTER)
     txt(sl, Inches(1.5), Inches(6.2), Inches(10.3), Inches(0.5),
         f"Tahun Ajaran {s.get('academic_year') or '2026/2027'}", 16, SKY_LIGHT, align=PP_ALIGN.CENTER)
 
     # 2) RINGKASAN & TUJUAN
     sl = prs.slides.add_slide(blank); bg(sl, WHITE)
     rect(sl, 0, 0, SW, Inches(1.3), SKY)
-    txt(sl, Inches(0.6), Inches(0.33), Inches(12), Inches(0.7), "Ringkasan Sistem & Tujuan Utama", 30, WHITE, bold=True)
+    txt(sl, Inches(0.6), Inches(0.33), Inches(10.5), Inches(0.7), "Ringkasan Sistem & Tujuan Utama", 30, WHITE, bold=True)
+    add_logo(sl, SW - Inches(1.25), Inches(0.2), Inches(0.9))
     txt(sl, Inches(0.6), Inches(1.6), Inches(12.1), Inches(1.0),
         s.get("about") or "Platform terpadu berbasis web untuk mendigitalisasi operasional sekolah agar transparan, cepat, dan mudah diaudit.", 16, SLATE)
     txt(sl, Inches(0.6), Inches(2.75), Inches(12), Inches(0.4), "TUJUAN UTAMA", 13, SKY, bold=True)
@@ -3245,7 +3266,8 @@ def _build_presentation_pptx(s: dict) -> bytes:
     # 3) PERAN PENGGUNA & HAK AKSES
     sl = prs.slides.add_slide(blank); bg(sl, WHITE)
     rect(sl, 0, 0, SW, Inches(1.3), SKY)
-    txt(sl, Inches(0.6), Inches(0.33), Inches(12), Inches(0.7), "Peran Pengguna & Hak Akses", 30, WHITE, bold=True)
+    txt(sl, Inches(0.6), Inches(0.33), Inches(10.5), Inches(0.7), "Peran Pengguna & Hak Akses", 30, WHITE, bold=True)
+    add_logo(sl, SW - Inches(1.25), Inches(0.2), Inches(0.9))
     roles = [
         ("Super Admin", "Akses penuh seluruh modul, kelola akun & pengaturan sekolah."),
         ("Kepala Sekolah", "Memantau analitik, laporan, dana sosial & pengumuman."),
@@ -3307,7 +3329,8 @@ def _build_presentation_pptx(s: dict) -> bytes:
     # 9) MODUL PENDUKUNG
     sl = prs.slides.add_slide(blank); bg(sl, WHITE)
     rect(sl, 0, 0, SW, Inches(1.3), SKY)
-    txt(sl, Inches(0.6), Inches(0.33), Inches(12), Inches(0.7), "Modul Pendukung", 30, WHITE, bold=True)
+    txt(sl, Inches(0.6), Inches(0.33), Inches(10.5), Inches(0.7), "Modul Pendukung", 30, WHITE, bold=True)
+    add_logo(sl, SW - Inches(1.25), Inches(0.2), Inches(0.9))
     bullets(sl, Inches(0.6), Inches(1.7), Inches(12.1), Inches(5.3), [
         "Tugas & Mini-Quiz — penilaian otomatis, soal diacak, quiz bulanan terjadwal.",
         "PPDB Online — pendaftaran siswa baru tanpa akun, upload berkas, pantau status 24/7.",
@@ -3321,6 +3344,7 @@ def _build_presentation_pptx(s: dict) -> bytes:
     # 10) PENUTUP
     sl = prs.slides.add_slide(blank); bg(sl, NAVY)
     rect(sl, 0, Inches(3.2), SW, Emu(64008), SKY)
+    add_logo(sl, int((SW - Inches(0.95)) / 2), Inches(0.7), Inches(0.95))
     txt(sl, Inches(1), Inches(2.1), Inches(11.3), Inches(1.1), "Sekolah Lebih Rapi, Mulai Hari Ini.", 38, WHITE, bold=True, align=PP_ALIGN.CENTER)
     txt(sl, Inches(1.5), Inches(3.5), Inches(10.3), Inches(1.2),
         "Presensi dalam hitungan menit · Kas transparan · Aset terlacak · Ujian jujur.", 18, MUTED, align=PP_ALIGN.CENTER)

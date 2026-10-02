@@ -17,14 +17,22 @@ export default function MyCard() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm flex flex-col items-center gap-4">
-          <StudentIdCard student={user} school={settings.school_full_name}
-            validYears={settings.id_card_valid_years} logoUrl={settings.school_logo_url}/>
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm flex flex-col items-center gap-5">
+          <div className="flex flex-col items-center gap-2">
+            <span className="no-print text-[11px] font-bold uppercase tracking-widest text-slate-400">Tampak Depan</span>
+            <StudentIdCard student={user} school={settings.school_full_name}
+              validYears={settings.id_card_valid_years} logoUrl={settings.school_logo_url} side="front"/>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <span className="no-print text-[11px] font-bold uppercase tracking-widest text-slate-400">Tampak Belakang</span>
+            <StudentIdCard student={user} school={settings.school_full_name}
+              logoUrl={settings.school_logo_url} rules={settings.id_card_rules} side="back"/>
+          </div>
           <button data-testid="print-my-card-button" onClick={()=>window.print()}
             className="no-print w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800">
             <Printer className="w-4 h-4"/>Cetak / Simpan sebagai PDF
           </button>
-          <p className="no-print text-[11px] text-slate-500 text-center">Ukuran KTP Standar 85.6 × 53.98 mm. Cetak di kertas foto atau PVC untuk hasil terbaik.</p>
+          <p className="no-print text-[11px] text-slate-500 text-center">Ukuran KTP Standar 85.6 × 53.98 mm. Depan & belakang dicetak otomatis. Gunakan kertas foto atau PVC untuk hasil terbaik.</p>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 no-print">
