@@ -4,12 +4,13 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock, Network } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock, Network, ShieldCheck } from "lucide-react";
 import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
 import { QuizTakeModal, QuizTimeField } from "@/components/QuizTake";
 import { ClassKas } from "@/components/ClassKas";
 import { ClassUnlock } from "@/components/ClassUnlock";
 import { ClassBPH } from "@/components/ClassBPH";
+import { ClassExam } from "@/components/ClassExam";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -142,6 +143,10 @@ export default function ClassDetail() {
           className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="quiz"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
           <BrainCircuit className="w-4 h-4"/>Mini-Quiz
         </button>
+        <button data-testid="tab-ujian" onClick={()=>setTab("ujian")}
+          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="ujian"?"border-indigo-600 text-indigo-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <ShieldCheck className="w-4 h-4"/>Ujian
+        </button>
         <button data-testid="tab-kas" onClick={()=>setTab("kas")}
           className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="kas"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
           <PiggyBank className="w-4 h-4"/>Uang Kas
@@ -158,7 +163,9 @@ export default function ClassDetail() {
         </div>
       )}
 
-      {tab === "bph" ? <ClassBPH klass={klass}/> : tab === "kas" ? <ClassKas klass={klass}/> : tab === "tugas"
+      {tab === "bph" ? <ClassBPH klass={klass}/> : tab === "kas" ? <ClassKas klass={klass}/>
+        : tab === "ujian" ? <ClassExam klass={klass} subject={subject} teachSubjects={teachSubjects} isTeacher={isTeacher} canManage={canManage}/>
+        : tab === "tugas"
         ? <TugasTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
         : <QuizTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
 

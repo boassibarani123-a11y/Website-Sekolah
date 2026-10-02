@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "@/lib/apiClient";
 import StudentIdCard from "@/components/StudentIdCard";
+import { useSettings } from "@/context/SettingsContext";
 import { Printer, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function PrintCards() {
   const [sp] = useSearchParams();
   const kelas = sp.get("kelas") || "";
+  const { settings } = useSettings();
   const [students, setStudents] = useState([]);
   useEffect(() => {
     api.get("/users?role=siswa").then(r => {
@@ -36,7 +38,8 @@ export default function PrintCards() {
         <div className="grid grid-cols-2 gap-x-[6mm] gap-y-[4mm]">
           {students.map(s => (
             <div key={s.id} className="flex items-center justify-center">
-              <StudentIdCard student={s}/>
+              <StudentIdCard student={s} school={settings.school_full_name}
+                validYears={settings.id_card_valid_years} logoUrl={settings.school_logo_url}/>
             </div>
           ))}
         </div>

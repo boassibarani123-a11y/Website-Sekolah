@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight, UserCog, Lock } from "lucide-react";
+import { School, Plus, X, Users, BookOpen, Pencil, Trash2, ArrowRight, UserCog, Lock, Network } from "lucide-react";
 
 export default function Classes() {
   const { user } = useAuth();
@@ -120,13 +120,13 @@ export default function Classes() {
         ))}
       </div>
 
-      {editing && <ClassModal klass={editing} teachers={teachers} onClose={()=>setEditing(null)} onDone={()=>{load(); setEditing(null);}}/>}
+      {editing && <ClassModal klass={editing} teachers={teachers} classes={classes} onClose={()=>setEditing(null)} onDone={()=>{load(); setEditing(null);}}/>}
       {showSubjects && <SubjectsModal onClose={()=>setShowSubjects(false)}/>}
     </div>
   );
 }
 
-function ClassModal({ klass, teachers, onClose, onDone }) {
+function ClassModal({ klass, teachers, classes = [], onClose, onDone }) {
   const isEdit = !!klass.id;
   const [name, setName] = useState(klass.name || "");
   const [description, setDescription] = useState(klass.description || "");
@@ -134,6 +134,7 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
   const [homeroom, setHomeroom] = useState(klass.homeroom_teacher_id || "");
   const [password, setPassword] = useState("");
   const [removePw, setRemovePw] = useState(false);
+  const [copyBphFrom, setCopyBphFrom] = useState("");
   const [allSubjects, setAllSubjects] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -146,6 +147,7 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
       const body = { name: name.trim(), description, subjects, homeroom_teacher_id: homeroom || null };
       if (removePw) body.remove_password = true;
       else if (password.trim()) body.password = password.trim();
+      if (!isEdit && copyBphFrom) body.copy_bph_from = copyBphFrom;
       if (isEdit) await api.patch(`/classes/${klass.id}`, body);
       else await api.post("/classes", body);
       toast.success(isEdit ? "Kelas diperbarui" : "Kelas dibuat");
@@ -194,6 +196,17 @@ function ClassModal({ klass, teachers, onClose, onDone }) {
               {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
+          {!isEdit && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1"><Network className="w-3 h-3"/>Salin Struktur BPH (opsional)</label>
+              <select data-testid="copy-bph-select" value={copyBphFrom} onChange={e=>setCopyBphFrom(e.target.value)}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none bg-white">
+                <option value="">-- Jangan salin (mulai kosong) --</option>
+                {classes.filter(c=>c.id).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <p className="mt-1 text-[10px] text-slate-400">Bagan BPH dari kelas yang dipilih akan disalin ke kelas baru ini. Anda tetap bisa mengubahnya nanti.</p>
+            </div>
+          )}
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Mata Pelajaran di Kelas Ini</label>
             {allSubjects.length === 0 ? (

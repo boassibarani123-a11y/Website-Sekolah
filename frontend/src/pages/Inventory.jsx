@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Boxes, Plus, X, Check, Ban, Undo2, User, History } from "lucide-react";
+import { Boxes, Plus, X, Check, Ban, Undo2, User, History, Pencil, Trash2, Search, AlertTriangle, MapPin } from "lucide-react";
+
+const CONDITION_STYLE = {
+  "Baik": "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "Rusak": "bg-rose-100 text-rose-700 border-rose-200",
+  "Perbaikan": "bg-amber-100 text-amber-700 border-amber-200",
+};
 
 const STATUS_STYLE = {
   "Menunggu Approval": "bg-sky-100 text-sky-700 border-sky-200",
@@ -22,9 +28,13 @@ export default function Inventory() {
   const [items, setItems] = useState([]);
   const [reqs, setReqs] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [borrowFor, setBorrowFor] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [tab, setTab] = useState("items");
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState("all");
+  const [condFilter, setCondFilter] = useState("all");
   const load = () => {
     api.get("/inventory").then(r=>setItems(r.data));
     api.get(`/borrow${isStaff?"":"?mine=true"}`).then(r=>setReqs(r.data));
@@ -35,6 +45,18 @@ export default function Inventory() {
     await api.patch(`/borrow/${bid}?status=${status}`);
     toast.success(`Request ${status}`); load();
   };
+  const removeItem = async (i) => {
+    if (!window.confirm(`Hapus barang "${i.name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try { await api.delete(`/inventory/${i.id}`); toast.success("Barang dihapus"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
+  };
+  const categories = [...new Set(items.map(i=>i.category).filter(Boolean))].sort();
+  const lowStockCount = items.filter(i=>i.low_stock).length;
+  const filtered = items.filter(i =>
+    (catFilter==="all" || i.category===catFilter) &&
+    (condFilter==="all" || i.condition===condFilter) &&
+    (!search || (i.name||"").toLowerCase().includes(search.toLowerCase()) || (i.code||"").toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <div className="space-y-6" data-testid="inventory-page">
@@ -65,12 +87,46 @@ export default function Inventory() {
       </div>
 
       {tab==="items" && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map(i=>(
+        <>
+          {lowStockCount > 0 && isStaff && (
+            <div data-testid="low-stock-alert" className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800 font-medium">
+              <AlertTriangle className="w-4 h-4"/>{lowStockCount} barang stoknya menipis / habis. Segera lakukan pengadaan.
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"/>
+              <input data-testid="inventory-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari nama / kode barang..."
+                className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-lg focus:border-sky-500 outline-none text-sm"/>
+            </div>
+            <select data-testid="inventory-cat-filter" value={catFilter} onChange={e=>setCatFilter(e.target.value)}
+              className="px-3 py-2 border-2 border-slate-200 rounded-lg bg-white text-sm">
+              <option value="all">Semua Kategori</option>
+              {categories.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+            <select data-testid="inventory-cond-filter" value={condFilter} onChange={e=>setCondFilter(e.target.value)}
+              className="px-3 py-2 border-2 border-slate-200 rounded-lg bg-white text-sm">
+              <option value="all">Semua Kondisi</option>
+              <option value="Baik">Baik</option><option value="Perbaikan">Perbaikan</option><option value="Rusak">Rusak</option>
+            </select>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.length===0 && <p className="text-slate-400 italic col-span-full">Tidak ada barang yang cocok.</p>}
+          {filtered.map(i=>(
             <div key={i.id} data-testid={`inventory-item-${i.id}`} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center"><Boxes className="w-6 h-6"/></div>
+              <div className="flex items-start justify-between">
+                <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center overflow-hidden shrink-0">
+                  {i.image ? <img src={i.image} alt="" className="w-full h-full object-cover"/> : <Boxes className="w-6 h-6"/>}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${CONDITION_STYLE[i.condition] || "bg-slate-100 text-slate-600 border-slate-200"}`}>{i.condition}</span>
+                  {i.low_stock && <span data-testid={`low-stock-badge-${i.id}`} className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-0.5"><AlertTriangle className="w-3 h-3"/>Menipis</span>}
+                </div>
+              </div>
               <h3 className="font-heading font-bold text-slate-900 mt-3">{i.name}</h3>
-              <p className="text-xs text-slate-500 mt-0.5">{i.category} · {i.condition}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{i.category}{i.code ? ` · ${i.code}` : ""}</p>
+              {i.location && <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1"><MapPin className="w-3 h-3"/>{i.location}</p>}
+              {i.description && <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">{i.description}</p>}
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-emerald-50 border border-emerald-100 py-1.5">
                   <p className="text-[10px] font-semibold uppercase text-emerald-600">Tersedia</p>
@@ -89,13 +145,20 @@ export default function Inventory() {
                 <button data-testid="inventory-borrow-request-button" onClick={()=>setBorrowFor(i)}
                   className="flex-1 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-40" disabled={i.stock<=0}>Ajukan Pinjam</button>
                 {isStaff && (
-                  <button data-testid={`inventory-history-${i.id}`} onClick={()=>setHistoryFor(i)} title="Riwayat peminjaman"
-                    className="px-3 py-2 border-2 border-slate-200 rounded-lg text-slate-600 hover:border-sky-400 hover:text-sky-600"><History className="w-4 h-4"/></button>
+                  <>
+                    <button data-testid={`inventory-edit-${i.id}`} onClick={()=>setEditItem(i)} title="Edit barang"
+                      className="px-3 py-2 border-2 border-slate-200 rounded-lg text-slate-600 hover:border-sky-400 hover:text-sky-600"><Pencil className="w-4 h-4"/></button>
+                    <button data-testid={`inventory-delete-${i.id}`} onClick={()=>removeItem(i)} title="Hapus barang"
+                      className="px-3 py-2 border-2 border-slate-200 rounded-lg text-rose-500 hover:border-rose-400 hover:bg-rose-50"><Trash2 className="w-4 h-4"/></button>
+                    <button data-testid={`inventory-history-${i.id}`} onClick={()=>setHistoryFor(i)} title="Riwayat peminjaman"
+                      className="px-3 py-2 border-2 border-slate-200 rounded-lg text-slate-600 hover:border-sky-400 hover:text-sky-600"><History className="w-4 h-4"/></button>
+                  </>
                 )}
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </>
       )}
 
       {tab==="requests" && (
@@ -137,7 +200,8 @@ export default function Inventory() {
         </div>
       )}
 
-      {showAdd && <AddItemModal onClose={()=>setShowAdd(false)} onDone={()=>{load();setShowAdd(false);}}/>}
+      {showAdd && <ItemModal onClose={()=>setShowAdd(false)} onDone={()=>{load();setShowAdd(false);}}/>}
+      {editItem && <ItemModal item={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load();setEditItem(null);}}/>}
       {borrowFor && <BorrowModal item={borrowFor} onClose={()=>setBorrowFor(null)} onDone={()=>{load();setBorrowFor(null);}}/>}
       {historyFor && <HistoryModal item={historyFor} onClose={()=>setHistoryFor(null)}/>}
     </div>
@@ -174,18 +238,47 @@ function HistoryModal({item, onClose}) {
   </Modal>;
 }
 
-function AddItemModal({onClose,onDone}) {
-  const [f,setF] = useState({name:"",category:"",stock:1,condition:"Baik"});
-  return <Modal title="Tambah Barang" onClose={onClose}>
+function ItemModal({item, onClose, onDone}) {
+  const isEdit = !!item;
+  const [f,setF] = useState({
+    name: item?.name || "", category: item?.category || "", stock: item?.stock ?? 1,
+    condition: item?.condition || "Baik", location: item?.location || "", code: item?.code || "",
+    min_stock: item?.min_stock ?? 0, description: item?.description || "",
+  });
+  const [busy,setBusy] = useState(false);
+  const save = async () => {
+    if (!f.name.trim()) return toast.error("Nama barang wajib diisi");
+    if (!f.category.trim()) return toast.error("Kategori wajib diisi");
+    setBusy(true);
+    try {
+      if (isEdit) { await api.patch(`/inventory/${item.id}`, f); toast.success("Barang diperbarui"); }
+      else { await api.post("/inventory", f); toast.success("Barang ditambahkan"); }
+      onDone();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menyimpan"); }
+    finally { setBusy(false); }
+  };
+  return <Modal title={isEdit ? "Edit Barang" : "Tambah Barang"} onClose={onClose}>
     <div className="space-y-3">
-      <Field label="Nama"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})} className={inp}/></Field>
-      <Field label="Kategori"><input value={f.category} onChange={e=>setF({...f,category:e.target.value})} className={inp}/></Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Stok"><input type="number" value={f.stock} onChange={e=>setF({...f,stock:+e.target.value})} className={inp}/></Field>
-        <Field label="Kondisi"><input value={f.condition} onChange={e=>setF({...f,condition:e.target.value})} className={inp}/></Field>
+        <Field label="Nama *"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})} className={inp}/></Field>
+        <Field label="Kode / No. Inventaris"><input value={f.code} onChange={e=>setF({...f,code:e.target.value})} placeholder="INV-001" className={inp}/></Field>
       </div>
-      <button onClick={async()=>{await api.post("/inventory",f); toast.success("Barang ditambahkan"); onDone();}}
-        className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold">Simpan</button>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Kategori *"><input value={f.category} onChange={e=>setF({...f,category:e.target.value})} placeholder="Elektronik" className={inp}/></Field>
+        <Field label="Lokasi"><input value={f.location} onChange={e=>setF({...f,location:e.target.value})} placeholder="Gudang A" className={inp}/></Field>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Stok"><input type="number" value={f.stock} onChange={e=>setF({...f,stock:+e.target.value})} className={inp}/></Field>
+        <Field label="Min. Stok"><input type="number" value={f.min_stock} onChange={e=>setF({...f,min_stock:+e.target.value})} className={inp}/></Field>
+        <Field label="Kondisi">
+          <select value={f.condition} onChange={e=>setF({...f,condition:e.target.value})} className={inp}>
+            <option value="Baik">Baik</option><option value="Perbaikan">Perbaikan</option><option value="Rusak">Rusak</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Keterangan"><textarea rows={2} value={f.description} onChange={e=>setF({...f,description:e.target.value})} className={inp}/></Field>
+      <p className="text-[10px] text-slate-400">Barang akan ditandai &quot;Menipis&quot; otomatis bila stok tersedia ≤ Min. Stok.</p>
+      <button onClick={save} disabled={busy} className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold disabled:opacity-50">{busy ? "Menyimpan..." : "Simpan"}</button>
     </div>
   </Modal>;
 }

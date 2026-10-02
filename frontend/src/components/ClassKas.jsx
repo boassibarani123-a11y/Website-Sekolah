@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { PiggyBank, TrendingUp, TrendingDown, Pencil, Trash2, Download, Lock } from "lucide-react";
+import { PiggyBank, TrendingUp, TrendingDown, Pencil, Trash2, Download, Lock, Wallet } from "lucide-react";
 import { TxEditModal } from "@/components/TxEditModal";
 import { WeeklyKas } from "@/components/WeeklyKas";
 import { MonthlyKas } from "@/components/MonthlyKas";
@@ -12,12 +12,16 @@ const rupiah = (n) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 
 export function ClassKas({ klass }) {
   const { user } = useAuth();
-  const canManage = user.role === "ketua_kelas" && user.kelas === klass.name;
+  const isKetua = user.role === "ketua_kelas" && user.kelas === klass.name;
+  const canManage = klass.can_manage_kas ?? isKetua;
+  const canSetTreasurer = klass.can_set_treasurer ?? (user.role === "super_admin" || isKetua);
   const [rows, setRows] = useState([]);
   const [f, setF] = useState({ amount: 0, note: "", type: "masuk" });
   const [editing, setEditing] = useState(null);
   const [weekly, setWeekly] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [treasurer, setTreasurer] = useState({ id: klass.treasurer_id || "", name: klass.treasurer_name || "" });
+  const [pickId, setPickId] = useState("");
   const canSeeWeekly = canManage || user.role === "super_admin";
   const load = () => {
     api.get(`/classes/${klass.id}/kas`).then(r => setRows(r.data)).catch(() => {});
@@ -49,6 +53,23 @@ export function ClassKas({ klass }) {
     const r = await api.get(`/classes/${klass.id}/kas/export`, { responseType: "blob" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(r.data); a.download = `Uang_Kas_${klass.name}.xlsx`; a.click();
   };
+  const setBendahara = async () => {
+    if (!pickId) return toast.error("Pilih siswa dulu");
+    try {
+      const r = await api.put(`/classes/${klass.id}/treasurer`, { student_id: pickId });
+      setTreasurer({ id: r.data.treasurer_id, name: r.data.treasurer_name });
+      setPickId("");
+      toast.success(`${r.data.treasurer_name} ditunjuk sebagai Bendahara`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menunjuk bendahara"); }
+  };
+  const removeBendahara = async () => {
+    if (!window.confirm("Hapus jabatan Bendahara dari siswa ini?")) return;
+    try {
+      await api.delete(`/classes/${klass.id}/treasurer`);
+      setTreasurer({ id: "", name: "" });
+      toast.success("Jabatan Bendahara dihapus");
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
+  };
 
   return (
     <div className="space-y-5" data-testid="class-kas-tab">
@@ -60,6 +81,44 @@ export function ClassKas({ klass }) {
         </div>
         <div className="bg-white border border-slate-200 p-5 rounded-2xl"><p className="text-xs uppercase text-slate-500">Total Masuk</p><p className="font-heading text-xl font-bold text-emerald-600 mt-1">{rupiah(masuk)}</p></div>
         <div className="bg-white border border-slate-200 p-5 rounded-2xl"><p className="text-xs uppercase text-slate-500">Total Keluar</p><p className="font-heading text-xl font-bold text-rose-600 mt-1">{rupiah(keluar)}</p></div>
+      </div>
+
+      {/* Bendahara (treasurer) management */}
+      <div data-testid="bendahara-section" className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <Wallet className="w-5 h-5 text-sky-600" />
+          <h3 className="font-heading font-bold">Bendahara Kelas</h3>
+        </div>
+        {treasurer.id ? (
+          <div className="flex items-center justify-between gap-3 mt-2">
+            <p data-testid="bendahara-current" className="text-sm text-slate-700">
+              Bendahara saat ini: <b className="text-sky-700">{treasurer.name}</b>
+              <span className="text-xs text-slate-500 block">Bendahara &amp; Ketua Kelas sama-sama dapat menambah, mengedit &amp; menghapus uang kas.</span>
+            </p>
+            {canSetTreasurer && (
+              <button data-testid="bendahara-remove" onClick={removeBendahara}
+                className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg flex items-center gap-1 shrink-0">
+                <Trash2 className="w-3.5 h-3.5" />Lepas Jabatan
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 mt-1">Belum ada Bendahara yang ditunjuk.</p>
+        )}
+        {canSetTreasurer && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            <select data-testid="bendahara-select" value={pickId} onChange={e => setPickId(e.target.value)}
+              className="px-3 py-2 border-2 border-slate-200 rounded-lg bg-white text-sm min-w-[220px]">
+              <option value="">— Pilih siswa untuk jadi Bendahara —</option>
+              {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button data-testid="bendahara-set" onClick={setBendahara}
+              className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm">
+              {treasurer.id ? "Ganti Bendahara" : "Tunjuk Bendahara"}
+            </button>
+            {students.length === 0 && <p className="text-xs text-slate-400 self-center">Daftar siswa dimuat dari rekap mingguan.</p>}
+          </div>
+        )}
       </div>
 
       {canManage ? (
@@ -80,7 +139,7 @@ export function ClassKas({ klass }) {
         </div>
       ) : (
         <p data-testid="kas-readonly-note" className="text-sm text-slate-500 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
-          <Lock className="w-4 h-4" />Hanya Ketua Kelas {klass.name} yang dapat menambah, mengedit, atau menghapus uang kas.
+          <Lock className="w-4 h-4" />Hanya Ketua Kelas atau Bendahara {klass.name} yang dapat menambah, mengedit, atau menghapus uang kas.
         </p>
       )}
 

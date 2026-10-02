@@ -417,6 +417,7 @@ class ClassIn(BaseModel):
     homeroom_teacher_id: Optional[str] = None
     description: Optional[str] = None
     password: Optional[str] = None
+    copy_bph_from: Optional[str] = None  # source class id to copy BPH org chart from
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
@@ -494,6 +495,15 @@ async def get_class(cid: str, user=Depends(get_current_user)):
     if c.get("homeroom_teacher_id"):
         t = await db.users.find_one({"id": c["homeroom_teacher_id"]}, {"_id": 0, "name": 1})
         c["homeroom_teacher_name"] = t["name"] if t else None
+    # Flag: can the current user manage uang kas (ketua_kelas of class OR appointed bendahara)?
+    c["can_manage_kas"] = (
+        (user.get("role") == "ketua_kelas" and user.get("kelas") == c.get("name"))
+        or (bool(c.get("treasurer_id")) and user.get("id") == c.get("treasurer_id"))
+    )
+    c["can_set_treasurer"] = (
+        user.get("role") == "super_admin"
+        or (user.get("role") == "ketua_kelas" and user.get("kelas") == c.get("name"))
+    )
     return c
 
 @api.post("/classes/{cid}/unlock")
@@ -561,6 +571,7 @@ async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))
         raise HTTPException(400, "Nama kelas sudah ada")
     data = body.model_dump()
     pw = (data.pop("password") or "").strip()
+    copy_bph_from = data.pop("copy_bph_from", None)
     doc = {"id": str(uuid.uuid4()), **data, "created_by": user["id"],
            "created_by_name": user["name"], "created_at": now_iso()}
     if pw:
@@ -568,6 +579,22 @@ async def create_class(body: ClassIn, user=Depends(require_roles("super_admin"))
     dstamp(doc, user)
     await db.classes.insert_one(doc)
     doc.pop("_id", None)
+    # Optionally copy the BPH org chart from an existing class
+    if copy_bph_from:
+        src_nodes = await db.class_bph.find({"class_id": copy_bph_from}, {"_id": 0}).sort("order", 1).to_list(2000)
+        id_map = {n["id"]: str(uuid.uuid4()) for n in src_nodes}
+        new_nodes = []
+        for n in src_nodes:
+            nn = dict(n)
+            nn["id"] = id_map[n["id"]]
+            nn["class_id"] = doc["id"]
+            if n.get("parent_id"):
+                nn["parent_id"] = id_map.get(n["parent_id"])
+            nn["is_demo"] = bool(user.get("is_demo"))
+            nn["created_at"] = now_iso()
+            new_nodes.append(nn)
+        if new_nodes:
+            await db.class_bph.insert_many(new_nodes)
     return class_out(doc, user)
 
 @api.patch("/classes/{cid}")
@@ -894,6 +921,22 @@ class InventoryItem(BaseModel):
     category: str
     stock: int
     condition: str = "Baik"
+    location: Optional[str] = None       # lokasi penyimpanan
+    code: Optional[str] = None           # kode/no. inventaris
+    min_stock: Optional[int] = 0         # ambang batas stok menipis
+    description: Optional[str] = None
+    image: Optional[str] = None          # foto barang (URL dari /api/upload)
+
+class InventoryUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    stock: Optional[int] = None
+    condition: Optional[str] = None
+    location: Optional[str] = None
+    code: Optional[str] = None
+    min_stock: Optional[int] = None
+    description: Optional[str] = None
+    image: Optional[str] = None
 
 class BorrowRequest(BaseModel):
     item_id: str
@@ -912,6 +955,9 @@ async def list_inventory(user=Depends(get_current_user)):
     for it in items:
         it["outstanding"] = int(out_map.get(it["id"], 0))
         it["total"] = int(it.get("stock", 0)) + it["outstanding"]
+        it["low_stock"] = int(it.get("stock", 0)) <= int(it.get("min_stock", 0) or 0)
+    # sort: low stock first, then by name
+    items.sort(key=lambda x: (not x["low_stock"], (x.get("name") or "").lower()))
     return items
 
 @api.get("/inventory/{iid}/history")
@@ -925,9 +971,23 @@ async def add_inventory(body: InventoryItem, user=Depends(require_roles("staff_t
     await db.inventory.insert_one(doc); doc.pop("_id", None)
     return doc
 
+@api.patch("/inventory/{iid}")
+async def edit_inventory(iid: str, body: InventoryUpdate, user=Depends(require_roles("staff_tu", "super_admin"))):
+    item = await db.inventory.find_one({"id": iid, **dscope(user)})
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not upd:
+        raise HTTPException(400, "Tidak ada perubahan")
+    await db.inventory.update_one({"id": iid}, {"$set": {**upd, "updated_at": now_iso()}})
+    doc = await db.inventory.find_one({"id": iid}, {"_id": 0})
+    return doc
+
 @api.delete("/inventory/{iid}")
 async def del_inventory(iid: str, user=Depends(require_roles("staff_tu", "super_admin"))):
     await db.inventory.delete_one({"id": iid}); return {"ok": True}
+
+
 
 @api.post("/borrow")
 async def create_borrow(body: BorrowRequest, user=Depends(get_current_user)):
@@ -1404,7 +1464,224 @@ async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))
     await db.quiz_attempts.replace_one({"quiz_id": body.quiz_id, "student_id": user["id"]}, doc, upsert=True)
     return {"score": score, "total": total, "percent": percent}
 
-# ---------------- SCHOOLGRAM ----------------
+# ---------------- UJIAN (EXAMS, ANTI-CHEAT) ----------------
+# An Ujian is like a Quiz but entry is ALWAYS password-gated; entering the correct
+# password immediately starts the exam (creates a server session with a deadline).
+# The frontend enforces fullscreen + tab-switch detection; after max_violations the
+# exam auto-submits. Violations are also tracked server-side for the teacher.
+class ExamIn(BaseModel):
+    title: str
+    kelas: str
+    questions: List[dict]
+    subject: Optional[str] = None
+    class_id: Optional[str] = None
+    password: str                       # REQUIRED for exams
+    time_limit: Optional[int] = None    # minutes; None/0 = no limit
+    max_violations: Optional[int] = 3
+
+class ExamUpdate(BaseModel):
+    title: Optional[str] = None
+    subject: Optional[str] = None
+    questions: Optional[List[dict]] = None
+    password: Optional[str] = None
+    time_limit: Optional[int] = None
+    max_violations: Optional[int] = None
+
+class ExamStartIn(BaseModel):
+    password: str
+
+class ExamAttemptIn(BaseModel):
+    exam_id: str
+    answers: List[int]
+    violations: Optional[int] = 0
+    auto_submitted: Optional[bool] = False
+
+EXAM_STAFF = ("super_admin", "guru")
+EXAM_GRACE_SECONDS = 20
+
+def exam_out(ex: dict, user: dict) -> dict:
+    ex["has_password"] = bool(ex.pop("password_hash", None))
+    ex["question_count"] = len(ex.get("questions") or [])
+    ex["max_violations"] = int(ex.get("max_violations", 3) or 3)
+    # Students never receive questions or answers from the list endpoint; they only
+    # get them from /start after entering the password.
+    if user.get("role") not in EXAM_STAFF:
+        for question in ex.get("questions", []):
+            question.pop("answer", None)
+        ex["questions"] = []
+    return ex
+
+@api.get("/exams")
+async def list_exams(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
+    q = dict(dscope(user))
+    if user["role"] == "siswa":
+        q["kelas"] = user.get("kelas")
+    if class_id:
+        q["class_id"] = class_id
+    if subject:
+        q["subject"] = subject
+    lock = await locked_class_query(user)
+    if lock:
+        q["$and"] = lock
+    exams = await db.exams.find(q, {"_id": 0}).to_list(500)
+    return [exam_out(ex, user) for ex in exams]
+
+@api.post("/exams")
+async def create_exam(body: ExamIn, user=Depends(require_roles("guru", "super_admin"))):
+    await guru_assert_manages(user, body.class_id, body.kelas, body.subject)
+    validate_time_limit(body.time_limit)
+    pw = (body.password or "").strip()
+    if not pw:
+        raise HTTPException(400, "Ujian wajib memiliki password")
+    data = body.model_dump()
+    data.pop("password", None)
+    doc = {"id": str(uuid.uuid4()), **data, "teacher_id": user["id"],
+           "teacher_name": user["name"], "password_hash": hash_pw(pw), "created_at": now_iso()}
+    doc["max_violations"] = int(body.max_violations or 3)
+    dstamp(doc, user)
+    await db.exams.insert_one(doc); doc.pop("_id", None)
+    return exam_out(doc, user)
+
+@api.patch("/exams/{eid}")
+async def edit_exam(eid: str, body: ExamUpdate, user=Depends(require_roles("guru", "super_admin"))):
+    ex = await db.exams.find_one({"id": eid})
+    if not ex:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    if user["role"] != "super_admin" and ex.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit ujian ini")
+    validate_time_limit(body.time_limit)
+    upd = {k: v for k, v in body.model_dump(exclude={"password"}).items() if v is not None}
+    if "time_limit" in upd or "questions" in upd or "max_violations" in upd:
+        await db.exam_sessions.delete_many({"exam_id": eid})
+    pw = (body.password or "").strip()
+    if pw:
+        upd["password_hash"] = hash_pw(pw)
+    if upd:
+        await db.exams.update_one({"id": eid}, {"$set": upd})
+    return exam_out(await db.exams.find_one({"id": eid}, {"_id": 0}), user)
+
+@api.delete("/exams/{eid}")
+async def delete_exam(eid: str, user=Depends(require_roles("guru", "super_admin"))):
+    ex = await db.exams.find_one({"id": eid})
+    if not ex:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    if user["role"] != "super_admin" and ex.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus ujian ini")
+    await db.exams.delete_one({"id": eid})
+    await db.exam_attempts.delete_many({"exam_id": eid})
+    await db.exam_sessions.delete_many({"exam_id": eid})
+    return {"ok": True}
+
+def shuffled_exam_questions(exam: dict, sess: dict) -> list:
+    qs = exam.get("questions") or []
+    out = []
+    for q_idx in sess["q_order"]:
+        q = qs[q_idx]
+        opts = q.get("options") or []
+        out.append({"q": q.get("q"), "options": [opts[o] for o in sess["opt_orders"][len(out)] if o < len(opts)]})
+    return out
+
+@api.post("/exams/{eid}/start")
+async def start_exam(eid: str, body: ExamStartIn, user=Depends(require_roles("siswa"))):
+    exam = await db.exams.find_one({"id": eid, **dscope(user)})
+    if not exam:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    await assert_doc_class_unlocked(user, exam)
+    # Already submitted? Block re-entry.
+    done = await db.exam_attempts.find_one({"exam_id": eid, "student_id": user["id"]})
+    if done:
+        raise HTTPException(409, "Anda sudah mengerjakan ujian ini")
+    # Password is required to start (this IS the entry gate).
+    if not exam.get("password_hash") or not verify_pw(body.password, exam["password_hash"]):
+        raise HTTPException(400, "Password ujian salah")
+    limit = exam.get("time_limit") or 0
+    now = datetime.now(timezone.utc)
+    qs = exam.get("questions") or []
+    sess = await db.exam_sessions.find_one({"exam_id": eid, "student_id": user["id"]}, {"_id": 0})
+    if not sess or len(sess.get("q_order", [])) != len(qs):
+        await db.exam_sessions.delete_one({"exam_id": eid, "student_id": user["id"]})
+        q_order = list(range(len(qs))); random.shuffle(q_order)
+        opt_orders = []
+        for q in qs:
+            o = list(range(len(q.get("options") or []))); random.shuffle(o); opt_orders.append(o)
+        sess = {"exam_id": eid, "student_id": user["id"], "started_at": now.isoformat(),
+                "deadline": (now + timedelta(minutes=limit)).isoformat() if limit else None,
+                "q_order": q_order, "opt_orders": opt_orders, "violations": 0}
+        await db.exam_sessions.insert_one(dict(sess))
+    expired = bool(limit and now.isoformat() > sess["deadline"])
+    return {"time_limit": limit, "started_at": sess["started_at"], "deadline": sess.get("deadline"),
+            "server_now": now.isoformat(), "expired": expired,
+            "max_violations": int(exam.get("max_violations", 3) or 3),
+            "violations": int(sess.get("violations", 0)),
+            "questions": [] if expired else shuffled_exam_questions(exam, sess)}
+
+@api.post("/exams/{eid}/violation")
+async def record_exam_violation(eid: str, user=Depends(require_roles("siswa"))):
+    """Record one anti-cheat violation (tab switch / left fullscreen). Returns the
+    running count and whether the student has exceeded the allowed maximum."""
+    exam = await db.exams.find_one({"id": eid, **dscope(user)}, {"_id": 0, "max_violations": 1})
+    if not exam:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    sess = await db.exam_sessions.find_one({"exam_id": eid, "student_id": user["id"]})
+    if not sess:
+        raise HTTPException(400, "Ujian belum dimulai")
+    await db.exam_sessions.update_one({"exam_id": eid, "student_id": user["id"]},
+                                      {"$inc": {"violations": 1}})
+    count = int(sess.get("violations", 0)) + 1
+    max_v = int(exam.get("max_violations", 3) or 3)
+    return {"violations": count, "max_violations": max_v, "exceeded": count >= max_v}
+
+@api.post("/exams/attempt")
+async def attempt_exam(body: ExamAttemptIn, user=Depends(require_roles("siswa"))):
+    exam = await db.exams.find_one({"id": body.exam_id})
+    if not exam:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    await assert_doc_class_unlocked(user, exam)
+    existing = await db.exam_attempts.find_one({"exam_id": body.exam_id, "student_id": user["id"]})
+    if existing:
+        raise HTTPException(409, "Anda sudah mengerjakan ujian ini")
+    sess = await db.exam_sessions.find_one({"exam_id": body.exam_id, "student_id": user["id"]})
+    if not sess:
+        raise HTTPException(400, "Ujian belum dimulai")
+    if exam.get("time_limit"):
+        late = datetime.now(timezone.utc) - datetime.fromisoformat(sess["deadline"])
+        if late.total_seconds() > EXAM_GRACE_SECONDS and not body.auto_submitted:
+            raise HTTPException(400, "Waktu pengerjaan ujian sudah habis")
+    questions = exam.get("questions", [])
+    score = 0
+    await db.exam_sessions.delete_one({"exam_id": body.exam_id, "student_id": user["id"]})
+    for i, q_idx in enumerate(sess.get("q_order", [])):
+        if i >= len(body.answers) or body.answers[i] is None or body.answers[i] < 0:
+            continue
+        opts = sess["opt_orders"][i]
+        chosen = opts[body.answers[i]] if body.answers[i] < len(opts) else None
+        if chosen is not None and q_idx < len(questions) and questions[q_idx].get("answer") == chosen:
+            score += 1
+    total = len(questions)
+    percent = (score / total * 100) if total else 0
+    violations = max(int(body.violations or 0), int(sess.get("violations", 0)))
+    doc = {"id": str(uuid.uuid4()), "exam_id": body.exam_id, "student_id": user["id"],
+           "student_name": user["name"], "score": score, "total": total, "percent": percent,
+           "violations": violations, "auto_submitted": bool(body.auto_submitted),
+           "submitted_at": now_iso(), "is_demo": bool(user.get("is_demo"))}
+    await db.exam_attempts.replace_one({"exam_id": body.exam_id, "student_id": user["id"]}, doc, upsert=True)
+    return {"score": score, "total": total, "percent": percent,
+            "violations": violations, "auto_submitted": bool(body.auto_submitted)}
+
+@api.get("/exams/{eid}/results")
+async def exam_results(eid: str, user=Depends(get_current_user)):
+    exam = await db.exams.find_one({"id": eid, **dscope(user)}, {"_id": 0})
+    if not exam:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    if user["role"] == "siswa":
+        att = await db.exam_attempts.find_one({"exam_id": eid, "student_id": user["id"]}, {"_id": 0})
+        return {"mine": att}
+    if user["role"] not in EXAM_STAFF:
+        raise HTTPException(403, "Forbidden")
+    attempts = await db.exam_attempts.find({"exam_id": eid}, {"_id": 0}).sort("submitted_at", -1).to_list(1000)
+    return {"attempts": attempts}
+
+
 class PostIn(BaseModel):
     image: str  # base64 or URL
     caption: str
@@ -1547,8 +1824,40 @@ async def kas_class_for_view(cid: str, user: dict) -> dict:
     return klass
 
 def assert_kas_manager(user: dict, klass: dict):
-    if user.get("role") != "ketua_kelas" or user.get("kelas") != klass.get("name"):
-        raise HTTPException(403, "Hanya Ketua Kelas dari kelas ini yang dapat mengatur uang kas")
+    # Allowed: the ketua_kelas of this class, OR the appointed bendahara (treasurer) of this class.
+    is_ketua = user.get("role") == "ketua_kelas" and user.get("kelas") == klass.get("name")
+    is_bendahara = klass.get("treasurer_id") and user.get("id") == klass.get("treasurer_id")
+    if not (is_ketua or is_bendahara):
+        raise HTTPException(403, "Hanya Ketua Kelas atau Bendahara dari kelas ini yang dapat mengatur uang kas")
+
+@api.put("/classes/{cid}/treasurer")
+async def set_treasurer(cid: str, body: dict, user=Depends(get_current_user)):
+    """Appoint a student of this class as Bendahara (treasurer). Allowed: super_admin or the ketua_kelas of this class."""
+    klass = await db.classes.find_one({"id": cid})
+    if not klass:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    is_ketua = user.get("role") == "ketua_kelas" and user.get("kelas") == klass.get("name")
+    if user.get("role") != "super_admin" and not is_ketua:
+        raise HTTPException(403, "Hanya Super Admin atau Ketua Kelas yang dapat menunjuk Bendahara")
+    student_id = (body or {}).get("student_id")
+    if not student_id:
+        raise HTTPException(400, "student_id wajib diisi")
+    st = await db.users.find_one({"id": student_id, "kelas": klass["name"], **dscope(user)}, {"_id": 0, "id": 1, "name": 1})
+    if not st:
+        raise HTTPException(400, "Siswa tidak ditemukan di kelas ini")
+    await db.classes.update_one({"id": cid}, {"$set": {"treasurer_id": student_id, "treasurer_name": st["name"]}})
+    return {"treasurer_id": student_id, "treasurer_name": st["name"]}
+
+@api.delete("/classes/{cid}/treasurer")
+async def remove_treasurer(cid: str, user=Depends(get_current_user)):
+    klass = await db.classes.find_one({"id": cid})
+    if not klass:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    is_ketua = user.get("role") == "ketua_kelas" and user.get("kelas") == klass.get("name")
+    if user.get("role") != "super_admin" and not is_ketua:
+        raise HTTPException(403, "Hanya Super Admin atau Ketua Kelas yang dapat menghapus Bendahara")
+    await db.classes.update_one({"id": cid}, {"$unset": {"treasurer_id": "", "treasurer_name": ""}})
+    return {"ok": True}
 
 @api.get("/classes/{cid}/kas")
 async def list_class_kas(cid: str, user=Depends(get_current_user)):
@@ -2337,12 +2646,21 @@ async def export_kas(cid: str, user=Depends(get_current_user)):
 
 @api.get("/inventory/export")
 async def export_inventory(user=Depends(get_current_user)):
-    docs = await db.inventory.find({}, {"_id": 0}).to_list(1000)
-    columns = ["Nama Barang", "Kategori", "Stok", "Kondisi", "Dibuat"]
-    rows = [{"Nama Barang": d.get("name"), "Kategori": d.get("category") or "-",
-             "Stok": d.get("stock",0), "Kondisi": d.get("condition") or "-",
-             "Dibuat": d.get("created_at","")[:10]} for d in docs]
-    summary = {"Total Item": len(docs), "Total Stok": sum(d.get("stock",0) for d in docs)}
+    docs = await db.inventory.find(dscope(user), {"_id": 0}).to_list(1000)
+    pipeline = [{"$match": {"status": "Disetujui", **dscope(user)}},
+                {"$group": {"_id": "$item_id", "n": {"$sum": "$quantity"}}}]
+    agg = await db.borrow_requests.aggregate(pipeline).to_list(1000)
+    out_map = {a["_id"]: a["n"] for a in agg}
+    columns = ["Kode", "Nama Barang", "Kategori", "Kondisi", "Lokasi", "Stok Tersedia", "Dipinjam", "Total", "Min. Stok", "Keterangan"]
+    rows = []
+    for d in sorted(docs, key=lambda x: (x.get("name") or "").lower()):
+        out = int(out_map.get(d["id"], 0))
+        rows.append({"Kode": d.get("code") or "-", "Nama Barang": d.get("name"),
+                     "Kategori": d.get("category") or "-", "Kondisi": d.get("condition") or "-",
+                     "Lokasi": d.get("location") or "-", "Stok Tersedia": d.get("stock", 0),
+                     "Dipinjam": out, "Total": int(d.get("stock", 0)) + out,
+                     "Min. Stok": int(d.get("min_stock", 0) or 0), "Keterangan": d.get("description") or "-"})
+    summary = {"Total Item": len(docs), "Total Stok": sum(d.get("stock", 0) for d in docs)}
     data = pretty_excel("Laporan Inventaris Sekolah",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
                         columns, rows, summary, "Inventaris")
@@ -2564,14 +2882,82 @@ async def _seed():
                 "role": role, "nisn": nisn, "kelas": kelas, "jurusan": "IPA" if kelas else None,
                 "is_demo": True, "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
             })
-    # Seed one demo class so demo users have instant content
-    if not await db.classes.find_one({"name": "XI IPA 1", "is_demo": True}):
-        await db.classes.insert_one({
-            "id": str(uuid.uuid4()), "name": "XI IPA 1",
-            "subjects": ["Matematika", "Fisika", "Biologi"],
-            "homeroom_teacher_id": None, "description": "Kelas demo untuk uji coba",
-            "is_demo": True, "created_at": now_iso(),
-        })
+    # Seed demo classes so demo users have instant content
+    guru_demo = await db.users.find_one({"email": "guru.demo@sekolahku.id"}, {"id": 1})
+    guru_id = guru_demo["id"] if guru_demo else None
+    demo_classes = [
+        ("XI IPA 1", ["Matematika", "Fisika", "Biologi", "Kimia"], guru_id, "Kelas unggulan IPA tingkat XI"),
+        ("XII IPA 2", ["Matematika", "Fisika", "Biologi"], None, "Kelas IPA tingkat XII"),
+    ]
+    class_ids = {}
+    for cname, subjects, hr, desc in demo_classes:
+        c = await db.classes.find_one({"name": cname, "is_demo": True}, {"id": 1})
+        if not c:
+            cid = str(uuid.uuid4())
+            await db.classes.insert_one({
+                "id": cid, "name": cname, "subjects": subjects,
+                "homeroom_teacher_id": hr, "description": desc,
+                "is_demo": True, "created_at": now_iso(),
+            })
+            class_ids[cname] = cid
+        else:
+            class_ids[cname] = c["id"]
+            # Backfill homeroom teacher for XI IPA 1 if missing
+            if cname == "XI IPA 1" and hr:
+                await db.classes.update_one({"id": c["id"], "homeroom_teacher_id": None},
+                                            {"$set": {"homeroom_teacher_id": hr}})
+
+    # Seed demo students roster for XI IPA 1 so the dashboard & class look alive
+    roster = [
+        ("Ahmad Fauzi", "1000000001"), ("Siti Nurhaliza", "1000000002"),
+        ("Budi Santoso", "1000000003"), ("Dewi Lestari", "1000000004"),
+        ("Eka Putra", "1000000005"), ("Fitri Handayani", "1000000006"),
+        ("Galih Pratama", "1000000007"), ("Hana Safira", "1000000008"),
+    ]
+    for i, (sname, nisn) in enumerate(roster, start=1):
+        email = f"s{i}.xiipa1.demo@sekolahku.id"
+        if not await db.users.find_one({"email": email}):
+            uid = str(uuid.uuid4())
+            await db.users.insert_one({
+                "id": uid, "email": email, "password_hash": hash_pw("Demo12345"),
+                "name": sname, "role": "siswa", "nisn": nisn,
+                "kelas": "XI IPA 1", "jurusan": "IPA", "is_demo": True,
+                "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
+            })
+
+    # Seed demo announcements (is_demo=True)
+    admin_demo = await db.users.find_one({"email": "admin.demo@sekolahku.id"}, {"id": 1, "name": 1})
+    if admin_demo and not await db.announcements.find_one({"is_demo": True}):
+        anns = [
+            ("Selamat Datang di SEKOLAHKU", "Platform manajemen sekolah terpadu siap digunakan. Silakan jelajahi fitur absensi, tugas, kuis, dan uang kas.", "Umum", True),
+            ("Jadwal Ujian Tengah Semester", "UTS akan dilaksanakan mulai minggu depan. Harap siswa mempersiapkan diri dengan baik.", "Akademik", False),
+            ("Kegiatan Ekstrakurikuler Dibuka", "Pendaftaran ekstrakurikuler semester ini telah dibuka. Daftarkan diri melalui wali kelas masing-masing.", "Kesiswaan", False),
+        ]
+        for title, content, cat, pinned in anns:
+            await db.announcements.insert_one({
+                "id": str(uuid.uuid4()), "title": title, "content": content,
+                "scope": "sekolah", "category": cat, "image": None,
+                "pinned": pinned, "show_on_login": pinned,
+                "author": admin_demo.get("name", "Admin Demo"), "author_id": admin_demo["id"],
+                "role": "super_admin", "is_demo": True, "created_at": now_iso(),
+            })
+
+    # Seed demo calendar events for the current month (is_demo=True)
+    if not await db.events.find_one({"is_demo": True}):
+        from datetime import datetime as _dt
+        ym = _dt.utcnow().strftime("%Y-%m")
+        evts = [
+            (f"{ym}-05", "Rapat Guru Bulanan", "Evaluasi kegiatan belajar mengajar", "rapat", None),
+            (f"{ym}-12", "Ujian Harian Matematika", "Bab Trigonometri", "ujian", "XI IPA 1"),
+            (f"{ym}-17", "Upacara Bendera", "Upacara rutin sekolah", "event", None),
+            (f"{ym}-25", "Libur Semester", "Libur akhir semester", "libur", None),
+        ]
+        for date, title, desc, etype, kelas in evts:
+            await db.events.insert_one({
+                "id": str(uuid.uuid4()), "title": title, "description": desc,
+                "date": date, "type": etype, "kelas": kelas,
+                "created_by": "Admin Demo", "is_demo": True, "created_at": now_iso(),
+            })
 
 app.include_router(api)
 
