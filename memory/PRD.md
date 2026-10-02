@@ -19,7 +19,14 @@ Super Admin, Kepala Sekolah, Staff TU, Guru, Siswa, Ketua Kelas, Bendahara, Ketu
 - Backend SettingsIn extended with all new fields; GET public, PATCH super_admin-only.
 
 ## Verified
-Testing agent iteration_17: backend 100%, frontend 100%, no issues. Regression suite: /app/backend/tests/test_iter17_laguboti_settings.py.
+Testing agent iteration_17 + iteration_18: backend 100%, frontend 100%, no issues.
+Regression suites: /app/backend/tests/test_iter17_laguboti_settings.py, /app/backend/tests/test_iter18_pptx_gallery.py.
+
+## Added (2026-06, iteration 2)
+- Unduh Presentasi (.pptx): public endpoint GET /api/presentation/pptx (python-pptx, 10 themed slides — cover, ringkasan+tujuan, peran+hak akses, 5 fitur utama, modul pendukung, penutup); download button on /presentasi for all roles.
+- Logo Sekolah: confirmed wired into login, sidebar, kartu pelajar (MyCard & PrintCards via settings.school_logo_url) — admin uploads in Settings.
+- Galeri Prestasi & Kegiatan: gallery collection + CRUD (GET public; POST/PATCH super_admin/kepsek/staff_tu/ketua_osis; DELETE super_admin/kepsek); public page /galeri with category filters + link from login; admin management embedded in /achievements.
+- Settings: academic_year field (used in PPTX cover).
 
 ## Credentials
 Super admin: boassibarani123@gmail.com / Boas12345io
