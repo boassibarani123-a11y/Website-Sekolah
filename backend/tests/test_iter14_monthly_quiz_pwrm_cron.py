@@ -5,7 +5,7 @@ import uuid
 import pytest
 import requests
 
-BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://edu-build-8.preview.emergentagent.com").rstrip("/")
+BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://school-site-54.preview.emergentagent.com").rstrip("/")
 API = f"{BASE}/api"
 CID = "97194f55-894d-44dc-957a-1c2a8522e2b0"  # XI IPA 1
 SECRET = None

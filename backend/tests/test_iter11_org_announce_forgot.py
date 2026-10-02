@@ -1,7 +1,7 @@
 """Iter 11: Org structure (unlimited depth, parent moves), login announcements, forgot-password."""
 import os, time, uuid, pytest, requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://edu-build-8.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://school-site-54.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "boassibarani123@gmail.com"

@@ -1,7 +1,7 @@
 """Iter 12: classes password/unlock, class kas, social fund edit/delete, barcode attendance, public org structures."""
 import os, uuid, requests, pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://edu-build-8.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://school-site-54.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 DEMO_PWD = "Demo12345"

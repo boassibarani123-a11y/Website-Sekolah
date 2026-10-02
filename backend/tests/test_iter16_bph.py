@@ -3,7 +3,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://edu-build-8.preview.emergentagent.com").rstrip("/")
+BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://school-site-54.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 CID = "97194f55-894d-44dc-957a-1c2a8522e2b0"  # XI IPA 1
 SEED_KETUA_NODE = "d758ab62-f0d2-4363-99d3-cbadaa6d4618"

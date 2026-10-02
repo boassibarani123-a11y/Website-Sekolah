@@ -11,7 +11,7 @@ import string
 from typing import Optional
 
 # Configuration
-BASE_URL = "https://a11y-school-build.preview.emergentagent.com/api"
+BASE_URL = "https://school-site-54.preview.emergentagent.com/api"
 SUPER_ADMIN_EMAIL = "boassibarani123@gmail.com"
 SUPER_ADMIN_PASSWORD = "Boas12345io"
 

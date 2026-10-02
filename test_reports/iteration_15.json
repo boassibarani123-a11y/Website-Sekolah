@@ -22,7 +22,7 @@
     "/app/backend/tests/test_iter15_quiz_shuffle_kas_chart.py"
   ],
   "success_rate": {"backend": "100% (10/10)", "frontend": "100% (chart + tx add/delete flow)"},
-  "test_credentials": "Demo accounts (Demo12345): admin.demo@, guru.demo@, siswa.demo@, kelas.demo@ at @sekolahku.id. XI IPA 1 id=97194f55-894d-44dc-957a-1c2a8522e2b0.",
+  "test_credentials": "Demo accounts (Demo12345): admin.demo@, guru.demo@, siswa.demo@, kelas.demo@ at @sekolahku.id. XI IPA 1 id=school-site-54.",
   "seed_data_creation": "Each test creates and deletes its own TEST_ quiz / TEST_chart_tx kas transaction. No residual data left (verified by delete calls in fixtures and in UI).",
   "retest_needed": false,
   "should_main_agent_self_test": true,
