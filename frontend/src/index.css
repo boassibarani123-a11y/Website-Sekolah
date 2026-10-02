@@ -67,6 +67,16 @@ body {
     print-color-adjust: exact !important;
   }
   .no-print { display: none !important; }
+  .printable-doc, .printable-doc * { visibility: visible !important; }
+  .printable-doc {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .printable-doc .doc-paper { box-shadow: none !important; border-radius: 0 !important; }
 }
 
 .ktp-card {
