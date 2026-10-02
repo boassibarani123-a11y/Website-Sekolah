@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArrowLeft, Printer, BookOpen, FileText, GitBranch, AlertTriangle } from "lucide-react";
+import { useSettings } from "@/context/SettingsContext";
 
 /* ============================ KOMPONEN KECIL ============================ */
 const Section = ({ id, icon: Icon, title, children, breakBefore = false }) => (
@@ -182,6 +183,9 @@ const FLOW_UJIAN = [
 
 /* ============================ HALAMAN ============================ */
 export default function Documentation() {
+  const { settings } = useSettings();
+  const brand = settings.school_name || "SEKOLAH";
+  const brandFull = settings.school_full_name || brand;
   return (
     <div className="printable-doc min-h-screen bg-slate-100 py-6 px-4">
       {/* Toolbar (tidak ikut tercetak) */}
@@ -198,7 +202,7 @@ export default function Documentation() {
       <div className="doc-paper max-w-4xl mx-auto bg-white shadow-xl rounded-2xl p-8 md:p-12">
         {/* Sampul */}
         <header className="text-center border-b-4 border-sky-600 pb-6 mb-8">
-          <p className="text-xs font-bold tracking-[0.3em] text-sky-600 uppercase">SEKOLAHKU — Sistem Manajemen Sekolah Terpadu</p>
+          <p className="text-xs font-bold tracking-[0.3em] text-sky-600 uppercase">{brand} — Sistem Manajemen Sekolah Terpadu</p>
           <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mt-3">Dokumen Produk &amp; Proses</h1>
           <p className="text-slate-600 mt-2">Term of Reference (TOR) · Product Requirements Document (PRD) · Diagram BPMN</p>
           <p className="text-xs text-slate-400 mt-3">Versi 1.0 · Tahun Ajaran 2025/2026 · Status: Final Draft</p>
@@ -207,7 +211,7 @@ export default function Documentation() {
         {/* ============ BAGIAN A: TOR ============ */}
         <Section id="tor" icon={BookOpen} title="Bagian A — Term of Reference (Kerangka Acuan Kerja)">
           <H3>A.1 Latar Belakang</H3>
-          <P>Proses operasional sekolah — presensi, administrasi keuangan kelas (uang kas), pengelolaan aset, hingga pelaksanaan ujian — masih banyak dilakukan manual sehingga lambat, sulit diaudit, dan rawan kecurangan. SEKOLAHKU dibangun sebagai satu platform terpadu berbasis web untuk mendigitalisasi proses-proses tersebut agar transparan, terdokumentasi, dan mudah diawasi oleh seluruh warga sekolah.</P>
+          <P>Proses operasional sekolah — presensi, administrasi keuangan kelas (uang kas), pengelolaan aset, hingga pelaksanaan ujian — masih banyak dilakukan manual sehingga lambat, sulit diaudit, dan rawan kecurangan. {brandFull} dibangun sebagai satu platform terpadu berbasis web untuk mendigitalisasi proses-proses tersebut agar transparan, terdokumentasi, dan mudah diawasi oleh seluruh warga sekolah.</P>
 
           <H3>A.2 Tujuan Sistem</H3>
           <UL items={[
@@ -372,7 +376,7 @@ export default function Documentation() {
         </Section>
 
         <footer className="mt-10 pt-4 border-t border-slate-200 text-center text-xs text-slate-400">
-          <p>Dokumen ini dihasilkan dari sistem SEKOLAHKU · Dicetak pada {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+          <p>Dokumen ini dihasilkan dari sistem {brandFull} · Dicetak pada {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
         </footer>
       </div>
     </div>

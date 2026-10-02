@@ -40,7 +40,7 @@ JWT_ALGO = "HS256"
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI(title="SEKOLAHKU API")
+app = FastAPI(title="SMA NEGERI 1 LAGUBOTI API")
 api = APIRouter(prefix="/api")
 
 # ---------------- OBJECT STORAGE ----------------
@@ -92,9 +92,9 @@ MIME = {"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","gif":"image/gi
 
 # ---------------- SCHOOL SETTINGS ----------------
 DEFAULT_SETTINGS = {
-    "school_name": "SEKOLAHKU",
-    "school_full_name": "SMA NEGERI 1 SEKOLAHKU",
-    "school_address": "Jl. Pendidikan No. 1, Jakarta",
+    "school_name": "SMA NEGERI 1 LAGUBOTI",
+    "school_full_name": "SMA NEGERI 1 LAGUBOTI",
+    "school_address": "Jl. Sekolah No. 3, Pasar Laguboti, Kec. Laguboti, Kab. Toba 22381",
     "school_logo_url": "",
     "id_card_valid_years": "2025 - 2028",
     "id_card_rules": [
@@ -104,17 +104,135 @@ DEFAULT_SETTINGS = {
     ],
     "footer_text": "Sistem Manajemen Sekolah Terpadu",
     "primary_color": "#0284C7",
-    # School info (Informasi Sekolah)
-    "about": "",
-    "vision": "",
-    "mission": [],
-    "history": "",
-    "principal_name": "",
-    "established_year": "",
-    "npsn": "",
-    "accreditation": "",
-    "contact_phone": "",
-    "contact_email": "",
+    # ---- Editable login page text ----
+    "login_badge": "SISTEM MANAJEMEN SEKOLAH TERPADU",
+    "login_headline": "Satu Platform.\nTujuh Peran.\nSekolah Modern.",
+    "login_description": "Absensi QR, Schoolgram, Inventaris, Tugas & Quiz, Uang Kas, Dana Sosial, Pemilu OSIS, dan Kartu Pelajar cetak KTP — semuanya dalam satu dashboard elegan.",
+    "login_welcome_title": "Masuk ke Akun Anda",
+    "login_welcome_subtitle": "Gunakan email dan password yang diberikan oleh Super Admin sekolah.",
+    "login_footer": "© 2026 SMA NEGERI 1 LAGUBOTI · Version 1.0",
+    # ---- School info (Informasi Sekolah) ----
+    "about": "SMA Negeri 1 Laguboti adalah sekolah menengah atas negeri yang berdiri sejak tahun 1966 di Pasar Laguboti, Kabupaten Toba, Sumatera Utara. Terakreditasi A, sekolah ini berkomitmen mewujudkan lulusan yang beriman, berkarakter, berprestasi, dan berwawasan lingkungan melalui semangat kasih, kolaborasi, kepedulian, dan keikhlasan.",
+    "vision": "TERWUJUDNYA LULUSAN YANG BERIMAN, BERKARAKTER, BERPRESTASI DAN BERWAWASAN LINGKUNGAN MELALUI KASIH, KOLABORASI, KEPERDULIAN DAN KEIKHLASAN.",
+    "mission": [
+        "Melaksanakan aktivitas keimanan dan ketaqwaan kepada Tuhan Yang Maha Esa serta berakhlak mulia.",
+        "Melaksanakan pendidikan karakter sesuai dengan nilai-nilai Pancasila, delapan dimensi profil lulusan dan Tujuh Kebiasaan Anak Indonesia Hebat.",
+        "Menunjukkan disiplin sebagai pola tingkah laku di sekolah dan masyarakat.",
+        "Melaksanakan pembelajaran dengan pendekatan pembelajaran mendalam.",
+        "Menunjukkan budaya berprestasi di lingkungan warga sekolah dan masyarakat.",
+        "Melaksanakan pendidikan keluarga di sekolah.",
+        "Meningkatkan kegiatan kepedulian sosial di lingkungan sekolah dan masyarakat.",
+        "Melaksanakan kegiatan pelestarian dan pengembangan budaya daerah dan nasional.",
+        "Melaksanakan kegiatan ekstrakurikuler untuk meningkatkan kecakapan hidup.",
+        "Melaksanakan penataan sarana prasarana sekolah untuk mendukung sekolah sehat, indah, hijau, dan nyaman bagi warga sekolah.",
+        "Menumbuhkan kewirausahaan di sekolah berbasis lingkungan.",
+        "Membudayakan sekolah melayani, mandiri, tertib, bersatu dan bersih.",
+        "Menumbuhkan rasa solidaritas, loyalitas, kolaborasi, esprit de corps (jiwa korsa).",
+    ],
+    "history": "Awal berdirinya SMA Negeri 1 Laguboti pada tahun 1966 adalah momen lahirnya ide mewujudkan kepedulian terhadap pendidikan secara umum dan pendidikan generasi muda di Laguboti. Putera/i terbaik bangsa yang berasal dari Laguboti sepakat membangun pendidikan di Bona Pasogit (tempat asal) dengan cara merekrut siswa terbaik dalam akademis dari setiap SLTP yang berada dalam jajaran wilayah Toba Samosir. Sejak TP. 1966 sampai dengan sekarang SMA Negeri 1 Laguboti menerima siswa baru melalui jalur seleksi sekolah.",
+    "history_periods": [
+        "1966 s.d 1983 : Drs. T.A. Silaen",
+        "1983 s.d 1993 : Baginda Pipin Silaen",
+        "1993 s.d 1995 : Drs. Chaspar Sinaga",
+        "1995 s.d 1997 : Drs. Saut Halomoan Hutagaol",
+        "1998 s.d 1999 : Nurmala Hutauruk",
+        "2000 s.d 2002 : Drs. Dumpang Sarumpaet",
+        "2002 s.d 2004 : Drs. Mochtar Sihotang",
+        "2004 s.d 2006 : Drs. Hasonangan",
+        "2006 s.d 2008 : Jasa Pembangunan Sitorus, S.Pd",
+        "2008 s.d 2010 : Drs. Mochtar Sihotang",
+        "2011 s.d Februari 2014 : Drs. Lambok Simanjuntak",
+        "Maret 2014 : Beduan Siahaan, S.Pd",
+        "November 2014 s.d 2022 : Jelarwin Dabutar, S.Pd, M.Pd",
+        "2022 s.d sekarang : Togar D. Panjaitan, S.Pd., M.Si.",
+    ],
+    "goals": [
+        "Terlaksananya aktivitas keimanan dan ketaqwaan kepada Tuhan Yang Maha Esa serta berakhlak mulia.",
+        "Terbentuknya sifat disiplin sebagai pola tingkah laku di sekolah dan masyarakat.",
+        "Terlaksananya pendidikan karakter sesuai dengan nilai-nilai Pancasila.",
+        "Terlaksananya delapan dimensi profil lulusan.",
+        "Terlaksananya Tujuh Kebiasaan Anak Indonesia Hebat.",
+        "Terlaksananya pembelajaran dengan pendekatan PAIKEM (Saintifik, Proses, Kontekstual, Proyek, Berbasis Masalah, Design Thinking, STEAM, SETS) berbasis IPTEKS dan Keunggulan Lokal.",
+        "Terlaksananya 4C (Communication, Collaboration, Critical Thinking & Problem Solving, Creativity & Innovation), numerasi, dan literasi dalam pembelajaran.",
+        "Terlaksananya pembelajaran eksplorasi, konfirmasi, dan elaborasi yang mendukung pembelajaran aktif.",
+        "Memanfaatkan teknologi digital dalam sistem informasi sekolah dan pembelajaran.",
+        "Terbentuknya budaya berprestasi di lingkungan warga sekolah dan masyarakat.",
+        "Terlaksananya pendidikan keluarga di sekolah.",
+        "Terlaksananya kegiatan kepedulian sosial di lingkungan sekolah dan masyarakat.",
+        "Terlaksananya kegiatan pelestarian dan pengembangan budaya daerah dan nasional.",
+        "Terlaksananya kegiatan kokurikuler & ekstrakurikuler untuk meningkatkan kecakapan hidup.",
+        "Tertatanya sarana prasarana sekolah untuk mendukung sekolah adiwiyata, sehat, indah, hijau, dan nyaman.",
+        "Terlaksananya kewirausahaan di sekolah berbasis lingkungan.",
+        "Terlaksananya pelayanan sekolah yang melayani, mandiri, tertib, bersatu dan bersih.",
+        "Terlaksananya program sekolah dengan kolaborasi, solidaritas, loyalitas, kerjasama, dan esprit de corps (jiwa korsa).",
+    ],
+    "environment": [
+        "Lingkungan sekolah bersih dan sehat.",
+        "Memiliki landscape (pemanfaatan RTH).",
+        "Memanfaatkan sumber daya dan energi secara efisien (listrik, air, ATK, BBM).",
+        "Mengelola sampah (4R = Reduce, Reuse, Recycle, Replace).",
+        "Mengelola sanitasi lingkungan dan memiliki cadangan air tanah.",
+        "Memiliki kantin ramah lingkungan.",
+        "Melakukan pelestarian fungsi lingkungan hidup.",
+    ],
+    "goals_short": [
+        "Meningkatkan status sekolah menjadi Sekolah Standar Nasional.",
+        "Meningkatkan 20% siswa untuk bersaing memasuki perguruan tinggi negeri.",
+        "Meningkatkan kemampuan bersaing dalam olimpiade mata pelajaran tingkat kabupaten, provinsi, dan nasional.",
+        "Meningkatkan prestasi bidang olahraga dan seni hingga tingkat nasional dan internasional.",
+        "Meningkatkan 20% pembelajaran berbasis TIK.",
+        "Meningkatkan 90% administrasi melalui komputerisasi.",
+        "Menciptakan lingkungan sekolah yang indah, bersih, dan sehat.",
+        "Memenangkan lomba sekolah sehat dan berwawasan lingkungan tingkat kecamatan, kabupaten, provinsi, dan nasional.",
+        "Membangun iklim persaudaraan yang erat antar warga sekolah.",
+        "Meningkatkan kedisiplinan dan jiwa kepemimpinan siswa.",
+        "Meningkatkan jiwa kewirausahaan dan kemandirian siswa.",
+        "Pengadaan fasilitas ruang IT pembelajaran sekolah.",
+    ],
+    "goals_medium": [
+        "Rata-rata nilai UN/US mencapai 7,5.",
+        "Jumlah lulusan yang melanjut ke PTN minimal 50%.",
+        "Memiliki tim olahraga minimal 2 cabang yang mampu bersaing di tingkat kabupaten, provinsi, dan nasional.",
+        "Memiliki tim kesenian yang mampu tampil pada acara tingkat kabupaten, provinsi, dan nasional.",
+        "Mampu mengembangkan potensi sumber daya alam daerah.",
+        "Mampu menjadi tenaga semi profesional berbasis IT di tingkat kabupaten.",
+    ],
+    "goals_long": [
+        "Meningkatkan status sekolah menjadi Sekolah Standar Nasional Berbasis Keunggulan Lokal.",
+        "Meningkatkan pelaksanaan pembelajaran berbasis TIK hingga 85%.",
+        "Melengkapi sarana prasarana dan sumber belajar sesuai standar.",
+        "Meningkatkan kemampuan siswa bidang akademik dan non-akademik untuk bersaing di tingkat kabupaten, provinsi, dan nasional.",
+    ],
+    "targets": [
+        "Memiliki kebiasaan penerapan nilai-nilai disiplin dan agama.",
+        "Rata-rata nilai UN/US minimal mencapai 7,5.",
+        "Memiliki kemampuan bersaing pada lomba tingkat kabupaten dan provinsi.",
+        "Jumlah lulusan yang melanjut ke PTN minimal 50%.",
+        "Kemampuan menggunakan IT bagi warga sekolah minimal 50%.",
+        "Memiliki tim olahraga dan tim kesenian yang rutin berlatih dan pentas di sekolah.",
+        "Memiliki keterampilan berbasis keunggulan lokal untuk menopang pemberdayaan ekonomi lokal.",
+        "Menjadi sekolah berbudaya lingkungan dan sekolah adiwiyata.",
+    ],
+    # ---- Profile facts ----
+    "principal_name": "Togar Duharman Panjaitan, S.Pd., M.Si.",
+    "principal_education": "S2",
+    "principal_major": "Biologi",
+    "principal_sk_date": "26 Oktober 2010",
+    "principal_training": "Seleksi calon kepala sekolah 31 Juli s/d 1 Agustus 2006 dengan predikat lulus dan Baik.",
+    "established_year": "1966",
+    "nss": "301070818006",
+    "npsn": "10208460",
+    "land_area": "3.444 m²",
+    "accreditation": "A — No. 694/BAP-SM/PROVSU/LL/XI/2017 (18 November 2017, BAN)",
+    "sk_pendirian": "190/B/III/1967",
+    "sk_instansi": "Kanwil Departemen Pendidikan dan Kebudayaan Provinsi Sumatera Utara",
+    "address_street": "Jalan Sekolah No. 3",
+    "address_village": "Pasar Laguboti",
+    "address_district": "Laguboti",
+    "address_regency": "Toba",
+    "address_postal": "22381",
+    "contact_phone": "0632 – 331512",
+    "contact_email": "smanegeri1laguboti@yahoo.co.id",
     "contact_website": "",
     "hero_image_url": "",
 }
@@ -2400,7 +2518,7 @@ async def email_report(student_id: str, bg: BackgroundTasks, user=Depends(requir
             f'<h3 style="margin:0 0 4px">{escape(s["name"])}</h3>'
             f'<p style="color:#64748B;margin:0 0 16px;font-size:13px">NISN: {escape(s.get("nisn") or "-")} · Kelas: {escape(s.get("kelas") or "-")}</p>'
             f'<table style="width:100%;border-collapse:collapse;font-size:14px">{rows_html}</table>'
-            f'<p style="margin-top:20px;color:#64748B;font-size:12px">Rapor ini digenerasi otomatis oleh sistem SEKOLAHKU. '
+            f'<p style="margin-top:20px;color:#64748B;font-size:12px">Rapor ini digenerasi otomatis oleh sistem SMA NEGERI 1 LAGUBOTI. '
             f'Silakan hubungi wali kelas untuk klarifikasi lebih lanjut.</p></div></div>')
     bg.add_task(send_email, to, f"Rapor Digital - {s['name']}", html)
     return {"ok": True, "sent_to": to}
@@ -2535,7 +2653,7 @@ def build_pdf(report: dict) -> bytes:
     pdf.set_text_color(255,255,255)
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_xy(15, 10)
-    pdf.cell(180, 8, "SEKOLAHKU - Rapor Digital", ln=1)
+    pdf.cell(180, 8, "SMA NEGERI 1 LAGUBOTI - Rapor Digital", ln=1)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_x(15)
     pdf.cell(180, 6, f"Semester {report['semester']}", ln=1)
@@ -2584,7 +2702,7 @@ def build_pdf(report: dict) -> bytes:
     pdf.set_y(-25)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(100, 116, 139)
-    pdf.cell(0, 5, f"Digenerasi otomatis oleh SEKOLAHKU pada {report['generated_at']}", align="C", ln=1)
+    pdf.cell(0, 5, f"Digenerasi otomatis oleh SMA NEGERI 1 LAGUBOTI pada {report['generated_at']}", align="C", ln=1)
     pdf.cell(0, 5, "Silakan hubungi wali kelas untuk klarifikasi lebih lanjut.", align="C")
     out = pdf.output(dest="S")
     return bytes(out) if not isinstance(out, bytes) else out
@@ -2831,6 +2949,32 @@ class SettingsIn(BaseModel):
     contact_email: Optional[str] = None
     contact_website: Optional[str] = None
     hero_image_url: Optional[str] = None
+    login_badge: Optional[str] = None
+    login_headline: Optional[str] = None
+    login_description: Optional[str] = None
+    login_welcome_title: Optional[str] = None
+    login_welcome_subtitle: Optional[str] = None
+    login_footer: Optional[str] = None
+    history_periods: Optional[List[str]] = None
+    goals: Optional[List[str]] = None
+    environment: Optional[List[str]] = None
+    goals_short: Optional[List[str]] = None
+    goals_medium: Optional[List[str]] = None
+    goals_long: Optional[List[str]] = None
+    targets: Optional[List[str]] = None
+    principal_education: Optional[str] = None
+    principal_major: Optional[str] = None
+    principal_sk_date: Optional[str] = None
+    principal_training: Optional[str] = None
+    nss: Optional[str] = None
+    land_area: Optional[str] = None
+    sk_pendirian: Optional[str] = None
+    sk_instansi: Optional[str] = None
+    address_street: Optional[str] = None
+    address_village: Optional[str] = None
+    address_district: Optional[str] = None
+    address_regency: Optional[str] = None
+    address_postal: Optional[str] = None
 
 @api.get("/settings")
 async def api_get_settings():
@@ -2929,7 +3073,7 @@ async def _seed():
     admin_demo = await db.users.find_one({"email": "admin.demo@sekolahku.id"}, {"id": 1, "name": 1})
     if admin_demo and not await db.announcements.find_one({"is_demo": True}):
         anns = [
-            ("Selamat Datang di SEKOLAHKU", "Platform manajemen sekolah terpadu siap digunakan. Silakan jelajahi fitur absensi, tugas, kuis, dan uang kas.", "Umum", True),
+            ("Selamat Datang di SMA NEGERI 1 LAGUBOTI", "Platform manajemen sekolah terpadu siap digunakan. Silakan jelajahi fitur absensi, tugas, kuis, dan uang kas.", "Umum", True),
             ("Jadwal Ujian Tengah Semester", "UTS akan dilaksanakan mulai minggu depan. Harap siswa mempersiapkan diri dengan baik.", "Akademik", False),
             ("Kegiatan Ekstrakurikuler Dibuka", "Pendaftaran ekstrakurikuler semester ini telah dibuka. Daftarkan diri melalui wali kelas masing-masing.", "Kesiswaan", False),
         ]

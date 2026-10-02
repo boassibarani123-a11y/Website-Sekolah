@@ -3,6 +3,7 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { FileText, Send, Printer, ArrowLeft, Download } from "lucide-react";
+import { useSettings } from "@/context/SettingsContext";
 
 export default function Reports() {
   const { user } = useAuth();
@@ -99,11 +100,12 @@ export default function Reports() {
 }
 
 function ReportView({report}) {
+  const { settings } = useSettings();
   const s = report.student;
   return (
     <div className="printable-report bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-3xl mx-auto">
       <div className="bg-gradient-to-br from-sky-600 to-slate-900 text-white p-8">
-        <div className="flex items-center gap-2 text-xs opacity-80 font-mono-alt tracking-widest"><FileText className="w-4 h-4"/>RAPOR DIGITAL SEKOLAHKU</div>
+        <div className="flex items-center gap-2 text-xs opacity-80 font-mono-alt tracking-widest"><FileText className="w-4 h-4"/>RAPOR DIGITAL · {settings.school_name}</div>
         <h1 className="font-heading text-3xl font-extrabold mt-3">{s.name}</h1>
         <p className="text-sm opacity-80 mt-1">NISN {s.nisn || "—"} · {s.kelas} · Semester {report.semester}</p>
       </div>
@@ -124,7 +126,7 @@ function ReportView({report}) {
           <Stat label="Alpa" value={report.attendance.alpa} color="rose"/>
         </Section>
         <div className="pt-6 mt-4 border-t border-slate-200 text-xs text-slate-500 leading-relaxed">
-          <p>Dokumen ini digenerasi otomatis oleh sistem <b>SEKOLAHKU</b> pada {new Date(report.generated_at).toLocaleString("id-ID")}.
+          <p>Dokumen ini digenerasi otomatis oleh sistem <b>{settings.school_full_name}</b> pada {new Date(report.generated_at).toLocaleString("id-ID")}.
           Silakan hubungi wali kelas untuk klarifikasi lebih lanjut.</p>
         </div>
       </div>

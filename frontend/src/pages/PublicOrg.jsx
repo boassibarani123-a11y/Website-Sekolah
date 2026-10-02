@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { Network, GraduationCap, ArrowLeft } from "lucide-react";
 import { OrgTree, buildTree } from "@/components/OrgTree";
+import { useSettings } from "@/context/SettingsContext";
 
 export default function PublicOrg() {
+  const { settings } = useSettings();
   const [structures, setStructures] = useState([]);
   const [active, setActive] = useState(null);
   const [nodes, setNodes] = useState([]);
@@ -26,9 +28,11 @@ export default function PublicOrg() {
       <header className="bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 text-white">
         <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center border border-white/20"><GraduationCap className="w-6 h-6" /></div>
+            <div className="w-11 h-11 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center border border-white/20 overflow-hidden">
+              {settings.school_logo_url ? <img src={settings.school_logo_url} alt="Logo" className="w-full h-full object-contain"/> : <GraduationCap className="w-6 h-6" />}
+            </div>
             <div>
-              <h1 className="font-heading text-xl font-extrabold tracking-tight">SEKOLAHKU</h1>
+              <h1 className="font-heading text-xl font-extrabold tracking-tight">{settings.school_name}</h1>
               <p className="text-[11px] text-sky-100/80">Struktur Organisasi Sekolah</p>
             </div>
           </div>

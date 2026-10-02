@@ -3,7 +3,7 @@ import { GraduationCap, Shield } from "lucide-react";
 
 export default function StudentIdCard({ student, school, validYears, logoUrl }) {
   const validUntil = validYears || "2025 - 2028";
-  const schoolName = school || "SMA NEGERI 1 SEKOLAHKU";
+  const schoolName = school || "SMA NEGERI 1 LAGUBOTI";
   return (
     <div className="printable-id-card inline-block">
       <div className="ktp-card bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 text-white p-4 relative">

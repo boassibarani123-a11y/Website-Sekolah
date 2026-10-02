@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSettings } from "@/context/SettingsContext";
 import {
   GraduationCap, QrCode, ScanLine, PiggyBank, Wallet, Network, Boxes,
   ShieldCheck, ChevronLeft, ChevronRight, Maximize, Minimize, Users,
   Timer, AlertTriangle, Lock, Bell, FileSpreadsheet, ArrowRightLeft,
   ClipboardList, BrainCircuit, IdCard, CalendarDays, Megaphone, CheckCircle2,
   TrendingUp, UserCheck, ArrowRight, Sparkles, HandCoins, Copy, BarChart3,
+  UserPlus, Upload, Printer, FileCheck, Clock, Shuffle,
 } from "lucide-react";
 
 /* ---------------- komponen visual kecil ---------------- */
@@ -43,7 +45,6 @@ const Bullet = ({ icon: Icon, children }) => (
   </li>
 );
 
-/* Kartu fitur dengan header berwarna */
 const FeatureCard = ({ icon: Icon, title, gradient, children }) => (
   <div className="w-full max-w-5xl mx-auto rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden shadow-2xl">
     <div className={`flex items-center gap-3 px-6 md:px-8 py-4 bg-gradient-to-r ${gradient}`}>
@@ -55,19 +56,19 @@ const FeatureCard = ({ icon: Icon, title, gradient, children }) => (
 );
 
 /* ---------------- SLIDES ---------------- */
-function SlideCover() {
+function SlideCover({ schoolName }) {
   return (
     <div className="text-center max-w-4xl">
       <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-2xl shadow-sky-500/30">
         <GraduationCap className="w-11 h-11 text-white" />
       </div>
-      <h1 className="mt-8 font-heading text-5xl md:text-7xl font-black tracking-tight text-white">SEKOLAHKU</h1>
+      <h1 className="mt-8 font-heading text-4xl md:text-6xl font-black tracking-tight text-white">{schoolName}</h1>
       <p className="mt-3 text-lg md:text-2xl text-sky-300 font-semibold">Sistem Manajemen Sekolah Terpadu</p>
       <p className="mt-6 text-sm md:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
         Satu platform untuk seluruh warga sekolah — presensi digital, keuangan kas yang transparan,
         struktur kelas yang rapi, inventaris terlacak, dan ujian daring yang aman.
       </p>
-      <div className="mt-10 flex items-center justify-center gap-3 text-xs text-slate-500">
+      <div className="mt-10 flex items-center justify-center gap-3 text-xs text-slate-500 no-print">
         <span className="px-3 py-1.5 rounded-full border border-white/10 bg-white/5">Tekan → untuk mulai</span>
         <span className="px-3 py-1.5 rounded-full border border-white/10 bg-white/5">F = Layar penuh</span>
       </div>
@@ -187,7 +188,6 @@ function SlideKelasBph() {
           </ul>
         </div>
         <div className="flex items-center justify-center">
-          {/* Mini org chart */}
           <div className="flex flex-col items-center gap-0">
             <div className="px-5 py-2.5 rounded-xl bg-violet-500/20 border-2 border-violet-400/60 text-center">
               <p className="text-sm font-bold text-white">Ketua Kelas</p>
@@ -260,6 +260,125 @@ function SlideInventaris() {
   );
 }
 
+function SlideTugasQuiz() {
+  return (
+    <FeatureCard icon={BrainCircuit} title="Tugas & Mini-Quiz — Penilaian Otomatis" gradient="from-fuchsia-500 to-pink-700">
+      <div className="grid md:grid-cols-2 gap-8">
+        <div>
+          <ul className="space-y-3">
+            <Bullet icon={ClipboardList}>Guru membuat <b className="text-white">tugas dengan tenggat waktu</b>; siswa mengumpulkan jawaban/berkas langsung dari dasbor</Bullet>
+            <Bullet icon={BrainCircuit}><b className="text-white">Mini-Quiz pilihan ganda</b> dengan penilaian otomatis begitu siswa submit</Bullet>
+            <Bullet icon={Shuffle}>Soal & opsi <b className="text-white">diacak per siswa</b> untuk mengurangi contek-menyontek</Bullet>
+            <Bullet icon={CalendarDays}><b className="text-white">Quiz bulanan</b> terjadwal + rekap nilai per siswa & per kelas</Bullet>
+            <Bullet icon={FileSpreadsheet}>Ekspor nilai ke Excel & umpan balik langsung ke siswa</Bullet>
+          </ul>
+        </div>
+        <div className="flex flex-col justify-center gap-3">
+          {[["Guru menyusun soal + tenggat", "1"], ["Siswa mengerjakan (soal diacak)", "2"], ["Sistem menilai otomatis", "3"], ["Rekap & ekspor nilai", "4"]].map(([label, n], i) => (
+            <div key={n}>
+              <FlowStep n={n}>{label}</FlowStep>
+              {i < 3 && <div className="ml-3.5 h-4 w-px bg-pink-400/40" />}
+            </div>
+          ))}
+          <div className="mt-4 rounded-2xl border border-pink-500/30 bg-pink-500/10 p-4 text-center">
+            <p className="text-3xl font-black text-pink-300">0 menit</p>
+            <p className="text-xs text-slate-400 mt-1">waktu koreksi manual untuk soal pilihan ganda</p>
+          </div>
+        </div>
+      </div>
+    </FeatureCard>
+  );
+}
+
+function SlidePpdb() {
+  return (
+    <FeatureCard icon={UserPlus} title="PPDB Online — Pendaftaran Siswa Baru" gradient="from-cyan-500 to-blue-700">
+      <div className="grid md:grid-cols-2 gap-8">
+        <div>
+          <ul className="space-y-3">
+            <Bullet icon={UserPlus}>Calon siswa <b className="text-white">mendaftar online tanpa perlu akun</b> — cukup isi formulir dari rumah</Bullet>
+            <Bullet icon={Upload}><b className="text-white">Upload berkas</b> (ijazah, foto, dokumen) langsung dari perangkat</Bullet>
+            <Bullet icon={FileCheck}>Panitia memverifikasi dokumen & <b className="text-white">mengumumkan kelulusan</b> dari dasbor Admin PPDB</Bullet>
+            <Bullet icon={Clock}>Pendaftar dapat <b className="text-white">memantau status</b> secara mandiri kapan saja</Bullet>
+            <Bullet icon={Bell}>Notifikasi hasil via email — transparan & tanpa antre di sekolah</Bullet>
+          </ul>
+        </div>
+        <div className="flex flex-col justify-center gap-3">
+          {[["Isi formulir online", "1"], ["Upload berkas pendukung", "2"], ["Panitia verifikasi", "3"], ["Pengumuman kelulusan", "4"]].map(([label, n], i) => (
+            <div key={n}>
+              <FlowStep n={n}>{label}</FlowStep>
+              {i < 3 && <div className="ml-3.5 h-4 w-px bg-cyan-400/40" />}
+            </div>
+          ))}
+          <div className="mt-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-center">
+            <p className="text-3xl font-black text-cyan-300">24/7</p>
+            <p className="text-xs text-slate-400 mt-1">pendaftaran & pemantauan status tanpa batas jam kantor</p>
+          </div>
+        </div>
+      </div>
+    </FeatureCard>
+  );
+}
+
+function SlideKartu() {
+  return (
+    <FeatureCard icon={IdCard} title="Kartu Pelajar Digital — Cetak Format KTP" gradient="from-teal-500 to-emerald-700">
+      <div className="grid md:grid-cols-2 gap-8">
+        <div>
+          <ul className="space-y-3">
+            <Bullet icon={IdCard}>Setiap siswa punya <b className="text-white">Kartu Pelajar digital</b> ber-QR permanen, otomatis sejak akun dibuat</Bullet>
+            <Bullet icon={Printer}><b className="text-white">Cetak massal format KTP</b> (CR80) — siap dilaminasi menjadi kartu fisik</Bullet>
+            <Bullet icon={QrCode}>QR & NISN digunakan untuk <b className="text-white">presensi dan peminjaman inventaris</b></Bullet>
+            <Bullet icon={Sparkles}>Desain <b className="text-white">ter-branding sekolah</b>: logo, nama, masa berlaku, dan tata tertib di balik kartu — semua diatur dari Pengaturan</Bullet>
+          </ul>
+        </div>
+        <div className="flex items-center justify-center">
+          <div className="w-72 rounded-2xl bg-gradient-to-br from-sky-600 to-indigo-700 p-5 shadow-2xl border border-white/20">
+            <div className="flex items-center gap-2 text-white">
+              <GraduationCap className="w-6 h-6"/>
+              <span className="font-heading font-extrabold text-sm">KARTU PELAJAR</span>
+            </div>
+            <div className="mt-4 flex gap-3">
+              <div className="w-16 h-20 rounded-lg bg-white/20 border border-white/30" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-2.5 w-24 rounded bg-white/40" />
+                <div className="h-2 w-20 rounded bg-white/25" />
+                <div className="h-2 w-16 rounded bg-white/25" />
+              </div>
+              <div className="w-12 h-12 rounded bg-white p-1 flex items-center justify-center"><QrCode className="w-full h-full text-slate-900"/></div>
+            </div>
+            <div className="mt-3 text-[10px] text-sky-100/80 uppercase tracking-wider">Berlaku 2025 - 2028</div>
+          </div>
+        </div>
+      </div>
+    </FeatureCard>
+  );
+}
+
+function SlideClosing({ schoolName }) {
+  return (
+    <div className="text-center max-w-3xl">
+      <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-2xl shadow-sky-500/30">
+        <TrendingUp className="w-8 h-8 text-white" />
+      </div>
+      <h2 className="mt-8 font-heading text-4xl md:text-6xl font-extrabold text-white">Sekolah Lebih Rapi,<br /><span className="text-sky-400">Mulai Hari Ini.</span></h2>
+      <p className="mt-3 text-sky-300 font-semibold">{schoolName}</p>
+      <p className="mt-5 text-slate-400 text-sm md:text-base leading-relaxed">
+        Presensi 800 siswa dalam hitungan menit. Kas kelas yang transparan. Struktur kelas yang konsisten.
+        Aset yang selalu terlacak. Ujian yang jujur.
+      </p>
+      <div className="mt-10 flex items-center justify-center gap-3 flex-wrap no-print">
+        <Link to="/login" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold shadow-lg shadow-sky-500/30 transition-colors">
+          Masuk ke Aplikasi <ArrowRight className="w-4 h-4" />
+        </Link>
+        <Link to="/dokumentasi" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 text-slate-200 font-semibold transition-colors">
+          Lihat Dokumentasi (TOR · PRD · BPMN)
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 function SlideUjian() {
   return (
     <FeatureCard icon={ShieldCheck} title="Ujian Online — Sistem Anti-Cheat" gradient="from-indigo-500 to-blue-700">
@@ -296,40 +415,23 @@ function SlideUjian() {
   );
 }
 
-function SlideClosing() {
-  return (
-    <div className="text-center max-w-3xl">
-      <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-2xl shadow-sky-500/30">
-        <TrendingUp className="w-8 h-8 text-white" />
-      </div>
-      <h2 className="mt-8 font-heading text-4xl md:text-6xl font-extrabold text-white">Sekolah Lebih Rapi,<br /><span className="text-sky-400">Mulai Hari Ini.</span></h2>
-      <p className="mt-5 text-slate-400 text-sm md:text-base leading-relaxed">
-        Presensi 800 siswa dalam hitungan menit. Kas kelas yang transparan. Struktur kelas yang konsisten.
-        Aset yang selalu terlacak. Ujian yang jujur.
-      </p>
-      <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
-        <Link to="/login" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold shadow-lg shadow-sky-500/30 transition-colors">
-          Masuk ke Aplikasi <ArrowRight className="w-4 h-4" />
-        </Link>
-        <Link to="/dokumentasi" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 text-slate-200 font-semibold transition-colors">
-          Lihat Dokumentasi (TOR · PRD · BPMN)
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-const SLIDES = [SlideCover, SlideOverview, SlideAbsensi, SlideKas, SlideKelasBph, SlideInventaris, SlideUjian, SlideClosing];
+const SLIDES = [SlideCover, SlideOverview, SlideAbsensi, SlideKas, SlideKelasBph, SlideInventaris, SlideTugasQuiz, SlideUjian, SlidePpdb, SlideKartu, SlideClosing];
 const ACCENTS = ["from-slate-950 via-slate-900 to-sky-950", "from-slate-950 via-slate-900 to-slate-950",
   "from-slate-950 via-sky-950 to-slate-950", "from-slate-950 via-emerald-950 to-slate-950",
   "from-slate-950 via-violet-950 to-slate-950", "from-slate-950 via-amber-950 to-slate-950",
-  "from-slate-950 via-indigo-950 to-slate-950", "from-slate-950 via-slate-900 to-sky-950"];
+  "from-slate-950 via-fuchsia-950 to-slate-950", "from-slate-950 via-indigo-950 to-slate-950",
+  "from-slate-950 via-cyan-950 to-slate-950", "from-slate-950 via-teal-950 to-slate-950",
+  "from-slate-950 via-slate-900 to-sky-950"];
 
 /* ---------------- DECK ---------------- */
 export default function Presentation() {
+  const { settings } = useSettings();
+  const schoolName = settings.school_name || "SEKOLAH";
   const [idx, setIdx] = useState(0);
   const [fs, setFs] = useState(false);
   const total = SLIDES.length;
+
+  const renderSlide = (Comp, key) => <Comp key={key} schoolName={schoolName} />;
 
   const go = useCallback((n) => setIdx(i => Math.max(0, Math.min(total - 1, typeof n === "function" ? n(i) : n))), [total]);
   const next = useCallback(() => go(i => i + 1), [go]);
@@ -355,45 +457,87 @@ export default function Presentation() {
   const Current = SLIDES[idx];
 
   return (
-    <div className={`h-screen w-screen overflow-hidden bg-gradient-to-br ${ACCENTS[idx]} text-slate-100 flex flex-col transition-colors duration-700`} data-testid="presentation-deck">
-      {/* Progress bar */}
-      <div className="h-1 bg-white/10 shrink-0">
-        <div className="h-full bg-sky-400 transition-all duration-500" style={{ width: `${((idx + 1) / total) * 100}%` }} />
+    <>
+      {/* Interactive on-screen deck */}
+      <div className={`screen-deck h-screen w-screen overflow-hidden bg-gradient-to-br ${ACCENTS[idx]} text-slate-100 flex flex-col transition-colors duration-700`} data-testid="presentation-deck">
+        <div className="h-1 bg-white/10 shrink-0">
+          <div className="h-full bg-sky-400 transition-all duration-500" style={{ width: `${((idx + 1) / total) * 100}%` }} />
+        </div>
+
+        <div className="flex-1 overflow-y-auto flex items-center justify-center px-5 py-8 md:px-10">
+          <div key={idx} className="w-full animate-[slideIn_.45s_ease] flex justify-center">
+            {renderSlide(Current, idx)}
+          </div>
+        </div>
+
+        <div className="shrink-0 flex items-center justify-between px-4 md:px-8 py-3 bg-black/20 border-t border-white/10">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-4 h-4 text-sky-400" />
+            <span className="text-xs font-bold tracking-widest text-slate-400 uppercase hidden sm:inline">{schoolName}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {SLIDES.map((_, i) => (
+              <button key={i} data-testid={`slide-dot-${i}`} onClick={() => go(i)} aria-label={`Slide ${i + 1}`}
+                className={`rounded-full transition-all ${i === idx ? "w-6 h-2 bg-sky-400" : "w-2 h-2 bg-white/25 hover:bg-white/50"}`} />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-mono text-slate-400 mr-2" data-testid="slide-counter">{idx + 1} / {total}</span>
+            <button data-testid="slide-print" onClick={() => window.print()} title="Cetak / Ekspor PDF handout"
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1.5">
+              <Printer className="w-4 h-4" /><span className="hidden md:inline text-xs font-semibold">Cetak PDF</span>
+            </button>
+            <button data-testid="slide-prev" onClick={prev} disabled={idx === 0}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+            <button data-testid="slide-next" onClick={next} disabled={idx === total - 1}
+              className="p-2 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-30 transition-colors"><ChevronRight className="w-4 h-4" /></button>
+            <button data-testid="slide-fullscreen" onClick={() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else document.documentElement.requestFullscreen().catch(() => {}); }}
+              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Layar penuh (F)">
+              {fs ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Slide */}
-      <div className="flex-1 overflow-y-auto flex items-center justify-center px-5 py-8 md:px-10">
-        <div key={idx} className="w-full animate-[slideIn_.45s_ease] flex justify-center">
-          <Current />
-        </div>
+      {/* Print-only handout: every slide on its own page */}
+      <div className="print-deck" data-testid="presentation-print">
+        {SLIDES.map((Comp, i) => (
+          <section key={i} className={`print-slide bg-gradient-to-br ${ACCENTS[i]} text-slate-100`}>
+            <div className="w-full flex items-center justify-center px-10 py-12">
+              {renderSlide(Comp, `p-${i}`)}
+            </div>
+            <div className="print-foot">{schoolName} · Slide {i + 1} / {total}</div>
+          </section>
+        ))}
       </div>
 
-      {/* Kontrol bawah */}
-      <div className="shrink-0 flex items-center justify-between px-4 md:px-8 py-3 bg-black/20 border-t border-white/10">
-        <div className="flex items-center gap-2">
-          <GraduationCap className="w-4 h-4 text-sky-400" />
-          <span className="text-xs font-bold tracking-widest text-slate-400 uppercase hidden sm:inline">SEKOLAHKU</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {SLIDES.map((_, i) => (
-            <button key={i} data-testid={`slide-dot-${i}`} onClick={() => go(i)} aria-label={`Slide ${i + 1}`}
-              className={`rounded-full transition-all ${i === idx ? "w-6 h-2 bg-sky-400" : "w-2 h-2 bg-white/25 hover:bg-white/50"}`} />
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-mono text-slate-400 mr-2" data-testid="slide-counter">{idx + 1} / {total}</span>
-          <button data-testid="slide-prev" onClick={prev} disabled={idx === 0}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-          <button data-testid="slide-next" onClick={next} disabled={idx === total - 1}
-            className="p-2 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-30 transition-colors"><ChevronRight className="w-4 h-4" /></button>
-          <button data-testid="slide-fullscreen" onClick={() => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else document.documentElement.requestFullscreen().catch(() => {}); }}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Layar penuh (F)">
-            {fs ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-
-      <style>{`@keyframes slideIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }`}</style>
-    </div>
+      <style>{`
+        @keyframes slideIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        .print-deck { display: none; }
+        @media print {
+          @page { size: A4 landscape; margin: 0; }
+          .no-print { display: none !important; }
+          .screen-deck { display: none !important; }
+          .print-deck { display: block !important; }
+          .print-slide {
+            position: relative;
+            min-height: 100vh;
+            page-break-after: always;
+            break-after: page;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .print-slide:last-child { page-break-after: auto; }
+          .print-foot {
+            position: absolute; bottom: 12px; left: 0; right: 0;
+            text-align: center; font-size: 10px; letter-spacing: .08em;
+            text-transform: uppercase; color: rgba(255,255,255,.55);
+          }
+        }
+      `}</style>
+    </>
   );
 }
