@@ -1,37 +1,29 @@
-# SEKOLAHKU — PRD
+# PRD — SMA NEGERI 1 LAGUBOTI (Sistem Manajemen Sekolah Terpadu)
 
-## Original problem
-Import project from GitHub (boassibarani123-a11y/Website-Sekolah, branch main2) and install dependencies. Later iterations add school features (Indonesian UI).
+## Original Problem Statement
+GitHub import of Website-Sekolah (branch main3), then: rebrand SEKOLAHKU → SMA NEGERI 1 LAGUBOTI across documents; add "Lihat Presentasi" button on login; add slides (Tugas & Mini-Quiz, PPDB, Kartu Pelajar); add print stylesheet for PDF handout; let super admin edit login page text; show school info on login; expand Informasi Sekolah with the full real school profile.
 
 ## Architecture
-React (CRA + craco, Tailwind, shadcn) + FastAPI + MongoDB. Emergent object storage, Emergent LLM key, Emergent managed email (Resend).
-Note: the repo's babel plugin crashes on recursive JSX. Use React.createElement for recursion.
+- Backend: FastAPI + MongoDB (settings stored as singleton doc `_id='singleton'`, seeded from DEFAULT_SETTINGS).
+- Frontend: React + Tailwind + shadcn; global SettingsProvider exposes settings to all pages (public + protected).
 
-## Implemented
-- Iter 1: Imported repo, installed dependencies, set up env.
-- Iter 2: Password reset email (Emergent managed email + email_guard.py). Login announcement banner (show_on_login). OrgTree with connector lines, unlimited depth and "Lapis" layer labels.
-- Iter 3:
-  - Public page /struktur-organisasi showing all structures as tabs, with a link from the login page.
-  - Dana Sosial edit/delete (PATCH/DELETE /api/social-fund/{id}).
-  - Class password: only super_admin sets it. Members enter it once (stored in users.unlocked_classes). Changing the password resets all unlocks.
-  - Uang Kas moved into a "Uang Kas" tab inside each class (/api/classes/{cid}/kas). Only the ketua_kelas of that class can add, edit or delete; everyone else is read-only. The old /uang-kas page and menu were removed.
-  - Attendance: USB barcode (keyboard-wedge, NISN) card below the QR card. One shared log, with a method badge (QR / Barcode / Manual) and a Metode column in Excel.
+## User Personas
+Super Admin, Kepala Sekolah, Staff TU, Guru, Siswa, Ketua Kelas, Bendahara, Ketua OSIS, Orang Tua.
 
-- Iter 4:
-  - Class lock is now enforced on the server for tugas/quiz. List endpoints filter out items from locked classes. Submit, submission status, quiz attempt and quiz unlock return 423.
-  - Quiz password: the guru who created the quiz, or super_admin, can set, change or remove it. Students unlock it once (stored in users.unlocked_quizzes). Locked quizzes are returned without their questions.
-  - Weekly kas billing: GET /api/classes/{cid}/kas/weekly, for ketua_kelas and super_admin, with a Monday–Sunday WIB week. The "Tandai Bayar" button records a masuk transaction with student_id. Optional "Dari siswa" select in the kas form.
+## Implemented (2026-06)
+- Rebrand to SMA NEGERI 1 LAGUBOTI (Login, PublicOrg, PpdbPublic, Reports, Documentation, Presentation, StudentIdCard, backend PDFs/email brand) — mostly driven by editable settings.
+- Login page: dynamic branding + editable text (login_badge/headline/description/welcome_title/welcome_subtitle/footer), school-info summary card, "Lihat Presentasi" button.
+- Settings page: new "D. Teks Halaman Login" editor section.
+- Presentation: 11 slides incl. Tugas & Mini-Quiz, PPDB Online, Kartu Pelajar; dynamic school name; "Cetak PDF" print button + `@media print` stylesheet (one slide per A4 landscape page).
+- Informasi Sekolah: full profile (profil & alamat, kepala sekolah, sejarah + 14 periode, visi, misi, tujuan, berwawasan lingkungan, tujuan jangka pendek/menengah/panjang, sasaran) with admin edit mode. All real Laguboti data seeded in DEFAULT_SETTINGS.
+- Backend SettingsIn extended with all new fields; GET public, PATCH super_admin-only.
 
-- Iter 5:
-  - Monthly kas recap: GET /api/classes/{cid}/kas/monthly?month=YYYY-MM. Uses Mon–Sun WIB weeks that overlap the month. Table shows each student's status per week (paid / unpaid / future).
-  - Quiz time limit (time_limit in minutes): POST /api/quizzes/{id}/start creates a server-side session. Timer counts down and answers auto-submit at 0. Attempts are rejected after the deadline + 20s.
-  - Super admin can remove a class password (remove_password).
-  - Friday 08:00 WIB cron (.emergent/crons.yml) calls POST /api/cron/kas-reminder (Bearer WEBHOOK_CRON_SECRET, idempotent via cron_runs). It sends an in-app notification to unpaid students in classes that use weekly billing.
+## Verified
+Testing agent iteration_17: backend 100%, frontend 100%, no issues. Regression suite: /app/backend/tests/test_iter17_laguboti_settings.py.
 
-- Iter 6:
-  - Quiz shuffle: per-student shuffled question and option order, stored in quiz_sessions. POST /api/quizzes/{id}/start returns the shuffled quiz; attempt maps answers back. Editing questions or the time limit resets sessions.
-  - Kas chart: GET /api/classes/{cid}/kas/chart?months=N (3–12, WIB months) and a recharts bar chart in the kas tab for every class viewer.
+## Credentials
+Super admin: boassibarani123@gmail.com / Boas12345io
 
-- Iter 7: Per-class BPH org chart (collection class_bph, endpoints /api/classes/{cid}/bph). Same OrgTree design and interactions (add child, layers, dashed, drag-drop, photo). Only the ketua_kelas of that class can add/edit/delete; everyone else read-only. BPH tab in class detail.
-
-## Backlog
+## Backlog / Next
+- P2: split server.py into routers.
+- P2: guard harmless 401 on first login render.
