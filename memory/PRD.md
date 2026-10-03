@@ -60,3 +60,11 @@ Super admin: boassibarani123@gmail.com / Boas12345io
 ## Backlog / Next
 - P2: split server.py into routers.
 - P2: guard harmless 401 on first login render.
+
+## Added (2026-10-03, Import branch main6 + Deployment-ready reset)
+- **Import**: Project di-import dari GitHub `Website-Sekolah` branch `main6`; dependencies backend (pip) & frontend (yarn) terinstal; env ditambah: JWT_SECRET, WEBHOOK_CRON_SECRET, EMERGENT_LLM_KEY.
+- **Email aktif**: EMERGENT_EMAIL_KEY + EMAIL_FROM_NAME="SMA NEGERI 1 LAGUBOTI" + FRONTEND_URL di backend/.env — forgot-password & pengumuman mengirim email sungguhan via proxy Emergent (terbukti HTTP 202 + log "Reset email sent").
+- **Login page**: bagian "Coba Akun Demo" dihapus total; tombol publik (Presentasi, Struktur Organisasi, Dokumentasi, Galeri, PPDB) naik tepat di bawah form login; headline "Satu Platform. Tujuh Peran. Sekolah Modern." + deskripsi pindah ke atas kartu info sekolah.
+- **Barcode kartu pelajar** diperbesar (front: height 40, barWidth 2.5 → SVG ~229×44px, memenuhi kotak putih).
+- **Reset total**: semua koleksi MongoDB dikosongkan; seeding demo (akun, buku, kelas, roster, pengumuman, event) DIHAPUS dari `_seed()` di server.py — hanya super admin yang di-seed. Situs siap deploy; super admin mengisi data satu per satu.
+- Verified: testing agent iteration_22 — backend 16/16, frontend 100% (login layout, barcode 229×44, 12 protected pages empty-state aman, PPDB publik, forgot-password email terkirim). Regression: /app/backend/tests/test_iter22_fresh_reset.py.
