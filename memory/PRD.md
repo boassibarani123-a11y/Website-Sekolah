@@ -86,3 +86,6 @@ Super admin: boassibarani123@gmail.com / Boas12345io
 ## Added (2026-10-03, Demo isi Galeri Prestasi + Reset final siap deploy)
 - Galeri Prestasi sempat diisi 3 pencapaian nyata terverifikasi: (1) 47 siswa lolos PTN & kampus favorit via SNBP 2026 (Nasional), (2) Juara IV Lomba Cerdas Cermat SMA/SMK/MA se-Kabupaten Toba 2023 (PT Inalum × IT Del), (3) Terakreditasi A (Nasional) — untuk membuktikan fitur tampil bagus (screenshot terverifikasi).
 - **Reset final**: seluruh koleksi dikosongkan lagi — tersisa hanya super admin + settings (profil sekolah). Situs 100% bersih, siap deploy; super admin mengisi semua data (akun, kelas, prestasi, dst.) sendiri. Login super admin terverifikasi 200 setelah reset.
+
+## Added (2026-10-03, Panduan Cepat Super Admin)
+- Halaman Dokumentasi kini punya section "Panduan Cepat Super Admin — Mulai dari Nol" (12 langkah bernomor dengan badge menu: login → pengaturan → kelas → akun guru → akun siswa+WA → cetak kartu → perpustakaan → galeri prestasi → pengumuman/kalender → struktur organisasi → operasional harian → otomatisasi cron). Tampil sebelum Bagian A TOR, ikut tercetak saat unduh PDF. Diverifikasi via screenshot (12 step render).

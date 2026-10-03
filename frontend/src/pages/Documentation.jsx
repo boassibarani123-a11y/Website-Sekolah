@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, Printer, BookOpen, FileText, GitBranch, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Printer, BookOpen, FileText, GitBranch, AlertTriangle, Rocket } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
 
 /* ============================ KOMPONEN KECIL ============================ */
@@ -276,7 +276,23 @@ const FLOW_GALERI = [
 
 
 
-/* ============================ HALAMAN ============================ */
+/* ============================ PANDUAN CEPAT SUPER ADMIN ============================ */
+const QUICK_GUIDE = [
+  { title: "Masuk sebagai Super Admin", menu: "Halaman Login", desc: "Buka halaman login dan masuk dengan email & password Super Admin yang telah diberikan. Hanya akun ini yang ada saat sistem baru dipasang." },
+  { title: "Lengkapi Pengaturan Sekolah", menu: "Pengaturan", desc: "Unggah logo sekolah, lengkapi nama, alamat, kontak, tahun akademik, dan teks halaman login. Logo otomatis tampil di login, sidebar, dan kartu pelajar." },
+  { title: "Buat Kelas & Mata Pelajaran", menu: "Ruang Kelas", desc: "Buat setiap kelas (mis. X IPA 1, XI IPA 1), tambahkan mata pelajaran, dan tetapkan wali kelas. Kelas dibutuhkan sebelum membuat akun siswa." },
+  { title: "Buat Akun Guru & Staff", menu: "Kelola Akun", desc: "Buat akun Guru/Wali Kelas, Staff TU, Kepala Sekolah, Admin Perpustakaan, dan Ketua OSIS. Nomor WhatsApp untuk peran ini opsional." },
+  { title: "Buat Akun Siswa", menu: "Kelola Akun", desc: "Buat akun tiap siswa: wajib mengisi NISN, kelas, dan Nomor WhatsApp aktif. Setiap akun siswa otomatis mendapat QR permanen & Kartu Pelajar digital." },
+  { title: "Cetak & Bagikan Kartu Pelajar", menu: "Kelola Akun → Cetak Kartu Massal", desc: "Cetak kartu pelajar seluruh siswa (ukuran KTP standar) dan bagikan. Kartu ini dipakai untuk absensi QR/barcode harian." },
+  { title: "Isi Katalog Perpustakaan", menu: "Perpustakaan", desc: "Admin Perpustakaan/Super Admin menambahkan koleksi buku (judul, penulis, kategori, stok, lokasi rak) agar siswa bisa meminjam & mereservasi." },
+  { title: "Isi Galeri Prestasi", menu: "Profil Sekolah (publik) → Tambah Prestasi", desc: "Buka halaman Profil Sekolah sambil login sebagai Super Admin, lalu tekan 'Tambah Prestasi' untuk mengisi pencapaian sekolah yang tampil ke publik." },
+  { title: "Terbitkan Pengumuman & Kalender", menu: "Pengumuman · Kalender", desc: "Buat pengumuman awal (bisa tampil sebagai banner di halaman login) dan isi kalender akademik: jadwal ujian, rapat, libur, dan kegiatan." },
+  { title: "Susun Struktur Organisasi", menu: "Struktur Organisasi", desc: "Susun bagan organisasi sekolah — dapat dilihat publik tanpa login melalui tautan di halaman login." },
+  { title: "Mulai Operasional Harian", menu: "Semua modul aktif", desc: "Petugas presensi mulai scan QR/barcode; guru membuat tugas, mini-quiz & ujian anti-cheat; Ketua Kelas/Bendahara mencatat uang kas; siswa meminjam inventaris & buku." },
+  { title: "Otomatisasi Berjalan Sendiri", menu: "Tanpa aksi", desc: "Reminder absensi email 08:00 WIB & auto-alpa 09:00 WIB (Senin–Sabtu), arsip rekap absensi mingguan tiap Senin dini hari, dan pengingat kas Jumat 08:00 WIB berjalan otomatis." },
+];
+
+
 export default function Documentation() {
   const { settings } = useSettings();
   const brand = settings.school_name || "SEKOLAH";
@@ -302,6 +318,24 @@ export default function Documentation() {
           <p className="text-slate-600 mt-2">Term of Reference (TOR) · Product Requirements Document (PRD) · Diagram BPMN</p>
           <p className="text-xs text-slate-400 mt-3">Versi 2.0 · Tahun Ajaran 2025/2026 · Status: Final · Mencakup seluruh fitur & alur sistem</p>
         </header>
+
+        {/* ============ PANDUAN CEPAT SUPER ADMIN ============ */}
+        <Section id="panduan" icon={Rocket} title="Panduan Cepat Super Admin — Mulai dari Nol">
+          <P>Sistem baru dipasang dalam keadaan kosong (hanya ada akun Super Admin). Ikuti urutan langkah berikut sampai sekolah siap beroperasi penuh — setiap langkah mencantumkan menu tempatnya.</P>
+          <div className="space-y-3">
+            {QUICK_GUIDE.map((g, i) => (
+              <div key={i} className="flex gap-3 items-start break-inside-avoid" data-testid={`guide-step-${i + 1}`}>
+                <div className="w-8 h-8 rounded-full bg-sky-600 text-white font-bold flex items-center justify-center shrink-0 text-sm shadow">{i + 1}</div>
+                <div className="flex-1 border border-slate-200 rounded-xl px-4 py-3 bg-slate-50">
+                  <p className="font-bold text-slate-900 text-sm">{g.title}
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold uppercase tracking-wide">{g.menu}</span>
+                  </p>
+                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">{g.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
 
         {/* ============ BAGIAN A: TOR ============ */}
         <Section id="tor" icon={BookOpen} title="Bagian A — Term of Reference (Kerangka Acuan Kerja)">
