@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 24 — Galeri Prestasi (Profile Achievements) feature + Documentation page tested end-to-end. Backend: 6/6 pytest cases passed (public GET, 401 on unauth write, super_admin CRUD w/ 404 handling, 403 for guru on POST/PATCH/DELETE, data persisted & verified via GET). Frontend: guest view shows profile-achievements container with 3 empty slots and NO add button; super admin view shows Tambah Prestasi button + add slot; full create (title+level 'Nasional' save) and delete lifecycle verified via UI, card renders & then disappears after delete. /dokumentasi renders 14 .bpmn-flow blocks and shows 'Cetak / Unduh PDF' button without JS errors. All TEST_ data (achievements + guru user) cleaned up.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_profile_achievements.py",
+    "/app/test_reports/pytest/iter24_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py has grown to 4075 lines — consider splitting routers (users, achievements, library, etc.) into modules for maintainability.",
+    "Profile achievements PATCH uses full-schema body (requires title); OK since UI resends full form, but consider making it a partial update model for API consumers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter24_profile_achievements.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Super admin: boassibarani123@gmail.com / Boas12345io; guru user created & deleted during test (test_guru_<rand>@example.com).",
+  "seed_data_creation": "None persisted. All TEST_ achievements and the TEST guru user were deleted in cleanup step (test_zz_cleanup verified no leftover TEST_ titles).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Galeri Prestasi endpoints: GET /api/profile-achievements (public), POST/PATCH/DELETE /api/profile-achievements[/{id}] (super_admin). UI testids: profile-achievements, achievement-empty-slot, add-achievement-button, add-achievement-slot, achievement-card, edit-achievement-button, delete-achievement-button, achievement-title-input, achievement-level-select, save-achievement-button. Documentation page /dokumentasi has 14 .bpmn-flow blocks.",
+  "rca of the issue": "N/A — no issues found."
+}
