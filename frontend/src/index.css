@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sky-primary: #0284C7;
+  --sky-light: #38BDF8;
+  --sky-dark: #0369A1;
+  --bg: #F8FAFC;
+  --ink: #0F172A;
+}
+
+body {
+  margin: 0;
+  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-heading { font-family: 'Plus Jakarta Sans', sans-serif; }
+.font-mono-alt { font-family: 'JetBrains Mono', monospace; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---------- Organization chart (top-down tree, connectors, unlimited depth downward) ---------- */
+.org-tree { display: inline-block; min-width: 100%; text-align: center; padding-bottom: 8px; }
+.org-tree ul { position: relative; display: flex; justify-content: center; padding: 28px 0 0; margin: 0; list-style: none; }
+.org-tree li {
+  position: relative; list-style: none; text-align: center;
+  padding: 28px 10px 0; display: flex; flex-direction: column; align-items: center;
+}
+.org-tree li::before, .org-tree li::after {
+  content: ''; position: absolute; top: 0; right: 50%;
+  border-top: 2px solid #94a3b8; width: 50%; height: 28px;
+}
+.org-tree li::after { right: auto; left: 50%; border-left: 2px solid #94a3b8; }
+.org-tree li:first-child::before, .org-tree li:last-child::after { border: 0 none; }
+.org-tree li:last-child::before { border-right: 2px solid #94a3b8; border-radius: 0 10px 0 0; }
+.org-tree li:first-child::after { border-radius: 10px 0 0 0; }
+.org-tree li:only-child::before { display: none; }
+.org-tree li:only-child::after { border: 0 none; border-left: 2px solid #94a3b8; border-radius: 0; }
+.org-tree ul ul::before {
+  content: ''; position: absolute; top: 0; left: 50%;
+  border-left: 2px solid #94a3b8; width: 0; height: 28px;
+}
+.org-tree ul ul.has-add::before { top: -34px; height: 62px; }
+.org-tree li > .org-add-btn::before {
+  content: ''; position: absolute; left: 50%; top: -8px; height: 8px; border-left: 2px solid #94a3b8; z-index: -1;
+}
+.org-tree > ul { padding-top: 0; }
+.org-tree > ul > li { padding-top: 0; }
+.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
+.org-tree li.dashed::before, .org-tree li.dashed::after { border-top-style: dashed; border-left-style: dashed; border-right-style: dashed; }
+
+/* Printable KTP Card */
+@media print {
+  @page { margin: 8mm; }
+  body * { visibility: hidden !important; }
+  .printable-id-card, .printable-id-card * { visibility: visible !important; }
+  .printable-id-card {
+    box-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .no-print { display: none !important; }
+  .printable-doc, .printable-doc * { visibility: visible !important; }
+  .printable-doc {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .printable-doc .doc-paper { box-shadow: none !important; border-radius: 0 !important; }
+}
+
+.ktp-card {
+  width: 88mm;
+  height: 56mm;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 20px 40px -12px rgba(2, 132, 199, 0.35);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 199 89% 48%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 96%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 199 95% 94%;
+        --accent-foreground: 199 89% 30%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 199 89% 48%;
+        --radius: 0.75rem;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+    body { @apply bg-background text-foreground; }
+}

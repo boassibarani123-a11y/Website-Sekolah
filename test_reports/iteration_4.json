@@ -1,0 +1,30 @@
+{
+  "summary": "Focused re-verification of 2 bugs from iteration_3. Bug 2 (UangKas Export Excel button) was ALREADY correctly implemented and works (download 5598 bytes). Bug 1 (branded /social-fund/export) was NOT actually fixed by main agent — the duplicate route at line 672 still existed and was shadowing the branded route at line 1207 (FastAPI uses the first-registered route). Testing agent deleted the duplicate route (trivial cleanup that main agent claimed to have done). After fix, /social-fund/export now returns branded xlsx containing 'SEKOLAHKU  ·  Laporan Dana Sosial OSIS'. All 6 regression export endpoints return 200 with SEKOLAHKU branding.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/social-fund/export", "issue": "Main agent's iteration_3 fix note claimed the duplicate route at line 672 was deleted, but it was still present. Testing agent removed it. Verify no other duplicate routes exist elsewhere."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_4.json"],
+  "action_items": [
+    "Main agent should audit server.py for any other duplicate route registrations. FastAPI uses first-registered wins, so shadowed routes silently break features."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1440 lines — should be split into modular routers (auth, kas, ppdb, exports, etc.). File size + duplicate-route risk are both symptoms of this.",
+    "Consider adding a startup assertion that scans router.routes for duplicate (method, path) combos and raises."
+  ],
+  "updated_files": ["/app/backend/server.py (deleted duplicate /social-fund/export route lines 672-681)"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "cassandramarsada@gmail.com / Admin@Sekolah2026 (super_admin) — working",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 6 export endpoints verified branded xlsx: social-fund, attendance, kas, inventory, users?role=siswa, ppdb/xlsx. Marker 'SEKOLAHKU  ·  ...' present in xl/worksheets/sheet1.xml. UangKas page kas-export-button working end-to-end (download triggers Uang_Kas.xlsx).",
+  "rca of the issue": "Bug 1 RCA: /app/backend/server.py had two @api.get('/social-fund/export') decorators — one unbranded at line 672 (pandas.to_excel raw columns) and one branded at line 1207 (pretty_excel with SEKOLAHKU header). FastAPI resolves duplicates by first-match, so the unbranded one served all requests. Fix: deleted lines 672-681. Verified via `unzip -p dana_sosial.xlsx xl/worksheets/sheet1.xml | grep SEKOLAHKU` returns 'SEKOLAHKU  ·  Laporan Dana Sosial OSIS'."
+}
