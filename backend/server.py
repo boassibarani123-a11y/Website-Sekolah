@@ -252,6 +252,7 @@ async def get_settings() -> dict:
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.page import PageMargins
 
 SKY_600 = "0284C7"
 SKY_100 = "E0F2FE"
@@ -265,39 +266,45 @@ def _border(color="CBD5E1"):
 def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
                  summary: Optional[dict] = None, sheet_name: str = "Laporan",
                  brand: str = "SMA NEGERI 1 LAGUBOTI") -> bytes:
-    """Create branded SEKOLAHKU Excel: title bar (sky-blue), meta, styled headers, alternating rows, summary.
-    Emoji-free titles to guarantee compatibility with all Excel/LibreOffice versions."""
+    """Branded Excel report with a clean whitespace margin around the content block.
+    Unified theme (sky title bar, slate meta bar, zebra rows, connected summary bands)."""
     wb = Workbook()
     ws = wb.active
     ws.title = sheet_name[:31]
+    CO = 2  # content starts at column B (column A = left margin)
     n_cols = len(columns)
-    last_col = get_column_letter(n_cols)
+    first_col = get_column_letter(CO)
+    last_col = get_column_letter(CO + n_cols - 1)
 
-    # Title row
-    ws.merge_cells(f"A1:{last_col}1")
-    c = ws["A1"]
-    c.value = f"{brand}  -  {title}"
-    c.font = Font(name="Calibri", size=18, bold=True, color="FFFFFF")
+    # Edge margins (whitespace gap around the table)
+    ws.column_dimensions["A"].width = 2.6
+    ws.column_dimensions[get_column_letter(CO + n_cols)].width = 2.6
+    ws.row_dimensions[1].height = 12
+
+    # Title row (row 2)
+    tr = 2
+    ws.merge_cells(f"{first_col}{tr}:{last_col}{tr}")
+    c = ws.cell(row=tr, column=CO, value=f"{brand}  -  {title}")
+    c.font = Font(name="Calibri", size=16, bold=True, color="FFFFFF")
     c.fill = PatternFill("solid", fgColor=SKY_600)
     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[1].height = 34
+    ws.row_dimensions[tr].height = 34
 
-    # Subtitle row
-    ws.merge_cells(f"A2:{last_col}2")
-    c2 = ws["A2"]
-    c2.value = subtitle
+    # Subtitle row (row 3)
+    ws.merge_cells(f"{first_col}{tr+1}:{last_col}{tr+1}")
+    c2 = ws.cell(row=tr + 1, column=CO, value=subtitle)
     c2.font = Font(name="Calibri", size=10, italic=True, color="FFFFFF")
     c2.fill = PatternFill("solid", fgColor=SLATE_900)
     c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[2].height = 22
+    ws.row_dimensions[tr + 1].height = 22
 
-    # Blank spacer
-    ws.row_dimensions[3].height = 8
+    # Spacer (row 4)
+    ws.row_dimensions[tr + 2].height = 8
 
-    # Header row (row 4)
-    hdr_row = 4
-    for i, col in enumerate(columns, 1):
-        cell = ws.cell(row=hdr_row, column=i, value=col)
+    # Header row (row 5)
+    hdr_row = tr + 3
+    for i in range(n_cols):
+        cell = ws.cell(row=hdr_row, column=CO + i, value=columns[i])
         cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor=SKY_600)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -307,21 +314,22 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
     # Data rows (or placeholder when empty)
     if not rows:
         r = hdr_row + 1
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n_cols)
-        e = ws.cell(row=r, column=1, value="Belum ada data untuk ditampilkan.")
+        ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + n_cols - 1)
+        e = ws.cell(row=r, column=CO, value="Belum ada data untuk ditampilkan.")
         e.font = Font(name="Calibri", size=10, italic=True, color="94A3B8")
         e.alignment = Alignment(horizontal="center", vertical="center")
-        for ci in range(1, n_cols + 1):
-            ws.cell(row=r, column=ci).border = _border()
+        for ci in range(n_cols):
+            ws.cell(row=r, column=CO + ci).border = _border()
         ws.row_dimensions[r].height = 24
     for ri, row in enumerate(rows):
         r = hdr_row + 1 + ri
         fill = PatternFill("solid", fgColor=SLATE_50) if ri % 2 == 0 else None
-        for ci, key in enumerate(columns, 1):
-            val = row.get(key) if isinstance(row, dict) else row[ci-1]
-            cell = ws.cell(row=r, column=ci, value=val if val is not None else "-")
+        for ci in range(n_cols):
+            key = columns[ci]
+            val = row.get(key) if isinstance(row, dict) else row[ci]
+            cell = ws.cell(row=r, column=CO + ci, value=val if val is not None else "-")
             cell.font = Font(name="Calibri", size=10, color=SLATE_900)
-            cell.alignment = Alignment(horizontal="left" if ci == 1 else "center", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(horizontal="left" if ci == 0 else "center", vertical="center", wrap_text=True)
             cell.border = _border()
             if fill: cell.fill = fill
         ws.row_dimensions[r].height = 22
@@ -329,45 +337,51 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
     # Summary section — full-width connected bands, no truncated labels
     if summary:
         gap = hdr_row + max(len(rows), 1) + 2
-        ws.merge_cells(f"A{gap}:{last_col}{gap}")
-        s = ws.cell(row=gap, column=1, value="RINGKASAN")
+        ws.merge_cells(start_row=gap, start_column=CO, end_row=gap, end_column=CO + n_cols - 1)
+        s = ws.cell(row=gap, column=CO, value="RINGKASAN")
         s.font = Font(bold=True, color="FFFFFF", size=11)
         s.fill = PatternFill("solid", fgColor=SLATE_900)
         s.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[gap].height = 24
-        split = max(1, n_cols // 2)  # label spans first half, value the rest
+        split = max(1, n_cols // 2)
         for i, (k, v) in enumerate(summary.items()):
             r = gap + 1 + i
             band = PatternFill("solid", fgColor=SKY_100)
-            for ci in range(1, n_cols + 1):
-                cell = ws.cell(row=r, column=ci)
+            for ci in range(n_cols):
+                cell = ws.cell(row=r, column=CO + ci)
                 cell.fill = band
                 cell.border = _border()
             if split >= 2:
-                ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=split)
-            kc = ws.cell(row=r, column=1, value=k)
+                ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + split - 1)
+            kc = ws.cell(row=r, column=CO, value=k)
             kc.font = Font(bold=True, color=SLATE_900, size=10)
             kc.alignment = Alignment(horizontal="left", indent=1, vertical="center")
             if split + 1 <= n_cols:
-                ws.merge_cells(start_row=r, start_column=split + 1, end_row=r, end_column=n_cols)
-            vc = ws.cell(row=r, column=min(split + 1, n_cols), value=v)
+                ws.merge_cells(start_row=r, start_column=CO + split, end_row=r, end_column=CO + n_cols - 1)
+            vc = ws.cell(row=r, column=CO + min(split, n_cols - 1), value=v)
             vc.font = Font(bold=True, color=SKY_600, size=11)
             vc.alignment = Alignment(horizontal="right", indent=1, vertical="center")
             ws.row_dimensions[r].height = 22
+        last_content = gap + len(summary)
+    else:
+        last_content = hdr_row + max(len(rows), 1)
+    ws.row_dimensions[last_content + 1].height = 10  # bottom margin
 
     # Column widths — fit header + data, readable minimum
-    for i in range(1, n_cols + 1):
-        lens = [len(str(columns[i-1]))]
+    for i in range(n_cols):
+        lens = [len(str(columns[i]))]
         for r in rows[:150]:
-            v = r.get(columns[i-1]) if isinstance(r, dict) else r[i-1]
+            v = r.get(columns[i]) if isinstance(r, dict) else r[i]
             lens.append(len(str(v if v is not None else "")))
         width = min(max(13, max(lens) + 4), 44)
-        if i == 1:
+        if i == 0:
             width = max(width, 18)
-        ws.column_dimensions[get_column_letter(i)].width = width
+        ws.column_dimensions[get_column_letter(CO + i)].width = width
 
     ws.sheet_view.showGridLines = False
-    ws.freeze_panes = f"A{hdr_row+1}"
+    ws.freeze_panes = f"{first_col}{hdr_row+1}"
+    ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.6, bottom=0.6)
+    ws.print_options.horizontalCentered = True
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
@@ -1104,63 +1118,75 @@ def _build_week_matrix(docs, days):
 
 def weekly_attendance_excel(label, subtitle, days, students, daily, totals):
     wb = Workbook(); ws = wb.active; ws.title = "Rekap Mingguan"
+    CO = 2  # content starts at column B (A = left margin)
     day_hdrs = [f"{DAY_LABELS[i]}\n{days[i][8:10]}/{days[i][5:7]}" for i in range(7)]
     columns = ["No", "Nama Siswa", "Kelas"] + day_hdrs + ["H", "I", "S", "A"]
-    n = len(columns); last = get_column_letter(n)
-    ws.merge_cells(f"A1:{last}1"); c = ws["A1"]; c.value = f"SMA NEGERI 1 LAGUBOTI  -  {label}"
+    n = len(columns)
+    first = get_column_letter(CO); last = get_column_letter(CO + n - 1)
+    ws.column_dimensions["A"].width = 2.6
+    ws.column_dimensions[get_column_letter(CO + n)].width = 2.6
+    ws.row_dimensions[1].height = 12
+    DAY_C = CO + 3   # first day column
+    TOT_C = CO + 10  # first H/I/S/A total column
+    ws.merge_cells(f"{first}2:{last}2"); c = ws.cell(2, CO, f"SMA NEGERI 1 LAGUBOTI  -  {label}")
     c.font = Font(size=15, bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor=SKY_600)
-    c.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[1].height = 30
-    ws.merge_cells(f"A2:{last}2"); c2 = ws["A2"]; c2.value = subtitle
+    c.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[2].height = 30
+    ws.merge_cells(f"{first}3:{last}3"); c2 = ws.cell(3, CO, subtitle)
     c2.font = Font(size=10, italic=True, color="FFFFFF"); c2.fill = PatternFill("solid", fgColor=SLATE_900)
-    c2.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[2].height = 20
-    ws.row_dimensions[3].height = 6
-    hr = 4
-    for i, col in enumerate(columns, 1):
-        cell = ws.cell(hr, i, col); cell.font = Font(bold=True, color="FFFFFF", size=10)
+    c2.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[3].height = 20
+    ws.row_dimensions[4].height = 6
+    hr = 5
+    for i, col in enumerate(columns):
+        cell = ws.cell(hr, CO + i, col); cell.font = Font(bold=True, color="FFFFFF", size=10)
         cell.fill = PatternFill("solid", fgColor=SKY_600); cell.border = _border("FFFFFF")
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[hr].height = 32
     for ri, s in enumerate(students):
         r = hr + 1 + ri; zebra = PatternFill("solid", fgColor=SLATE_50) if ri % 2 == 0 else None
-        for ci, val in enumerate([ri + 1, s["name"], s["kelas"]], 1):
-            cell = ws.cell(r, ci, val); cell.border = _border(); cell.font = Font(size=10, color=SLATE_900)
-            cell.alignment = Alignment(horizontal="left" if ci == 2 else "center", vertical="center", indent=1 if ci == 2 else 0)
+        for ci, val in enumerate([ri + 1, s["name"], s["kelas"]]):
+            cell = ws.cell(r, CO + ci, val); cell.border = _border(); cell.font = Font(size=10, color=SLATE_900)
+            cell.alignment = Alignment(horizontal="left" if ci == 1 else "center", vertical="center", indent=1 if ci == 1 else 0)
             if zebra: cell.fill = zebra
         for di, dd in enumerate(days):
-            cell = ws.cell(r, 4 + di); mark = STATUS_XLSX.get(s["marks"].get(dd), "")
+            cell = ws.cell(r, DAY_C + di); mark = STATUS_XLSX.get(s["marks"].get(dd), "")
             cell.value = mark; cell.border = _border(); cell.font = Font(size=10, bold=True, color=SLATE_900)
             cell.alignment = Alignment(horizontal="center", vertical="center")
             if mark: cell.fill = PatternFill("solid", fgColor=STATUS_FILL[mark])
             elif zebra: cell.fill = zebra
         for ti, k in enumerate(STATUS_ORDER):
-            cell = ws.cell(r, 11 + ti, s["totals"][k]); cell.border = _border()
+            cell = ws.cell(r, TOT_C + ti, s["totals"][k]); cell.border = _border()
             cell.alignment = Alignment(horizontal="center", vertical="center"); cell.font = Font(size=10, color=SLATE_900)
             if zebra: cell.fill = zebra
         ws.row_dimensions[r].height = 20
     if not students:
-        r = hr + 1; ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
-        e = ws.cell(r, 1, "Tidak ada data absensi pada minggu ini."); e.font = Font(italic=True, color="94A3B8")
+        r = hr + 1; ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + n - 1)
+        e = ws.cell(r, CO, "Tidak ada data absensi pada minggu ini."); e.font = Font(italic=True, color="94A3B8")
         e.alignment = Alignment(horizontal="center", vertical="center")
-        for ci in range(1, n + 1): ws.cell(r, ci).border = _border()
+        for ci in range(n): ws.cell(r, CO + ci).border = _border()
         ws.row_dimensions[r].height = 24
     fr = hr + max(len(students), 1) + 1
-    ws.merge_cells(start_row=fr, start_column=1, end_row=fr, end_column=3)
-    for ci in range(1, 4):
-        cell = ws.cell(fr, ci); cell.fill = PatternFill("solid", fgColor=SLATE_900); cell.border = _border()
-    t = ws.cell(fr, 1, "TOTAL HADIR HARIAN"); t.font = Font(bold=True, color="FFFFFF"); t.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+    ws.merge_cells(start_row=fr, start_column=CO, end_row=fr, end_column=CO + 2)
+    for ci in range(3):
+        cell = ws.cell(fr, CO + ci); cell.fill = PatternFill("solid", fgColor=SLATE_900); cell.border = _border()
+    t = ws.cell(fr, CO, "TOTAL HADIR HARIAN"); t.font = Font(bold=True, color="FFFFFF"); t.alignment = Alignment(horizontal="right", vertical="center", indent=1)
     for di, dd in enumerate(days):
-        cell = ws.cell(fr, 4 + di, daily[dd]["hadir"]); cell.font = Font(bold=True, color=SKY_600)
+        cell = ws.cell(fr, DAY_C + di, daily[dd]["hadir"]); cell.font = Font(bold=True, color=SKY_600)
         cell.alignment = Alignment(horizontal="center", vertical="center"); cell.fill = PatternFill("solid", fgColor=SKY_100); cell.border = _border()
     for ti, k in enumerate(STATUS_ORDER):
-        cell = ws.cell(fr, 11 + ti, totals[k]); cell.font = Font(bold=True, color=SKY_600)
+        cell = ws.cell(fr, TOT_C + ti, totals[k]); cell.font = Font(bold=True, color=SKY_600)
         cell.alignment = Alignment(horizontal="center", vertical="center"); cell.fill = PatternFill("solid", fgColor=SKY_100); cell.border = _border()
     ws.row_dimensions[fr].height = 22
-    lr = fr + 2; ws.merge_cells(start_row=lr, start_column=1, end_row=lr, end_column=n)
-    ws.cell(lr, 1, "Keterangan:  H = Hadir    I = Izin    S = Sakit    A = Alpa").font = Font(size=9, italic=True, color="64748B")
-    ws.column_dimensions["A"].width = 5; ws.column_dimensions["B"].width = 30; ws.column_dimensions["C"].width = 12
-    for i in range(4, 11): ws.column_dimensions[get_column_letter(i)].width = 9
-    for i in range(11, 15): ws.column_dimensions[get_column_letter(i)].width = 5.5
-    ws.sheet_view.showGridLines = False; ws.freeze_panes = "D5"
+    lr = fr + 2; ws.merge_cells(start_row=lr, start_column=CO, end_row=lr, end_column=CO + n - 1)
+    ws.cell(lr, CO, "Keterangan:  H = Hadir    I = Izin    S = Sakit    A = Alpa").font = Font(size=9, italic=True, color="64748B")
+    ws.row_dimensions[lr + 1].height = 10
+    ws.column_dimensions[get_column_letter(CO)].width = 5
+    ws.column_dimensions[get_column_letter(CO + 1)].width = 30
+    ws.column_dimensions[get_column_letter(CO + 2)].width = 12
+    for i in range(DAY_C, DAY_C + 7): ws.column_dimensions[get_column_letter(i)].width = 9
+    for i in range(TOT_C, TOT_C + 4): ws.column_dimensions[get_column_letter(i)].width = 5.5
+    ws.sheet_view.showGridLines = False; ws.freeze_panes = f"{get_column_letter(DAY_C)}{hr+1}"
+    ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.6, bottom=0.6)
+    ws.print_options.horizontalCentered = True
     buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf.getvalue()
 
 @api.get("/attendance/week")

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LogIn, Eye, EyeOff, Network, ArrowRight, FileText,
-  Presentation as PresentationIcon, MapPin, Phone, Mail, Calendar, Hash, Award, Trophy } from "lucide-react";
+  Presentation as PresentationIcon, MapPin, Phone, Mail, Calendar, Hash, Award, Trophy, Info } from "lucide-react";
 import { toast } from "sonner";
 import { LoginAnnouncementBanner } from "@/components/LoginAnnouncementBanner";
 
@@ -51,7 +51,7 @@ export default function Login() {
     <div className="min-h-screen grid lg:grid-cols-2 bg-white">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 text-white relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_20%,white,transparent_40%),radial-gradient(circle_at_80%_60%,white,transparent_40%)]" />
-        <div className="relative">
+        <div className="relative space-y-6">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center border border-white/20 overflow-hidden">
               {settings.school_logo_url
@@ -63,13 +63,9 @@ export default function Login() {
               <p className="text-xs text-sky-100/80 font-mono-alt tracking-wider">{settings.login_badge}</p>
             </div>
           </div>
-        </div>
-        <div className="relative">
-          <h2 className="font-heading text-4xl xl:text-5xl font-extrabold leading-tight whitespace-pre-line">{settings.login_headline}</h2>
-          <p className="mt-6 text-sky-100/90 max-w-md leading-relaxed">{settings.login_description}</p>
 
-          {/* School info summary */}
-          <div className="mt-8 max-w-md rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-5" data-testid="login-school-info">
+          {/* School info card (moved to top) + public info button */}
+          <div className="max-w-md rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-5" data-testid="login-school-info">
             <p className="font-heading font-bold text-sm">{settings.school_full_name}</p>
             {settings.school_address && (
               <p className="mt-1.5 flex items-start gap-2 text-xs text-sky-100/90"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0"/>{settings.school_address}</p>
@@ -89,7 +85,19 @@ export default function Login() {
                 ))}
               </div>
             )}
+            {/* Public info button — below NPSN */}
+            <div className="mt-4 pt-3 border-t border-white/15">
+              <p className="text-[11px] text-sky-100/80">Bukan warga sekolah? Kenali SMA Negeri 1 Laguboti lebih dekat.</p>
+              <a href="/profil-sekolah" data-testid="public-profile-link"
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-sky-700 text-sm font-bold hover:bg-sky-50 transition-colors shadow-lg shadow-sky-900/20">
+                <Info className="w-4 h-4"/>Lihat Profil Sekolah <ArrowRight className="w-3.5 h-3.5"/>
+              </a>
+            </div>
           </div>
+        </div>
+        <div className="relative">
+          <h2 className="font-heading text-4xl xl:text-5xl font-extrabold leading-tight whitespace-pre-line">{settings.login_headline}</h2>
+          <p className="mt-6 text-sky-100/90 max-w-md leading-relaxed">{settings.login_description}</p>
         </div>
         <div className="relative text-xs text-sky-100/70 font-mono-alt">{settings.login_footer}</div>
       </div>

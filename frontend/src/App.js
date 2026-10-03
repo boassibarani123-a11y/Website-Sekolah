@@ -15,6 +15,7 @@ import PublicOrg from "@/pages/PublicOrg";
 import Documentation from "@/pages/Documentation";
 import Presentation from "@/pages/Presentation";
 import PublicGallery from "@/pages/PublicGallery";
+import PublicProfile from "@/pages/PublicProfile";
 import SocialFund from "@/pages/SocialFund";
 import Elections from "@/pages/Elections";
 import Achievements from "@/pages/Achievements";
@@ -60,6 +61,7 @@ function AppInner() {
         <Route path="/dokumentasi" element={<Documentation/>}/>
         <Route path="/presentasi" element={<Presentation/>}/>
         <Route path="/galeri" element={<PublicGallery/>}/>
+        <Route path="/profil-sekolah" element={<PublicProfile/>}/>
         <Route path="/" element={<Protected><DashboardLayout/></Protected>}>
           <Route index element={<Dashboard/>}/>
           <Route path="accounts" element={<MasterAccounts/>}/>
