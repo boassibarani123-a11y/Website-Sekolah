@@ -1,8 +1,13 @@
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useSettings } from "@/context/SettingsContext";
+import { useAuth } from "@/context/AuthContext";
+import api from "@/lib/apiClient";
+import { toast } from "sonner";
 import {
   GraduationCap, MapPin, Phone, Mail, Globe, Calendar, Hash, Award, Target,
   Eye, History as HistoryIcon, Flag, Leaf, ArrowLeft, LogIn, School, Building2, User,
+  Trophy, Medal, Plus, Pencil, Trash2, X, Image as ImageIcon,
 } from "lucide-react";
 
 function Section({ icon: Icon, title, children, tone = "sky" }) {
@@ -80,6 +85,9 @@ export default function PublicProfile() {
 
         {s.about && <Section icon={School} title="Tentang Sekolah"><p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{s.about}</p></Section>}
 
+        {/* Galeri Prestasi — kelola khusus Super Admin */}
+        <AchievementsGallery />
+
         <div className="grid lg:grid-cols-3 gap-6">
           <Section icon={Eye} title="Visi" tone="violet">
             <p className="text-sm text-slate-800 font-semibold italic leading-relaxed">"{s.vision || "Belum ada visi."}"</p>
@@ -135,3 +143,182 @@ function Row({ label, value, icon: Icon }) {
     </div>
   );
 }
+
+const LEVEL_TONE = {
+  Internasional: "bg-fuchsia-100 text-fuchsia-700",
+  Nasional: "bg-rose-100 text-rose-700",
+  Provinsi: "bg-amber-100 text-amber-700",
+  Kabupaten: "bg-sky-100 text-sky-700",
+  Sekolah: "bg-emerald-100 text-emerald-700",
+};
+
+function AchievementsGallery() {
+  const { user } = useAuth();
+  const isAdmin = user && user.role === "super_admin";
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // null | {} (new) | object (edit)
+
+  const load = () => api.get("/profile-achievements").then(r => setItems(r.data)).catch(() => {}).finally(() => setLoading(false));
+  useEffect(() => { load(); }, []);
+
+  const remove = async (a) => {
+    if (!window.confirm(`Hapus prestasi "${a.title}"?`)) return;
+    try { await api.delete(`/profile-achievements/${a.id}`); toast.success("Prestasi dihapus"); load(); }
+    catch (err) { toast.error(err.response?.data?.detail || "Gagal menghapus"); }
+  };
+
+  const emptySlots = !loading && items.length === 0;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="profile-achievements">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h3 className="font-heading font-bold text-slate-900 flex items-center gap-2 text-lg">
+          <span className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-100 text-amber-600"><Trophy className="w-4.5 h-4.5" /></span>
+          Galeri Prestasi Sekolah
+        </h3>
+        {isAdmin && (
+          <button data-testid="add-achievement-button" onClick={() => setEditing({})}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold shadow-lg shadow-amber-500/30 transition-colors">
+            <Plus className="w-4 h-4" />Tambah Prestasi
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-slate-400">Memuat prestasi...</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="achievements-grid">
+          {items.map((a) => (
+            <div key={a.id} className="group relative rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 hover:shadow-lg transition-shadow" data-testid="achievement-card">
+              <div className="h-40 bg-gradient-to-br from-amber-400 via-amber-500 to-orange-600 relative flex items-center justify-center overflow-hidden">
+                {a.image_url ? (
+                  <img src={a.image_url} alt={a.title} className="w-full h-full object-cover" />
+                ) : (
+                  <Medal className="w-14 h-14 text-white/80" />
+                )}
+                {a.level && <span className={`absolute top-2 left-2 px-2.5 py-1 rounded-full text-[10px] font-bold ${LEVEL_TONE[a.level] || "bg-white/90 text-slate-700"}`}>{a.level}</span>}
+                {a.year && <span className="absolute top-2 right-2 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-900/70 text-white backdrop-blur">{a.year}</span>}
+              </div>
+              <div className="p-4">
+                <p className="font-heading font-bold text-slate-900 text-sm leading-snug">{a.title}</p>
+                {a.description && <p className="mt-1.5 text-xs text-slate-500 leading-relaxed line-clamp-3">{a.description}</p>}
+              </div>
+              {isAdmin && (
+                <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button data-testid="edit-achievement-button" onClick={() => setEditing(a)} className="p-1.5 rounded-lg bg-white/95 text-slate-700 hover:bg-white shadow"><Pencil className="w-3.5 h-3.5" /></button>
+                  <button data-testid="delete-achievement-button" onClick={() => remove(a)} className="p-1.5 rounded-lg bg-white/95 text-rose-600 hover:bg-white shadow"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Admin: tombol slot tambah selalu tampil */}
+          {isAdmin && (
+            <button data-testid="add-achievement-slot" onClick={() => setEditing({})}
+              className="h-full min-h-[224px] rounded-2xl border-2 border-dashed border-slate-300 hover:border-amber-400 hover:bg-amber-50/40 flex flex-col items-center justify-center text-slate-400 hover:text-amber-600 transition-colors">
+              <Plus className="w-8 h-8" /><span className="mt-2 text-sm font-semibold">Tambah Prestasi</span>
+            </button>
+          )}
+
+          {/* Slot kosong untuk pengunjung ketika belum ada prestasi */}
+          {emptySlots && !isAdmin && [0, 1, 2].map((i) => (
+            <div key={i} className="min-h-[224px] rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 flex flex-col items-center justify-center text-slate-300" data-testid="achievement-empty-slot">
+              <ImageIcon className="w-10 h-10" />
+              <span className="mt-2 text-xs font-medium">Prestasi segera hadir</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing !== null && (
+        <AchievementModal item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+      )}
+    </div>
+  );
+}
+
+function AchievementModal({ item, onClose, onSaved }) {
+  const isEdit = item && item.id;
+  const [form, setForm] = useState({
+    title: item.title || "", year: item.year || "", level: item.level || "",
+    description: item.description || "", image_url: item.image_url || "",
+  });
+  const [busy, setBusy] = useState(false);
+
+  const onFile = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    const fd = new FormData(); fd.append("file", f);
+    api.post("/upload", fd).then((r) => {
+      setForm((s) => ({ ...s, image_url: `${process.env.REACT_APP_BACKEND_URL}${r.data.url}` }));
+      toast.success("Foto terunggah");
+    }).catch(() => toast.error("Gagal upload foto"));
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { toast.error("Judul prestasi wajib diisi"); return; }
+    setBusy(true);
+    try {
+      if (isEdit) await api.patch(`/profile-achievements/${item.id}`, form);
+      else await api.post("/profile-achievements", form);
+      toast.success(isEdit ? "Prestasi diperbarui" : "Prestasi ditambahkan");
+      onSaved();
+    } catch (err) { toast.error(err.response?.data?.detail || "Gagal menyimpan"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-slate-200">
+          <h3 className="font-heading text-xl font-bold">{isEdit ? "Edit Prestasi" : "Tambah Prestasi"}</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+          <Field label="Judul Prestasi">
+            <input data-testid="achievement-title-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required
+              placeholder="Juara 1 Olimpiade Sains Nasional" className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tahun">
+              <input value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })}
+                placeholder="2026" className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none" />
+            </Field>
+            <Field label="Tingkat">
+              <select data-testid="achievement-level-select" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none bg-white">
+                <option value="">-- Pilih tingkat --</option>
+                {["Sekolah", "Kabupaten", "Provinsi", "Nasional", "Internasional"].map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Deskripsi (opsional)">
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3}
+              placeholder="Keterangan singkat tentang prestasi ini." className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none resize-none" />
+          </Field>
+          <Field label="Foto / Piala (opsional)">
+            <input type="file" accept="image/*" onChange={onFile} className="mt-1 w-full text-sm" />
+            {form.image_url && <img src={form.image_url} alt="" className="mt-2 w-full h-36 object-cover rounded-xl border" />}
+          </Field>
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border-2 border-slate-200 rounded-xl font-semibold hover:bg-slate-50">Batal</button>
+            <button data-testid="save-achievement-button" disabled={busy} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold disabled:opacity-60">
+              {busy ? "Menyimpan..." : "Simpan"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{label}</label>
+      {children}
+    </div>
+  );
+}
+

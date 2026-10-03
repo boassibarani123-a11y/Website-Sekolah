@@ -3811,6 +3811,42 @@ async def del_gallery(gid: str, user=Depends(require_roles("kepsek", "staff_tu")
         raise HTTPException(404, "Item galeri tidak ditemukan")
     return {"ok": True}
 
+# ---------------- GALERI PRESTASI (Halaman Profil Sekolah — kelola khusus Super Admin) ----------------
+class ProfileAchievementIn(BaseModel):
+    title: str
+    year: Optional[str] = ""
+    level: Optional[str] = ""       # Sekolah / Kabupaten / Provinsi / Nasional / Internasional
+    description: Optional[str] = ""
+    image_url: Optional[str] = ""
+
+@api.get("/profile-achievements")
+async def list_profile_achievements():
+    """Public: galeri prestasi sekolah untuk halaman Profil Sekolah."""
+    items = await db.profile_achievements.find({}, {"_id": 0}).to_list(500)
+    items.sort(key=lambda x: (x.get("year") or "", x.get("created_at") or ""), reverse=True)
+    return items
+
+@api.post("/profile-achievements")
+async def add_profile_achievement(body: ProfileAchievementIn, user=Depends(require_roles("super_admin"))):
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(),
+           "created_by": user["name"], "created_at": now_iso()}
+    await db.profile_achievements.insert_one(doc)
+    return strip(doc)
+
+@api.patch("/profile-achievements/{aid}")
+async def edit_profile_achievement(aid: str, body: ProfileAchievementIn, user=Depends(require_roles("super_admin"))):
+    r = await db.profile_achievements.update_one({"id": aid}, {"$set": body.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Prestasi tidak ditemukan")
+    return await db.profile_achievements.find_one({"id": aid}, {"_id": 0})
+
+@api.delete("/profile-achievements/{aid}")
+async def del_profile_achievement(aid: str, user=Depends(require_roles("super_admin"))):
+    r = await db.profile_achievements.delete_one({"id": aid})
+    if r.deleted_count == 0:
+        raise HTTPException(404, "Prestasi tidak ditemukan")
+    return {"ok": True}
+
 # ---------------- UNDUH PRESENTASI (.pptx) ----------------
 def _build_presentation_pptx(s: dict) -> bytes:
     from pptx import Presentation

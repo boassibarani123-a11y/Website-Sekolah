@@ -181,6 +181,101 @@ const FLOW_UJIAN = [
   { type: "end", label: "Selesai" },
 ];
 
+const FLOW_ABSENSI_AUTO = [
+  { type: "start", label: "Mulai — Hari sekolah berjalan (Senin–Sabtu, zona WIB)" },
+  { actor: "Sistem", type: "decision", label: "Pukul 08:00 — siswa sudah absen (scan)?", yes: "Tidak ada aksi untuk siswa tersebut", no: "Buat tautan konfirmasi sekali-pakai untuk hari ini" },
+  { actor: "Sistem", label: "Kirim EMAIL berisi tombol 'Saya Sakit' & 'Saya Izin' + notifikasi aplikasi", note: "Cron attendance-reminder 08:00 WIB; token unik per siswa per hari (idempoten)" },
+  { actor: "Siswa", type: "decision", label: "Siswa menekan tombol konfirmasi?", yes: "Status Sakit/Izin tercatat (metode: Konfirmasi Email); token jadi terpakai", no: "Belum ada kehadiran tercatat" },
+  { actor: "Sistem", type: "decision", label: "Pukul 09:00 — masih belum ada kehadiran?", yes: "Catat otomatis sebagai ALPA (metode: Sistem) + notifikasi ke siswa", no: "Kehadiran hari ini sudah final (Hadir/Sakit/Izin)" },
+  { actor: "Guru", label: "Wali kelas/Admin memantau rekap; dapat mengoreksi status bila perlu" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_AKUN = [
+  { type: "start", label: "Mulai — Super Admin menyiapkan akun warga sekolah" },
+  { actor: "Super Admin", label: "Buka Kelola Akun Master → Buat Akun Baru (nama, email, password, peran)" },
+  { actor: "Super Admin", type: "decision", label: "Peran = Siswa?", yes: "Nomor WhatsApp aktif WAJIB diisi (divalidasi format)", no: "Nomor WhatsApp opsional" },
+  { actor: "Sistem", label: "Validasi email unik & data; simpan akun + buat QR permanen (siswa) & Kartu Pelajar" },
+  { actor: "Siswa", label: "Pengguna login dengan email & password" },
+  { actor: "Siswa", type: "decision", label: "Lupa password?", yes: "Minta reset → sistem kirim email tautan reset (berlaku 1 jam, sekali pakai)", no: "Masuk ke dasbor sesuai peran" },
+  { actor: "Sistem", label: "Terapkan otorisasi berbasis peran pada setiap menu & endpoint" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_PPDB = [
+  { type: "start", label: "Mulai — Pendaftaran Peserta Didik Baru (daring, tanpa login)" },
+  { actor: "Siswa", label: "Calon siswa membuka halaman PPDB publik & mengisi formulir (data diri, asal sekolah, berkas)" },
+  { actor: "Sistem", label: "Simpan pendaftaran dengan nomor registrasi; status awal 'Menunggu Verifikasi'" },
+  { actor: "Staff TU", label: "Verifikasi berkas pendaftar di menu Admin PPDB" },
+  { actor: "Staff TU", type: "decision", label: "Berkas lengkap & memenuhi syarat?", yes: "Tetapkan status 'Diterima'", no: "Tetapkan status 'Ditolak' / 'Perlu Perbaikan'" },
+  { actor: "Sistem", label: "Calon siswa memantau status kelulusan lewat nomor registrasi" },
+  { actor: "Super Admin", label: "Pendaftar yang diterima dapat dikonversi menjadi akun siswa" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_PERPUS = [
+  { type: "start", label: "Mulai — Perpustakaan Pintar" },
+  { actor: "Staff TU", label: "Admin Perpus/Super Admin mengelola katalog buku (judul, penulis, kategori, stok, lokasi)" },
+  { actor: "Siswa", label: "Siswa mencari & melihat detail buku di katalog; dapat membaca ringkasan AI & ulasan" },
+  { actor: "Siswa", type: "decision", label: "Buku tersedia?", yes: "Ajukan pinjam / baca di tempat", no: "Buat reservasi (masuk antrean)" },
+  { actor: "Staff TU", label: "Admin Perpus meminjamkan buku (desk) & mencatat tanggal kembali; stok tersedia berkurang" },
+  { actor: "Siswa", label: "Siswa mengembalikan buku pada tanggal jatuh tempo" },
+  { actor: "Sistem", type: "decision", label: "Terlambat?", yes: "Hitung denda (per hari) saat pengembalian", no: "Tanpa denda; stok kembali bertambah" },
+  { actor: "Staff TU", label: "Kelola reservasi, lihat statistik & buku populer, ekspor data peminjaman" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_OSIS = [
+  { type: "start", label: "Mulai — Pemilihan Ketua OSIS (e-voting)" },
+  { actor: "Super Admin", label: "Buat pemilihan: daftar kandidat (foto, visi-misi), jadwal buka–tutup" },
+  { actor: "Sistem", type: "decision", label: "Periode pemilihan dibuka?", yes: "Siswa dapat memberikan suara", no: "Pemilihan terkunci (belum/selesai)" },
+  { actor: "Siswa", label: "Siswa memilih satu kandidat" },
+  { actor: "Sistem", type: "decision", label: "Siswa sudah pernah memilih?", yes: "Tolak — satu siswa satu suara", no: "Catat suara secara anonim; tambah perolehan kandidat" },
+  { actor: "Sistem", label: "Tampilkan hasil & grafik perolehan suara secara real-time setelah ditutup" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_DANA = [
+  { type: "start", label: "Mulai — Dana Sosial / Penggalangan" },
+  { actor: "Ketua OSIS", label: "Buat program dana sosial (judul, target, keterangan, tenggat)" },
+  { actor: "Siswa", label: "Warga sekolah menyetor donasi melalui pengurus" },
+  { actor: "Staff TU", label: "Pengurus mencatat pemasukan & pengeluaran dana" },
+  { actor: "Sistem", label: "Perbarui total terkumpul, progres terhadap target, dan riwayat transaksi" },
+  { actor: "Siswa", label: "Seluruh warga melihat transparansi dana (baca-saja) & ekspor laporan Excel" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_TUGAS = [
+  { type: "start", label: "Mulai — Tugas & Mini-Quiz" },
+  { actor: "Guru", label: "Buat tugas (instruksi, tenggat) atau mini-quiz (soal, password opsional, timer, pengacakan)" },
+  { actor: "Siswa", label: "Siswa mengerjakan: unggah/isi jawaban tugas, atau kerjakan mini-quiz" },
+  { actor: "Sistem", type: "decision", label: "Mini-quiz?", yes: "Nilai otomatis dihitung saat selesai", no: "Menunggu penilaian guru" },
+  { actor: "Guru", label: "Guru menilai tugas & melihat rekap nilai per siswa" },
+  { actor: "Sistem", label: "Nilai tugas & quiz mengalir ke Rapor Digital" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_RAPOR = [
+  { type: "start", label: "Mulai — Rapor Digital" },
+  { actor: "Sistem", label: "Agregasi nilai tugas, mini-quiz, dan rekap kehadiran per siswa per semester" },
+  { actor: "Guru", label: "Wali kelas meninjau rapor siswa di kelasnya" },
+  { actor: "Guru", type: "decision", label: "Kirim rapor ke orang tua?", yes: "Sistem mengirim ringkasan rapor ke email orang tua", no: "Rapor tetap dapat dilihat siswa & wali kelas di aplikasi" },
+  { actor: "Siswa", label: "Siswa & orang tua terkait melihat rapor digital" },
+  { type: "end", label: "Selesai" },
+];
+
+const FLOW_GALERI = [
+  { type: "start", label: "Mulai — Galeri Prestasi di halaman Profil Sekolah" },
+  { actor: "Super Admin", label: "Buka Profil Sekolah → tekan 'Tambah Prestasi' (judul, tahun, tingkat, deskripsi, foto)" },
+  { actor: "Sistem", label: "Simpan prestasi; unggah foto ke penyimpanan objek (opsional)" },
+  { actor: "Super Admin", label: "Edit atau hapus prestasi kapan saja (hanya Super Admin yang berhak mengelola)" },
+  { actor: "Sistem", type: "decision", label: "Ada prestasi tersimpan?", yes: "Tampilkan kartu prestasi (foto, tingkat, tahun) ke publik", no: "Tampilkan slot kosong 'Prestasi segera hadir'" },
+  { actor: "Siswa", label: "Pengunjung publik melihat galeri prestasi tanpa perlu login" },
+  { type: "end", label: "Selesai" },
+];
+
+
+
 /* ============================ HALAMAN ============================ */
 export default function Documentation() {
   const { settings } = useSettings();
@@ -205,7 +300,7 @@ export default function Documentation() {
           <p className="text-xs font-bold tracking-[0.3em] text-sky-600 uppercase">{brand} — Sistem Manajemen Sekolah Terpadu</p>
           <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mt-3">Dokumen Produk &amp; Proses</h1>
           <p className="text-slate-600 mt-2">Term of Reference (TOR) · Product Requirements Document (PRD) · Diagram BPMN</p>
-          <p className="text-xs text-slate-400 mt-3">Versi 1.0 · Tahun Ajaran 2025/2026 · Status: Final Draft</p>
+          <p className="text-xs text-slate-400 mt-3">Versi 2.0 · Tahun Ajaran 2025/2026 · Status: Final · Mencakup seluruh fitur & alur sistem</p>
         </header>
 
         {/* ============ BAGIAN A: TOR ============ */}
@@ -223,21 +318,22 @@ export default function Documentation() {
           ]} />
 
           <H3>A.3 Ruang Lingkup</H3>
-          <P>Sistem mencakup: autentikasi & manajemen akun multi-peran, absensi QR/Barcode/manual, manajemen kelas & BPH (termasuk penunjukan Bendahara dan penyalinan struktur BPH antar kelas), uang kas kelas (transaksi, rekap mingguan/bulanan, pengingat otomatis), inventaris & peminjaman, ujian anti-cheat, serta modul pendukung (tugas, mini-quiz, pengumuman, kalender, kartu pelajar, PPDB daring, dana sosial, pemilihan OSIS, dan laporan).</P>
+          <P>Sistem mencakup: autentikasi & manajemen akun multi-peran (nomor WhatsApp wajib untuk siswa, reset password via email); absensi QR/Barcode/manual beserta absensi otomatis (reminder email 08:00 WIB & auto-alpa 09:00 WIB); manajemen kelas & BPH (termasuk penunjukan Bendahara dan penyalinan struktur BPH antar kelas); uang kas kelas (transaksi, rekap mingguan/bulanan, pengingat otomatis); inventaris & peminjaman; ujian anti-cheat; Perpustakaan Pintar (katalog, peminjaman, reservasi, ringkasan AI); PPDB daring; Pemilihan OSIS (e-voting); Dana Sosial; Rapor Digital; Galeri Prestasi di Profil Sekolah; serta modul pendukung (tugas, mini-quiz, pengumuman, kalender, kartu pelajar, schoolgram, notifikasi, laporan Excel).</P>
 
           <H3>A.4 Pengguna & Pemangku Kepentingan</H3>
           <Table
             head={["Peran", "Deskripsi", "Hak Akses Utama"]}
             rows={[
-              ["Super Admin", "Pengelola penuh sistem (tata kelola sekolah)", "Kelola akun, kelas, pengaturan sekolah/kartu, seluruh modul"],
+              ["Super Admin", "Pengelola penuh sistem (tata kelola sekolah)", "Kelola akun, kelas, pengaturan sekolah/kartu, Galeri Prestasi, seluruh modul"],
               ["Kepala Sekolah", "Pimpinan sekolah", "Pemantauan laporan, analitik, pengumuman"],
               ["Staff TU", "Tata usaha", "Kelola inventaris & approval peminjaman, PPDB, administrasi"],
-              ["Guru", "Pengajar / wali kelas", "Tugas, kuis, ujian anti-cheat, jadwal pengganti, nilai"],
-              ["Siswa", "Peserta didik", "Presensi, mengerjakan tugas/kuis/ujian, melihat kas & BPH, meminjam inventaris"],
+              ["Guru", "Pengajar / wali kelas", "Tugas, kuis, ujian anti-cheat, rapor, rekap kehadiran"],
+              ["Siswa", "Peserta didik (WA wajib)", "Presensi & konfirmasi Sakit/Izin, tugas/kuis/ujian, kas & BPH, perpustakaan, e-voting"],
               ["Ketua Kelas", "Siswa pengurus kelas", "Kelola uang kas & bagan BPH kelas, menunjuk Bendahara"],
               ["Bendahara", "Siswa yang ditunjuk Ketua Kelas/Super Admin", "Kelola uang kas kelas (tambah/edit/hapus) bersama Ketua Kelas"],
-              ["Ketua OSIS", "Pengurus OSIS", "Pengumuman, event, pemilihan OSIS"],
-              ["Orang Tua", "Wali murid", "Menerima notifikasi kehadiran & informasi anak"],
+              ["Ketua OSIS", "Pengurus OSIS", "Pengumuman, event, pemilihan OSIS, dana sosial, galeri kegiatan"],
+              ["Admin Perpustakaan", "Pengelola perpustakaan", "Kelola katalog buku, sirkulasi peminjaman, reservasi, statistik"],
+              ["Orang Tua", "Wali murid", "Menerima notifikasi kehadiran & rapor anak via email"],
             ]}
           />
 
@@ -256,7 +352,8 @@ export default function Documentation() {
           </div>
           <UL items={[
             "Sistem berbasis web; memerlukan koneksi internet.",
-            "Pengingat kas berjalan terjadwal (Jumat 08:00 WIB) melalui cron platform.",
+            "Absensi otomatis & pengingat kas berjalan terjadwal melalui cron platform (reminder absensi 08:00, auto-alpa 09:00, pengingat kas Jumat 08:00 — zona WIB).",
+            "Notifikasi dikirim melalui email dan notifikasi dalam aplikasi; nomor WhatsApp siswa disimpan sebagai basis data sekolah (tanpa pengiriman WA otomatis pada fase ini).",
             "Berbagai data demo diisolasi (is_demo) sehingga tidak tercampur dengan data sekolah asli.",
           ]} />
 
@@ -344,24 +441,88 @@ export default function Documentation() {
             ]}
           />
 
-          <H3>B.7 Modul Pendukung (ringkas)</H3>
-          <P>Tugas & pengumpulan daring dengan penilaian; Mini-Quiz (password opsional, pengacakan, timer); Pengumuman multi-cakupan dengan banner login; Kalender akademik; Kartu Pelajar digital (QR permanen) & cetak massal; PPDB daring dengan unggah berkas; Dana Sosial; Pemilihan OSIS; Schoolgram; Notifikasi in-app; Laporan & ekspor Excel.</P>
+          <H3>B.7 Kebutuhan Fungsional — Absensi Otomatis (Reminder & Auto-Alpa)</H3>
+          <Table
+            head={["ID", "Kebutuhan", "Prioritas"]}
+            rows={[
+              ["FR-ABO-01", "Cron 08:00 WIB (Sen–Sab) mendeteksi siswa yang belum absen dan membuat tautan konfirmasi sekali-pakai per siswa per hari", "Tinggi"],
+              ["FR-ABO-02", "Sistem mengirim email berisi tombol 'Saya Sakit' & 'Saya Izin' + notifikasi aplikasi ke siswa tersebut", "Tinggi"],
+              ["FR-ABO-03", "Siswa dapat mengkonfirmasi status (Sakit/Izin) lewat satu klik tombol tanpa perlu login", "Tinggi"],
+              ["FR-ABO-04", "Tautan konfirmasi hanya berlaku hari yang sama, sekali pakai, dan tidak menimpa kehadiran yang sudah tercatat", "Tinggi"],
+              ["FR-ABO-05", "Cron 09:00 WIB menandai siswa tanpa scan/konfirmasi sebagai ALPA otomatis (metode: Sistem) + notifikasi", "Tinggi"],
+              ["FR-ABO-06", "Kedua cron aman (bearer secret) dan idempoten (anti pemrosesan ganda)", "Tinggi"],
+            ]}
+          />
 
-          <H3>B.8 Kebutuhan Non-Fungsional</H3>
+          <H3>B.8 Kebutuhan Fungsional — Autentikasi & Manajemen Akun</H3>
+          <Table
+            head={["ID", "Kebutuhan", "Prioritas"]}
+            rows={[
+              ["FR-AKN-01", "Super Admin membuat akun multi-peran (nama, email unik, password, peran)", "Tinggi"],
+              ["FR-AKN-02", "Nomor WhatsApp aktif WAJIB untuk akun siswa (divalidasi format); opsional untuk peran lain", "Tinggi"],
+              ["FR-AKN-03", "Setiap akun siswa otomatis mendapat QR permanen & Kartu Pelajar digital", "Tinggi"],
+              ["FR-AKN-04", "Login dengan email & password; sesi aman berbasis JWT (cookie httpOnly)", "Tinggi"],
+              ["FR-AKN-05", "Lupa password: sistem mengirim tautan reset via email (berlaku 1 jam, sekali pakai)", "Tinggi"],
+              ["FR-AKN-06", "Otorisasi berbasis peran diterapkan pada setiap menu & endpoint", "Tinggi"],
+            ]}
+          />
+
+          <H3>B.9 Kebutuhan Fungsional — Perpustakaan Pintar</H3>
+          <Table
+            head={["ID", "Kebutuhan", "Prioritas"]}
+            rows={[
+              ["FR-LIB-01", "Admin Perpus/Super Admin mengelola katalog buku (CRUD: judul, penulis, kategori, stok, lokasi)", "Tinggi"],
+              ["FR-LIB-02", "Siswa mencari & memfilter katalog, melihat detail, ringkasan AI, dan memberi ulasan/rating", "Sedang"],
+              ["FR-LIB-03", "Peminjaman & pengembalian dengan tanggal jatuh tempo; stok tersedia menyesuaikan otomatis", "Tinggi"],
+              ["FR-LIB-04", "Reservasi (antrean) untuk buku yang sedang tidak tersedia", "Sedang"],
+              ["FR-LIB-05", "Perhitungan denda keterlambatan per hari saat pengembalian", "Sedang"],
+              ["FR-LIB-06", "Statistik, buku populer, rekomendasi AI, dan ekspor data peminjaman", "Rendah"],
+            ]}
+          />
+
+          <H3>B.10 Kebutuhan Fungsional — PPDB, Pemilu OSIS, Dana Sosial</H3>
+          <Table
+            head={["ID", "Kebutuhan", "Prioritas"]}
+            rows={[
+              ["FR-PDB-01", "Calon siswa mendaftar daring tanpa login (data diri, berkas) & memantau status via nomor registrasi", "Tinggi"],
+              ["FR-PDB-02", "Staff TU memverifikasi & menetapkan status (Diterima/Ditolak/Perbaikan); pendaftar diterima dapat dikonversi jadi akun", "Tinggi"],
+              ["FR-OSI-01", "Pemilihan OSIS: kandidat (foto, visi-misi), jadwal buka–tutup, e-voting satu siswa satu suara (anonim)", "Tinggi"],
+              ["FR-OSI-02", "Hasil & grafik perolehan suara ditampilkan setelah periode ditutup", "Sedang"],
+              ["FR-DAN-01", "Dana Sosial: program dengan target, pencatatan pemasukan/pengeluaran, progres, transparansi & ekspor Excel", "Sedang"],
+            ]}
+          />
+
+          <H3>B.11 Kebutuhan Fungsional — Rapor, Tugas/Quiz & Galeri Prestasi</H3>
+          <Table
+            head={["ID", "Kebutuhan", "Prioritas"]}
+            rows={[
+              ["FR-TGS-01", "Guru membuat tugas (instruksi, tenggat) & mini-quiz (password opsional, timer, pengacakan); siswa mengerjakan", "Tinggi"],
+              ["FR-TGS-02", "Mini-quiz dinilai otomatis; tugas dinilai guru; nilai mengalir ke Rapor Digital", "Sedang"],
+              ["FR-RPR-01", "Rapor Digital mengagregasi nilai tugas, quiz, dan kehadiran per siswa per semester", "Tinggi"],
+              ["FR-RPR-02", "Wali kelas dapat mengirim ringkasan rapor ke email orang tua", "Sedang"],
+              ["FR-GAL-01", "Super Admin mengelola Galeri Prestasi (tambah/edit/hapus: judul, tahun, tingkat, deskripsi, foto) di halaman Profil Sekolah", "Sedang"],
+              ["FR-GAL-02", "Galeri Prestasi tampil publik tanpa login; menampilkan slot kosong bila belum ada prestasi", "Sedang"],
+            ]}
+          />
+
+          <H3>B.12 Modul Pendukung Lain (ringkas)</H3>
+          <P>Pengumuman multi-cakupan dengan banner login; Kalender akademik; Kartu Pelajar digital (QR permanen) & cetak massal; Schoolgram (lini masa sosial sekolah); Notifikasi in-app & email; Struktur Organisasi sekolah publik; Laporan & ekspor Excel di berbagai modul.</P>
+
+          <H3>B.13 Kebutuhan Non-Fungsional</H3>
           <UL items={[
-            "Keamanan: autentikasi JWT, password ter-hash (bcrypt), otorisasi berbasis peran di setiap endpoint.",
+            "Keamanan: autentikasi JWT, password ter-hash (bcrypt), otorisasi berbasis peran di setiap endpoint, cron terproteksi bearer secret.",
             "Isolasi data: akun demo terpisah dari data asli (is_demo) dan tidak saling terlihat.",
             "Kinerja: daftar utama dimuat < 2 detik pada koneksi sekolah normal.",
-            "Kegunaan: antarmuka Bahasa Indonesia, responsif untuk HP dan desktop.",
-            "Keandalan: pencatatan presensi idempotent (anti-duplikat); cron pengingat idempotent.",
-            "Auditabilitas: setiap transaksi/pelanggaran menyimpan pelaku & stempel waktu.",
+            "Kegunaan: antarmuka Bahasa Indonesia, responsif untuk HP dan desktop; konfirmasi absensi cukup satu klik dari email.",
+            "Keandalan: pencatatan presensi idempotent (anti-duplikat); seluruh cron idempotent (anti pemrosesan ganda).",
+            "Auditabilitas: setiap transaksi/pelanggaran/kehadiran menyimpan pelaku/metode & stempel waktu.",
           ]} />
 
-          <H3>B.9 Di Luar Cakupan (fase ini)</H3>
+          <H3>B.14 Di Luar Cakupan (fase ini)</H3>
           <UL items={[
             "Aplikasi desktop pengunci OS untuk ujian (digantikan deteksi pelanggaran berbasis browser).",
-            "Pembayaran kas daring (payment gateway) — pencatatan kas bersifat manual oleh pengurus kelas.",
-            "Integrasi SMS/WhatsApp — notifikasi saat ini in-app dan email.",
+            "Pembayaran kas/donasi daring (payment gateway) — pencatatan bersifat manual oleh pengurus.",
+            "Pengiriman WhatsApp otomatis — nomor WA siswa disimpan untuk kebutuhan sekolah; notifikasi saat ini via email & in-app.",
           ]} />
         </Section>
 
@@ -369,10 +530,19 @@ export default function Documentation() {
         <Section id="bpmn" icon={GitBranch} title="Bagian C — Diagram BPMN Alur Proses" breakBefore>
           <P>Notasi: <b>oval hijau</b> = mulai, <b>oval merah</b> = selesai, <b>kotak</b> = aktivitas, <b>belah ketupat kuning</b> = keputusan (gateway). Lencana berwarna menunjukkan aktor (swimlane) yang bertanggung jawab pada tiap langkah.</P>
           <BpmnFlow title="C.1 Alur Absensi QR / Barcode" desc="Dari siswa tiba di sekolah hingga kehadiran terekap dan ternotifikasi." steps={FLOW_ABSENSI} />
-          <BpmnFlow title="C.2 Alur Kas Kelas" desc="Pembayaran iuran, pencatatan oleh Bendahara/Ketua Kelas, pengingat otomatis, dan rekap." steps={FLOW_KAS} />
-          <BpmnFlow title="C.3 Alur Manajemen Kelas & BPH" desc="Pembuatan kelas (dengan opsi salin struktur BPH) hingga penunjukan Bendahara." steps={FLOW_KELAS_BPH} />
-          <BpmnFlow title="C.4 Alur Inventaris & Peminjaman" desc="Pengelolaan aset, peringatan stok menipis, dan siklus peminjaman–pengembalian." steps={FLOW_INVENTARIS} />
-          <BpmnFlow title="C.5 Alur Ujian Anti-Cheat" desc="Pembuatan ujian berpassword hingga penilaian dengan pencatatan pelanggaran." steps={FLOW_UJIAN} />
+          <BpmnFlow title="C.2 Alur Absensi Otomatis (Reminder 08:00 & Auto-Alpa 09:00)" desc="Siswa yang belum absen ditanya Sakit/Izin lewat email bertombol; tanpa kabar hingga 09:00 WIB otomatis Alpa." steps={FLOW_ABSENSI_AUTO} />
+          <BpmnFlow title="C.3 Alur Kas Kelas" desc="Pembayaran iuran, pencatatan oleh Bendahara/Ketua Kelas, pengingat otomatis, dan rekap." steps={FLOW_KAS} />
+          <BpmnFlow title="C.4 Alur Manajemen Kelas & BPH" desc="Pembuatan kelas (dengan opsi salin struktur BPH) hingga penunjukan Bendahara." steps={FLOW_KELAS_BPH} />
+          <BpmnFlow title="C.5 Alur Inventaris & Peminjaman" desc="Pengelolaan aset, peringatan stok menipis, dan siklus peminjaman–pengembalian." steps={FLOW_INVENTARIS} />
+          <BpmnFlow title="C.6 Alur Ujian Anti-Cheat" desc="Pembuatan ujian berpassword hingga penilaian dengan pencatatan pelanggaran." steps={FLOW_UJIAN} />
+          <BpmnFlow title="C.7 Alur Autentikasi & Pembuatan Akun" desc="Pembuatan akun (WA wajib untuk siswa), login, dan reset password via email." steps={FLOW_AKUN} />
+          <BpmnFlow title="C.8 Alur PPDB Daring" desc="Pendaftaran peserta didik baru tanpa login, verifikasi berkas, hingga penetapan status." steps={FLOW_PPDB} />
+          <BpmnFlow title="C.9 Alur Perpustakaan Pintar" desc="Katalog, peminjaman & pengembalian dengan denda, reservasi, dan statistik." steps={FLOW_PERPUS} />
+          <BpmnFlow title="C.10 Alur Pemilihan OSIS (E-Voting)" desc="Pembuatan pemilihan, pemungutan suara satu siswa satu suara, hingga hasil." steps={FLOW_OSIS} />
+          <BpmnFlow title="C.11 Alur Dana Sosial" desc="Program penggalangan, pencatatan dana, progres target, dan transparansi." steps={FLOW_DANA} />
+          <BpmnFlow title="C.12 Alur Tugas & Mini-Quiz" desc="Pembuatan tugas/quiz, pengerjaan siswa, penilaian, hingga mengalir ke rapor." steps={FLOW_TUGAS} />
+          <BpmnFlow title="C.13 Alur Rapor Digital" desc="Agregasi nilai & kehadiran, peninjauan wali kelas, hingga pengiriman ke orang tua." steps={FLOW_RAPOR} />
+          <BpmnFlow title="C.14 Alur Galeri Prestasi (Profil Sekolah)" desc="Super Admin mengelola prestasi; publik melihat galeri atau slot kosong." steps={FLOW_GALERI} />
         </Section>
 
         <footer className="mt-10 pt-4 border-t border-slate-200 text-center text-xs text-slate-400">
