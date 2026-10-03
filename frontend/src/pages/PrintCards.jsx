@@ -52,7 +52,7 @@ export default function PrintCards() {
         </Link>
         <div className="text-center">
           <h1 className="font-heading text-2xl font-extrabold text-slate-900">Cetak Massal Kartu Pelajar</h1>
-          <p className="text-xs text-slate-500">{kelas || "Semua kelas"} · {students.length} kartu · 8 per lembar A4</p>
+          <p className="text-xs text-slate-500">{kelas || "Semua kelas"} · {students.length} kartu · 88×56 mm · 2 kolom per lembar A4</p>
         </div>
         <div className="flex items-center gap-2">
           <button data-testid="bulk-download-pdf-button" onClick={handlePdf} disabled={!!busy}

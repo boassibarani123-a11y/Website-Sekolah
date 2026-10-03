@@ -77,7 +77,7 @@ export default function MyCard() {
               {busy==="jpg" ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}Unduh JPG
             </button>
           </div>
-          <p className="no-print text-[11px] text-slate-500 text-center">Ukuran KTP Standar 85.6 × 53.98 mm. PDF berisi 2 halaman (depan &amp; belakang) siap potong; JPG menggabungkan kedua sisi. Gunakan kertas foto atau PVC untuk hasil terbaik.</p>
+          <p className="no-print text-[11px] text-slate-500 text-center">Ukuran kartu 88 × 56 mm. PDF berisi 2 halaman (depan &amp; belakang) siap potong; JPG menggabungkan kedua sisi. Nama panjang otomatis dibungkus agar tidak menimpa QR. Gunakan kertas foto atau PVC untuk hasil terbaik.</p>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 no-print">

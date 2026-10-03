@@ -1,9 +1,9 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
-// Physical ID card size (ISO CR80 standard). Used for crisp, print-ready PDF.
-const CARD_W_MM = 85.6;
-const CARD_H_MM = 53.98;
+// Physical ID card size requested: 88 x 56 mm. Used for crisp, print-ready PDF.
+const CARD_W_MM = 88;
+const CARD_H_MM = 56;
 
 // Render a DOM node to a high-resolution canvas.
 async function captureEl(el, scale = 3) {

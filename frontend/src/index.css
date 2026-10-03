@@ -80,8 +80,8 @@ body {
 }
 
 .ktp-card {
-  width: 340px;
-  height: 215px;
+  width: 88mm;
+  height: 56mm;
   border-radius: 12px;
   overflow: hidden;
   position: relative;
