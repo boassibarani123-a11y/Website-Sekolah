@@ -16,17 +16,6 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const demoUsers = [
-    { role: "Super Admin", email: "admin.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Kepsek", email: "kepsek.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Staff TU", email: "tu.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Guru", email: "guru.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Siswa", email: "siswa.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Ketua OSIS", email: "osis.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Ketua Kelas", email: "kelas.demo@sekolahku.id", pw: "Demo12345" },
-    { role: "Admin Perpus", email: "perpus.demo@sekolahku.id", pw: "Demo12345" },
-  ];
-
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -64,7 +53,13 @@ export default function Login() {
             </div>
           </div>
 
-          {/* School info card (moved to top) + public info button */}
+          {/* Headline (dipindah ke atas kartu info sekolah) */}
+          <div>
+            <h2 className="font-heading text-4xl xl:text-5xl font-extrabold leading-tight whitespace-pre-line">{settings.login_headline}</h2>
+            <p className="mt-4 text-sky-100/90 max-w-md leading-relaxed">{settings.login_description}</p>
+          </div>
+
+          {/* School info card + public info button */}
           <div className="max-w-md rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-5" data-testid="login-school-info">
             <p className="font-heading font-bold text-sm">{settings.school_full_name}</p>
             {settings.school_address && (
@@ -94,10 +89,6 @@ export default function Login() {
               </a>
             </div>
           </div>
-        </div>
-        <div className="relative">
-          <h2 className="font-heading text-4xl xl:text-5xl font-extrabold leading-tight whitespace-pre-line">{settings.login_headline}</h2>
-          <p className="mt-6 text-sky-100/90 max-w-md leading-relaxed">{settings.login_description}</p>
         </div>
         <div className="relative text-xs text-sky-100/70 font-mono-alt">{settings.login_footer}</div>
       </div>
@@ -138,21 +129,6 @@ export default function Login() {
               <a href="/forgot-password" data-testid="forgot-password-link" className="text-sm text-sky-600 hover:text-sky-800 font-semibold">Lupa password?</a>
             </div>
           </form>
-
-          <div className="mt-8 border-t border-slate-200 pt-6">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Coba Akun Demo (klik untuk isi)</p>
-            <p className="text-[10px] text-slate-400 mb-3">Perubahan di akun demo terpisah & tidak memengaruhi data asli sekolah.</p>
-            <div className="grid grid-cols-2 gap-2">
-              {demoUsers.map(d=>(
-                <button key={d.email} type="button" data-testid={`demo-login-${d.role.toLowerCase().replace(/\s/g,'-')}`}
-                  onClick={()=>{setEmail(d.email);setPassword(d.pw);}}
-                  className="text-left px-3 py-2 border border-slate-200 rounded-lg hover:border-sky-400 hover:bg-sky-50 transition-colors">
-                  <p className="text-xs font-semibold text-slate-800">{d.role}</p>
-                  <p className="text-[10px] text-slate-500 truncate">{d.email}</p>
-                </button>
-              ))}
-            </div>
-          </div>
 
           <a href="/presentasi" data-testid="presentation-link"
             className="mt-6 flex items-center justify-between gap-3 p-4 bg-gradient-to-br from-sky-600 to-indigo-700 text-white rounded-2xl transition-transform hover:scale-[1.01] shadow-lg shadow-sky-500/20 group">
