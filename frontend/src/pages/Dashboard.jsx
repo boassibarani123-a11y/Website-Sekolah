@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
-import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight } from "lucide-react";
+import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas", admin_perpus:"Admin Perpustakaan"};
@@ -48,6 +48,20 @@ export default function Dashboard() {
           <Clock className="w-3.5 h-3.5 inline mr-1.5"/>Semester Genap 2025/2026
         </div>
       </div>
+
+      {user.role === "super_admin" && (
+        <a href="/dokumentasi#panduan" data-testid="admin-guide-link"
+          className="flex items-center justify-between gap-4 p-5 bg-gradient-to-br from-sky-600 to-indigo-700 text-white rounded-2xl shadow-lg shadow-sky-500/20 transition-transform hover:scale-[1.01] group">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><Rocket className="w-5 h-5"/></div>
+            <div>
+              <p className="font-heading font-bold">Panduan Super Admin — Mulai dari Nol</p>
+              <p className="text-xs text-sky-100/90 mt-0.5">12 langkah berurutan mengisi sistem: akun, kelas, kartu pelajar, perpustakaan, prestasi, hingga otomatisasi.</p>
+            </div>
+          </div>
+          <ArrowRight className="w-5 h-5 shrink-0 group-hover:translate-x-1 transition-transform"/>
+        </a>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {cards.map(c=>(

@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { ArrowLeft, Printer, BookOpen, FileText, GitBranch, AlertTriangle, Rocket } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
 
@@ -295,6 +296,13 @@ const QUICK_GUIDE = [
 
 export default function Documentation() {
   const { settings } = useSettings();
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash) {
+      const el = document.querySelector(hash);
+      if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+    }
+  }, [hash]);
   const brand = settings.school_name || "SEKOLAH";
   const brandFull = settings.school_full_name || brand;
   return (

@@ -89,3 +89,4 @@ Super admin: boassibarani123@gmail.com / Boas12345io
 
 ## Added (2026-10-03, Panduan Cepat Super Admin)
 - Halaman Dokumentasi kini punya section "Panduan Cepat Super Admin — Mulai dari Nol" (12 langkah bernomor dengan badge menu: login → pengaturan → kelas → akun guru → akun siswa+WA → cetak kartu → perpustakaan → galeri prestasi → pengumuman/kalender → struktur organisasi → operasional harian → otomatisasi cron). Tampil sebelum Bagian A TOR, ikut tercetak saat unduh PDF. Diverifikasi via screenshot (12 step render).
+- Banner "Panduan Super Admin — Mulai dari Nol" di dasbor super admin (Dashboard.jsx, khusus role super_admin, data-testid `admin-guide-link`) menuju `/dokumentasi#panduan`; Documentation.jsx kini mendukung auto-scroll ke anchor hash (useLocation + scrollIntoView).
