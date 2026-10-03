@@ -412,3 +412,42 @@ agent_communication_v4:
       - All test data cleaned up (test class deleted)
       
       Backend is production-ready for all new features. No issues found.
+
+#====================================================================================================
+# POST-IMPORT (main4) — LOGIN VERIFICATION
+#====================================================================================================
+user_problem_statement: "Import project from GitHub (branch main4), setup & install deps. User then reported: 'knp tidak bisa login' (cannot login)."
+
+backend:
+  - task: "Auth login after fresh GitHub import (main4)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Root cause of 'cannot login': after import there was NO backend/.env, so server crashed with KeyError: MONGO_URL (also DB_NAME, JWT_SECRET missing). Created backend/.env (MONGO_URL, DB_NAME=sekolah_db, JWT_SECRET, FRONTEND_URL=preview URL, ADMIN_EMAIL/ADMIN_PASSWORD) and frontend/.env (REACT_APP_BACKEND_URL). Installed deps, restarted services. Super admin seeded. Verified in browser: login as boassibarani123@gmail.com succeeds and redirects to dashboard. Please verify POST /api/auth/login for super_admin (boassibarani123@gmail.com / Boas12345io) and a demo account (admin.demo@sekolahku.id / Demo12345), plus GET /api/auth/me with returned token, and broad health check of key read endpoints."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL 10 TESTS PASSED - Login flow fully functional after .env fix. Comprehensive testing completed: (1) POST /api/auth/login with super_admin (boassibarani123@gmail.com / Boas12345io) returns 200 with token + user object (role=super_admin), (2) GET /api/auth/me with Bearer token returns 200 with current user data, (3) POST /api/auth/login with demo admin (admin.demo@sekolahku.id / Demo12345) returns 200 with token, (4) Negative test: POST /api/auth/login with wrong password correctly returns 401 with error message 'Email atau password salah', (5) Health checks all passed: GET /api/settings (public, 200), GET /api/announcements (200), GET /api/classes (200), GET /api/stats (200), GET /api/notifications (200), GET /api/attendance/stats (200). The root cause fix (creating backend/.env with MONGO_URL, DB_NAME, JWT_SECRET) has completely resolved the login issue. Backend is healthy and production-ready."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 3
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: "Fresh import of main4. The login failure was caused by missing .env files (backend crashed on startup). Fixed by creating .env for backend+frontend and restarting. Please run focused backend testing on auth: super_admin login, demo login, /auth/me, and a quick health check (classes, settings, announcements, stats, notifications). Use creds boassibarani123@gmail.com / Boas12345io. Do NOT run destructive seed/reset flows."
+    -agent: "testing"
+    -message: "✅ BACKEND TESTING COMPLETE - ALL 10 TESTS PASSED. Login flow is fully functional. The .env fix has completely resolved the 'cannot login' issue. All auth endpoints working correctly: super_admin login (200 with token + user), demo admin login (200), /auth/me (200), wrong password rejection (401 with correct error message). All health check endpoints returning 200: settings (public), announcements, classes, stats, notifications, attendance/stats. No issues found. Backend is production-ready. The user can now successfully login and access the dashboard."
