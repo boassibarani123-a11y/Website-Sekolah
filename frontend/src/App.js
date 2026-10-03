@@ -37,6 +37,7 @@ import SchoolInfo from "@/pages/SchoolInfo";
 import OrgStructure from "@/pages/OrgStructure";
 import OrgStructureEditor from "@/pages/OrgStructureEditor";
 import Library from "@/pages/Library";
+import AttendanceRecap from "@/pages/AttendanceRecap";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -86,6 +87,7 @@ function AppInner() {
           <Route path="settings" element={<SettingsPage/>}/>
           <Route path="my-card" element={<MyCard/>}/>
           <Route path="library" element={<Library/>}/>
+          <Route path="attendance-recap" element={<AttendanceRecap/>}/>
         </Route>
         <Route path="/print-cards" element={<Protected><PrintCards/></Protected>}/>
       </Routes>

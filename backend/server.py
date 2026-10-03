@@ -264,7 +264,7 @@ def _border(color="CBD5E1"):
 
 def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
                  summary: Optional[dict] = None, sheet_name: str = "Laporan",
-                 brand: str = "SEKOLAHKU") -> bytes:
+                 brand: str = "SMA NEGERI 1 LAGUBOTI") -> bytes:
     """Create branded SEKOLAHKU Excel: title bar (sky-blue), meta, styled headers, alternating rows, summary.
     Emoji-free titles to guarantee compatibility with all Excel/LibreOffice versions."""
     wb = Workbook()
@@ -304,7 +304,16 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
         cell.border = _border("FFFFFF")
     ws.row_dimensions[hdr_row].height = 30
 
-    # Data rows
+    # Data rows (or placeholder when empty)
+    if not rows:
+        r = hdr_row + 1
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n_cols)
+        e = ws.cell(row=r, column=1, value="Belum ada data untuk ditampilkan.")
+        e.font = Font(name="Calibri", size=10, italic=True, color="94A3B8")
+        e.alignment = Alignment(horizontal="center", vertical="center")
+        for ci in range(1, n_cols + 1):
+            ws.cell(row=r, column=ci).border = _border()
+        ws.row_dimensions[r].height = 24
     for ri, row in enumerate(rows):
         r = hdr_row + 1 + ri
         fill = PatternFill("solid", fgColor=SLATE_50) if ri % 2 == 0 else None
@@ -317,32 +326,45 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
             if fill: cell.fill = fill
         ws.row_dimensions[r].height = 22
 
-    # Summary section
+    # Summary section — full-width connected bands, no truncated labels
     if summary:
-        gap = hdr_row + len(rows) + 2
+        gap = hdr_row + max(len(rows), 1) + 2
         ws.merge_cells(f"A{gap}:{last_col}{gap}")
         s = ws.cell(row=gap, column=1, value="RINGKASAN")
         s.font = Font(bold=True, color="FFFFFF", size=11)
         s.fill = PatternFill("solid", fgColor=SLATE_900)
         s.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[gap].height = 24
+        split = max(1, n_cols // 2)  # label spans first half, value the rest
         for i, (k, v) in enumerate(summary.items()):
             r = gap + 1 + i
+            band = PatternFill("solid", fgColor=SKY_100)
+            for ci in range(1, n_cols + 1):
+                cell = ws.cell(row=r, column=ci)
+                cell.fill = band
+                cell.border = _border()
+            if split >= 2:
+                ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=split)
             kc = ws.cell(row=r, column=1, value=k)
-            kc.font = Font(bold=True, color=SLATE_900)
-            kc.fill = PatternFill("solid", fgColor=SKY_100)
-            kc.border = _border()
+            kc.font = Font(bold=True, color=SLATE_900, size=10)
             kc.alignment = Alignment(horizontal="left", indent=1, vertical="center")
-            ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=n_cols)
-            vc = ws.cell(row=r, column=2, value=v)
-            vc.font = Font(bold=True, color=SKY_600)
+            if split + 1 <= n_cols:
+                ws.merge_cells(start_row=r, start_column=split + 1, end_row=r, end_column=n_cols)
+            vc = ws.cell(row=r, column=min(split + 1, n_cols), value=v)
+            vc.font = Font(bold=True, color=SKY_600, size=11)
             vc.alignment = Alignment(horizontal="right", indent=1, vertical="center")
-            vc.border = _border()
+            ws.row_dimensions[r].height = 22
 
-    # Column widths
+    # Column widths — fit header + data, readable minimum
     for i in range(1, n_cols + 1):
-        max_len = max([len(str(columns[i-1]))] + [len(str((r.get(columns[i-1]) if isinstance(r, dict) else r[i-1]) or "")) for r in rows[:100]])
-        ws.column_dimensions[get_column_letter(i)].width = min(max(14, max_len + 4), 40)
+        lens = [len(str(columns[i-1]))]
+        for r in rows[:150]:
+            v = r.get(columns[i-1]) if isinstance(r, dict) else r[i-1]
+            lens.append(len(str(v if v is not None else "")))
+        width = min(max(13, max(lens) + 4), 44)
+        if i == 1:
+            width = max(width, 18)
+        ws.column_dimensions[get_column_letter(i)].width = width
 
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = f"A{hdr_row+1}"
@@ -1033,6 +1055,221 @@ async def export_attendance(date: Optional[str] = None, user=Depends(get_current
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
                         columns, rows, summary, "Presensi")
     return xlsx_response(data, f"Presensi_{date or 'all'}.xlsx")
+
+# ---------------- WEEKLY ATTENDANCE RECAP & AUTO-ARCHIVE ----------------
+# Roles allowed to open "Storage Rekap Absensi": super_admin (auto), kepsek, guru, staff_tu
+ATT_RECAP_ROLES = require_roles("kepsek", "guru", "staff_tu")
+DAY_LABELS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+STATUS_ORDER = ["hadir", "izin", "sakit", "alpa"]
+STATUS_XLSX = {"hadir": "H", "izin": "I", "sakit": "S", "alpa": "A"}
+STATUS_FILL = {"H": "DCFCE7", "I": "E0F2FE", "S": "FEF3C7", "A": "FEE2E2"}
+_BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+def _monday_of(d):
+    return d - timedelta(days=d.weekday())
+
+def _week_dates(monday):
+    return [(monday + timedelta(days=i)).isoformat() for i in range(7)]
+
+def _fmt_range(a, b):
+    da, db_ = _date.fromisoformat(a), _date.fromisoformat(b)
+    if da.month == db_.month and da.year == db_.year:
+        return f"{da.day}–{db_.day} {_BULAN[db_.month-1]} {db_.year}"
+    return f"{da.day} {_BULAN[da.month-1]} – {db_.day} {_BULAN[db_.month-1]} {db_.year}"
+
+def _build_week_matrix(docs, days):
+    students, daily = {}, {dd: {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0, "total": 0} for dd in days}
+    for d in docs:
+        sid = d.get("student_id")
+        if sid not in students:
+            students[sid] = {"id": sid, "name": d.get("student_name") or "-", "kelas": d.get("kelas") or "-", "marks": {}}
+        st = (d.get("status") or "").lower()
+        dd = d.get("date")
+        students[sid]["marks"][dd] = st
+        if dd in daily and st in STATUS_ORDER:
+            daily[dd][st] += 1
+            daily[dd]["total"] += 1
+    slist = sorted(students.values(), key=lambda s: ((s["kelas"] or ""), (s["name"] or "")))
+    for s in slist:
+        tot = {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0}
+        for dd in days:
+            if s["marks"].get(dd) in tot:
+                tot[s["marks"][dd]] += 1
+        s["totals"] = tot
+    totals = {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0}
+    for dd in days:
+        for k in totals:
+            totals[k] += daily[dd][k]
+    return slist, daily, totals
+
+def weekly_attendance_excel(label, subtitle, days, students, daily, totals):
+    wb = Workbook(); ws = wb.active; ws.title = "Rekap Mingguan"
+    day_hdrs = [f"{DAY_LABELS[i]}\n{days[i][8:10]}/{days[i][5:7]}" for i in range(7)]
+    columns = ["No", "Nama Siswa", "Kelas"] + day_hdrs + ["H", "I", "S", "A"]
+    n = len(columns); last = get_column_letter(n)
+    ws.merge_cells(f"A1:{last}1"); c = ws["A1"]; c.value = f"SMA NEGERI 1 LAGUBOTI  -  {label}"
+    c.font = Font(size=15, bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor=SKY_600)
+    c.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[1].height = 30
+    ws.merge_cells(f"A2:{last}2"); c2 = ws["A2"]; c2.value = subtitle
+    c2.font = Font(size=10, italic=True, color="FFFFFF"); c2.fill = PatternFill("solid", fgColor=SLATE_900)
+    c2.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[2].height = 20
+    ws.row_dimensions[3].height = 6
+    hr = 4
+    for i, col in enumerate(columns, 1):
+        cell = ws.cell(hr, i, col); cell.font = Font(bold=True, color="FFFFFF", size=10)
+        cell.fill = PatternFill("solid", fgColor=SKY_600); cell.border = _border("FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[hr].height = 32
+    for ri, s in enumerate(students):
+        r = hr + 1 + ri; zebra = PatternFill("solid", fgColor=SLATE_50) if ri % 2 == 0 else None
+        for ci, val in enumerate([ri + 1, s["name"], s["kelas"]], 1):
+            cell = ws.cell(r, ci, val); cell.border = _border(); cell.font = Font(size=10, color=SLATE_900)
+            cell.alignment = Alignment(horizontal="left" if ci == 2 else "center", vertical="center", indent=1 if ci == 2 else 0)
+            if zebra: cell.fill = zebra
+        for di, dd in enumerate(days):
+            cell = ws.cell(r, 4 + di); mark = STATUS_XLSX.get(s["marks"].get(dd), "")
+            cell.value = mark; cell.border = _border(); cell.font = Font(size=10, bold=True, color=SLATE_900)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if mark: cell.fill = PatternFill("solid", fgColor=STATUS_FILL[mark])
+            elif zebra: cell.fill = zebra
+        for ti, k in enumerate(STATUS_ORDER):
+            cell = ws.cell(r, 11 + ti, s["totals"][k]); cell.border = _border()
+            cell.alignment = Alignment(horizontal="center", vertical="center"); cell.font = Font(size=10, color=SLATE_900)
+            if zebra: cell.fill = zebra
+        ws.row_dimensions[r].height = 20
+    if not students:
+        r = hr + 1; ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
+        e = ws.cell(r, 1, "Tidak ada data absensi pada minggu ini."); e.font = Font(italic=True, color="94A3B8")
+        e.alignment = Alignment(horizontal="center", vertical="center")
+        for ci in range(1, n + 1): ws.cell(r, ci).border = _border()
+        ws.row_dimensions[r].height = 24
+    fr = hr + max(len(students), 1) + 1
+    ws.merge_cells(start_row=fr, start_column=1, end_row=fr, end_column=3)
+    for ci in range(1, 4):
+        cell = ws.cell(fr, ci); cell.fill = PatternFill("solid", fgColor=SLATE_900); cell.border = _border()
+    t = ws.cell(fr, 1, "TOTAL HADIR HARIAN"); t.font = Font(bold=True, color="FFFFFF"); t.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+    for di, dd in enumerate(days):
+        cell = ws.cell(fr, 4 + di, daily[dd]["hadir"]); cell.font = Font(bold=True, color=SKY_600)
+        cell.alignment = Alignment(horizontal="center", vertical="center"); cell.fill = PatternFill("solid", fgColor=SKY_100); cell.border = _border()
+    for ti, k in enumerate(STATUS_ORDER):
+        cell = ws.cell(fr, 11 + ti, totals[k]); cell.font = Font(bold=True, color=SKY_600)
+        cell.alignment = Alignment(horizontal="center", vertical="center"); cell.fill = PatternFill("solid", fgColor=SKY_100); cell.border = _border()
+    ws.row_dimensions[fr].height = 22
+    lr = fr + 2; ws.merge_cells(start_row=lr, start_column=1, end_row=lr, end_column=n)
+    ws.cell(lr, 1, "Keterangan:  H = Hadir    I = Izin    S = Sakit    A = Alpa").font = Font(size=9, italic=True, color="64748B")
+    ws.column_dimensions["A"].width = 5; ws.column_dimensions["B"].width = 30; ws.column_dimensions["C"].width = 12
+    for i in range(4, 11): ws.column_dimensions[get_column_letter(i)].width = 9
+    for i in range(11, 15): ws.column_dimensions[get_column_letter(i)].width = 5.5
+    ws.sheet_view.showGridLines = False; ws.freeze_panes = "D5"
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf.getvalue()
+
+@api.get("/attendance/week")
+async def attendance_week(start: Optional[str] = None, user=Depends(get_current_user)):
+    try:
+        mon = _monday_of(_date.fromisoformat(start)) if start else _monday_of(datetime.now(WIB).date())
+    except Exception:
+        raise HTTPException(400, "Tanggal tidak valid")
+    days = _week_dates(mon)
+    docs = await db.attendance.find({"date": {"$gte": days[0], "$lte": days[6]}, **dscope(user)}, {"_id": 0}).to_list(20000)
+    students, daily, totals = _build_week_matrix(docs, days)
+    return {"start": days[0], "end": days[6], "days": days, "day_labels": DAY_LABELS,
+            "label": _fmt_range(days[0], days[6]), "students": students, "daily": daily,
+            "totals": totals, "record_count": len(docs)}
+
+@api.get("/attendance/week/export")
+async def attendance_week_export(start: Optional[str] = None, user=Depends(get_current_user)):
+    try:
+        mon = _monday_of(_date.fromisoformat(start)) if start else _monday_of(datetime.now(WIB).date())
+    except Exception:
+        raise HTTPException(400, "Tanggal tidak valid")
+    days = _week_dates(mon)
+    docs = await db.attendance.find({"date": {"$gte": days[0], "$lte": days[6]}, **dscope(user)}, {"_id": 0}).to_list(20000)
+    students, daily, totals = _build_week_matrix(docs, days)
+    label = f"Rekap Absensi Mingguan {_fmt_range(days[0], days[6])}"
+    data = weekly_attendance_excel(label, f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}", days, students, daily, totals)
+    return xlsx_response(data, f"Rekap_Absensi_{days[0]}_sd_{days[6]}.xlsx")
+
+async def _archive_week(is_demo, monday, generated_by):
+    days = _week_dates(monday)
+    scope = {"is_demo": True} if is_demo else {"is_demo": {"$ne": True}}
+    docs = await db.attendance.find({"date": {"$gte": days[0], "$lte": days[6]}, **scope}, {"_id": 0}).to_list(30000)
+    if not docs:
+        return None
+    students, daily, totals = _build_week_matrix(docs, days)
+    label = f"Rekap Absensi Mingguan {_fmt_range(days[0], days[6])}"
+    data = weekly_attendance_excel(label, f"Arsip otomatis · dibuat oleh {generated_by}", days, students, daily, totals)
+    arc = {"id": str(uuid.uuid4()), "is_demo": bool(is_demo), "period_start": days[0], "period_end": days[6],
+           "label": label, "record_count": len(docs), "student_count": len(students),
+           "summary": totals, "generated_at": now_iso(), "generated_by": generated_by,
+           "file_b64": base64.b64encode(data).decode()}
+    await db.attendance_archives.insert_one(arc)
+    await db.attendance.delete_many({"date": {"$gte": days[0], "$lte": days[6]}, **scope})
+    return arc
+
+async def _archive_completed_weeks(is_demo, generated_by):
+    """Archive every completed week (date <= last Sunday) into Storage and purge those records. Current week is kept live."""
+    today = datetime.now(WIB).date()
+    last_sunday = (_monday_of(today) - timedelta(days=1)).isoformat()
+    scope = {"is_demo": True} if is_demo else {"is_demo": {"$ne": True}}
+    dates = await db.attendance.distinct("date", {"date": {"$lte": last_sunday}, **scope})
+    mondays = sorted({_monday_of(_date.fromisoformat(d)) for d in dates})
+    created = []
+    for mon in mondays:
+        arc = await _archive_week(is_demo, mon, generated_by)
+        if arc:
+            created.append({"label": arc["label"], "records": arc["record_count"]})
+    return created
+
+async def run_attendance_weekly_archive():
+    for is_demo in (False, True):
+        try:
+            await _archive_completed_weeks(is_demo, "Otomatis (Jadwal Mingguan)")
+        except Exception as e:
+            logging.exception("Weekly attendance archive failed: %s", e)
+
+@api.get("/attendance/archives")
+async def list_att_archives(user=Depends(ATT_RECAP_ROLES)):
+    return await db.attendance_archives.find(dscope(user), {"_id": 0, "file_b64": 0}).sort("period_start", -1).to_list(500)
+
+@api.get("/attendance/archives/{aid}/download")
+async def download_att_archive(aid: str, user=Depends(ATT_RECAP_ROLES)):
+    arc = await db.attendance_archives.find_one({"id": aid, **dscope(user)})
+    if not arc:
+        raise HTTPException(404, "Arsip tidak ditemukan")
+    return xlsx_response(base64.b64decode(arc["file_b64"]), f"Rekap_Absensi_{arc['period_start']}_sd_{arc['period_end']}.xlsx")
+
+@api.delete("/attendance/archives/{aid}")
+async def delete_att_archive(aid: str, user=Depends(require_roles("kepsek", "staff_tu"))):
+    res = await db.attendance_archives.delete_one({"id": aid, **dscope(user)})
+    if not res.deleted_count:
+        raise HTTPException(404, "Arsip tidak ditemukan")
+    return {"ok": True}
+
+@api.post("/attendance/archive-now")
+async def attendance_archive_now(user=Depends(ATT_RECAP_ROLES)):
+    created = await _archive_completed_weeks(bool(user.get("is_demo")), user["name"])
+    return {"ok": True, "archived": created, "count": len(created)}
+
+@api.post("/cron/attendance-archive")
+async def cron_attendance_archive(request: Request, bg: BackgroundTasks):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    if not secret or not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], secret):
+        raise HTTPException(401, "Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid body")
+    run_id = request.headers.get("X-Webhook-Id") or (body or {}).get("run_id")
+    if not run_id:
+        raise HTTPException(400, "Missing run id")
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return {"ok": True, "duplicate": True}
+    await db.cron_runs.insert_one({"run_id": run_id, "job": "attendance-archive", "created_at": now_iso()})
+    bg.add_task(run_attendance_weekly_archive)
+    return {"ok": True}
+
 
 # ---------------- INVENTORY ----------------
 class InventoryItem(BaseModel):

@@ -8,11 +8,11 @@ const DEFAULT_RULES = [
   "Apabila hilang/rusak, segera lapor ke Tata Usaha.",
 ];
 
-function NisnBarcode({ value, height = 26, lineColor = "#0f172a", background = "#ffffff" }) {
+function NisnBarcode({ value, height = 26, barWidth = 1.3, lineColor = "#0f172a", background = "#ffffff" }) {
   if (!value) return null;
   return (
     <Barcode value={String(value)} format="CODE128" displayValue={false}
-      width={1.3} height={height} margin={2} background={background} lineColor={lineColor} />
+      width={barWidth} height={height} margin={2} background={background} lineColor={lineColor} />
   );
 }
 
@@ -64,19 +64,19 @@ export function IdCardFront({ student, schoolName, validUntil, logoUrl }) {
             </div>
           </div>
         </div>
-        <div className="w-[56px] h-[56px] rounded-md bg-white p-1 shrink-0 self-start">
-          <QRCodeSVG value={student.qr_code || student.id || "KARTU"} size={48} level="H"/>
+        <div className="w-[72px] h-[72px] rounded-md bg-white p-1 shrink-0 self-start shadow-md">
+          <QRCodeSVG value={student.qr_code || student.id || "KARTU"} size={64} level="H" className="w-full h-full"/>
         </div>
       </div>
 
-      {/* Footer: barcode NISN beside VERIFIED text, below QR */}
-      <div className="relative mt-1.5 flex items-center justify-between gap-2 border-t border-white/10 pt-1">
-        <span className="flex items-center gap-1 text-[7px] text-sky-200/80 font-mono-alt shrink-0">
-          <Shield className="w-2.5 h-2.5"/>{schoolName.split(' ').slice(0,3).join(' ')} · VERIFIED
+      {/* Footer: wide NISN barcode spanning the bottom, VERIFIED tag on the left */}
+      <div className="relative mt-2 flex items-center gap-2 border-t border-white/10 pt-1.5">
+        <span className="flex items-center gap-1 text-[7px] text-sky-200/80 font-mono-alt shrink-0 leading-tight">
+          <Shield className="w-2.5 h-2.5"/>VERIFIED
         </span>
-        <div className="bg-white rounded px-1 py-0.5 flex items-center justify-center overflow-hidden" data-testid="id-card-barcode">
+        <div className="flex-1 bg-white rounded px-1.5 py-1 flex items-center justify-center overflow-hidden" data-testid="id-card-barcode">
           {student.nisn
-            ? <NisnBarcode value={student.nisn} height={22}/>
+            ? <NisnBarcode value={student.nisn} height={30} barWidth={2}/>
             : <span className="text-[7px] text-slate-400 px-2">NISN belum diisi</span>}
         </div>
       </div>
