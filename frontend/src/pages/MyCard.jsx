@@ -1,11 +1,42 @@
+import { useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import StudentIdCard from "@/components/StudentIdCard";
-import { Printer, IdCard as IdCardIcon, QrCode } from "lucide-react";
+import { Printer, IdCard as IdCardIcon, QrCode, FileDown, Image as ImageIcon, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { downloadCardJpg, downloadCardPdf, cardFilename } from "@/lib/cardExport";
 
 export default function MyCard() {
   const { user } = useAuth();
   const { settings } = useSettings();
+  const frontRef = useRef(null);
+  const backRef = useRef(null);
+  const [busy, setBusy] = useState("");
+
+  const sideNodes = () => [
+    frontRef.current?.querySelector(".ktp-card"),
+    backRef.current?.querySelector(".ktp-card"),
+  ].filter(Boolean);
+
+  const handlePdf = async () => {
+    setBusy("pdf");
+    try {
+      await downloadCardPdf(sideNodes(), cardFilename(user, "pdf"));
+      toast.success("Kartu PDF berhasil diunduh");
+    } catch (e) {
+      toast.error(e.message || "Gagal membuat PDF");
+    } finally { setBusy(""); }
+  };
+
+  const handleJpg = async () => {
+    setBusy("jpg");
+    try {
+      await downloadCardJpg(sideNodes(), cardFilename(user, "jpg"));
+      toast.success("Kartu JPG berhasil diunduh");
+    } catch (e) {
+      toast.error(e.message || "Gagal membuat JPG");
+    } finally { setBusy(""); }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto" data-testid="my-card-page">
@@ -20,19 +51,33 @@ export default function MyCard() {
         <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm flex flex-col items-center gap-5">
           <div className="flex flex-col items-center gap-2">
             <span className="no-print text-[11px] font-bold uppercase tracking-widest text-slate-400">Tampak Depan</span>
-            <StudentIdCard student={user} school={settings.school_full_name}
-              validYears={settings.id_card_valid_years} logoUrl={settings.school_logo_url} side="front"/>
+            <div ref={frontRef}>
+              <StudentIdCard student={user} school={settings.school_full_name}
+                validYears={settings.id_card_valid_years} logoUrl={settings.school_logo_url} side="front"/>
+            </div>
           </div>
           <div className="flex flex-col items-center gap-2">
             <span className="no-print text-[11px] font-bold uppercase tracking-widest text-slate-400">Tampak Belakang</span>
-            <StudentIdCard student={user} school={settings.school_full_name}
-              logoUrl={settings.school_logo_url} rules={settings.id_card_rules} side="back"/>
+            <div ref={backRef}>
+              <StudentIdCard student={user} school={settings.school_full_name}
+                logoUrl={settings.school_logo_url} rules={settings.id_card_rules} side="back"/>
+            </div>
           </div>
-          <button data-testid="print-my-card-button" onClick={()=>window.print()}
-            className="no-print w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800">
-            <Printer className="w-4 h-4"/>Cetak / Simpan sebagai PDF
-          </button>
-          <p className="no-print text-[11px] text-slate-500 text-center">Ukuran KTP Standar 85.6 × 53.98 mm. Depan & belakang dicetak otomatis. Gunakan kertas foto atau PVC untuk hasil terbaik.</p>
+          <div className="no-print w-full grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button data-testid="print-my-card-button" onClick={()=>window.print()}
+              className="py-2.5 bg-slate-900 text-white rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-slate-800">
+              <Printer className="w-4 h-4"/>Cetak / PDF
+            </button>
+            <button data-testid="download-card-pdf-button" onClick={handlePdf} disabled={!!busy}
+              className="py-2.5 bg-rose-600 text-white rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-rose-700 disabled:opacity-60">
+              {busy==="pdf" ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileDown className="w-4 h-4"/>}Unduh PDF
+            </button>
+            <button data-testid="download-card-jpg-button" onClick={handleJpg} disabled={!!busy}
+              className="py-2.5 bg-sky-600 text-white rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-sky-700 disabled:opacity-60">
+              {busy==="jpg" ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}Unduh JPG
+            </button>
+          </div>
+          <p className="no-print text-[11px] text-slate-500 text-center">Ukuran KTP Standar 85.6 × 53.98 mm. PDF berisi 2 halaman (depan &amp; belakang) siap potong; JPG menggabungkan kedua sisi. Gunakan kertas foto atau PVC untuk hasil terbaik.</p>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 no-print">

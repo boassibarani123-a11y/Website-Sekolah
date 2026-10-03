@@ -488,3 +488,40 @@ test_plan:
 agent_communication:
     -agent: "testing"
     -message: "✅ UI LOGIN TESTING COMPLETE - ALL 3 TESTS PASSED. The REACT_APP_BACKEND_URL fix has completely resolved the 'Login gagal' issue. Comprehensive Playwright testing verified: (1) Real super admin login works perfectly (redirects to dashboard with 'Selamat datang, Boas'), (2) Demo account login via demo card works (auto-fill + successful login), (3) Wrong password properly rejected with error toast 'Email atau password salah'. All auth API requests sent to correct same-origin domain, no CORS errors, no console errors. Login flow is fully functional and production-ready. User can now successfully login and access the dashboard."
+
+#====================================================================================================
+# FEATURE: Download student ID card as PDF & JPG
+#====================================================================================================
+frontend:
+  - task: "Download ID card as PDF and JPG (MyCard + bulk PrintCards)"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/MyCard.jsx, frontend/src/pages/PrintCards.jsx, frontend/src/lib/cardExport.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Added Unduh PDF & Unduh JPG buttons using html2canvas + jsPDF. MyCard (/my-card): PDF=2 pages (front+back) at 85.6x53.98mm, JPG=both sides stacked. PrintCards (/print-cards): PDF=multi-page A4 of the whole sheet, JPG=full sheet image. Login super_admin boassibarani123@gmail.com / Boas12345io. Verify buttons trigger a file download without console errors."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL TESTS PASSED - Card download feature working perfectly. Comprehensive testing completed: TEST 1 - Single Card Page (/my-card): (1) Page loads with both front and back ID cards rendered correctly (2 card elements found), (2) 'Unduh PDF' button (data-testid=download-card-pdf-button) clicked -> success toast 'Kartu PDF berhasil diunduh' appeared + PDF download triggered (Kartu_Boas_Sibarani.pdf), (3) 'Unduh JPG' button (data-testid=download-card-jpg-button) clicked -> success toast 'Kartu JPG berhasil diunduh' appeared + JPG download triggered (Kartu_Boas_Sibarani.jpg). TEST 2 - Bulk Print Page (/print-cards): (4) Page loads correctly with heading 'Cetak Massal Kartu Pelajar', (5) Empty student list handled gracefully with error toast 'Tidak ada siswa untuk diunduh' for both PDF and JPG buttons (expected behavior), (6) Created test student to verify bulk download with data -> student card renders correctly with all details (name, NISN, kelas, QR code, barcode), (7) Bulk PDF button clicked -> download triggered (Kartu_Massal_semua.pdf), (8) Bulk JPG button clicked -> download triggered (Kartu_Massal_semua.jpg). CRITICAL CHECKS: ✅ No html2canvas errors detected during canvas capture, ✅ No jsPDF errors detected during PDF generation, ✅ No console errors during download operations (only pre-login 401s on /api/auth/me which are expected), ✅ All file downloads triggered successfully with correct filenames, ✅ Cards render correctly with QR codes, barcodes, and student information. Minor: Bulk download success toasts may appear briefly but downloads work correctly. Feature is production-ready."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 5
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: "Please test the new card download feature. Login as super_admin (boassibarani123@gmail.com / Boas12345io). (1) Go to /my-card, click 'Unduh PDF' (data-testid=download-card-pdf-button) and 'Unduh JPG' (data-testid=download-card-jpg-button) -> expect a success toast and a file download initiated, no console errors. (2) Go to /print-cards, click PDF (data-testid=bulk-download-pdf-button) and JPG (data-testid=bulk-download-jpg-button). Note: super_admin may not have a NISN; that's fine, card still renders. Report whether downloads trigger and if any JS errors occur during html2canvas capture."
+    -agent: "testing"
+    -message: "✅ TESTING COMPLETE - ALL TESTS PASSED. Card download feature is fully functional and production-ready. Both single card downloads (/my-card) and bulk downloads (/print-cards) work perfectly. All 4 download buttons (single PDF, single JPG, bulk PDF, bulk JPG) trigger downloads successfully with correct filenames. Success toasts appear for single card downloads. Empty student list handled gracefully with appropriate error messages. No html2canvas or jsPDF errors detected. Cards render correctly with all elements (QR codes, barcodes, student info). Feature ready for production use."
