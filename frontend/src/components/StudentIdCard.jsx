@@ -44,7 +44,7 @@ export function IdCardFront({ student, schoolName, validUntil, logoUrl }) {
         </div>
         <div className="flex-1 min-w-0 space-y-0.5">
           <p className="text-[8px] uppercase tracking-widest text-sky-200/80">Nama Lengkap</p>
-          <p className="font-heading text-[11px] font-extrabold leading-[1.15] break-words line-clamp-2" style={{wordBreak:"break-word"}}>{student.name}</p>
+          <p className="font-heading text-[11px] font-extrabold leading-[1.3] break-words pb-[1px]">{student.name}</p>
           <div className="grid grid-cols-2 gap-x-2 mt-1">
             <div>
               <p className="text-[7px] uppercase tracking-widest text-sky-200/80">NISN</p>
