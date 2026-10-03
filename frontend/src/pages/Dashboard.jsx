@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas"};
+const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas", admin_perpus:"Admin Perpustakaan"};
 
 export default function Dashboard() {
   const { user } = useAuth();

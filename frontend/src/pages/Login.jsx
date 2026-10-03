@@ -24,6 +24,7 @@ export default function Login() {
     { role: "Siswa", email: "siswa.demo@sekolahku.id", pw: "Demo12345" },
     { role: "Ketua OSIS", email: "osis.demo@sekolahku.id", pw: "Demo12345" },
     { role: "Ketua Kelas", email: "kelas.demo@sekolahku.id", pw: "Demo12345" },
+    { role: "Admin Perpus", email: "perpus.demo@sekolahku.id", pw: "Demo12345" },
   ];
 
   const submit = async (e) => {

@@ -19,7 +19,7 @@ const STATUS_STYLE = {
 
 const ROLE_LABEL = {
   super_admin: "Super Admin", kepsek: "Kepala Sekolah", staff_tu: "Staff TU",
-  guru: "Guru", siswa: "Siswa", ketua_osis: "Ketua OSIS", ketua_kelas: "Ketua Kelas", orang_tua: "Orang Tua",
+  guru: "Guru", siswa: "Siswa", ketua_osis: "Ketua OSIS", ketua_kelas: "Ketua Kelas", orang_tua: "Orang Tua", admin_perpus: "Admin Perpustakaan",
 };
 
 export default function Inventory() {

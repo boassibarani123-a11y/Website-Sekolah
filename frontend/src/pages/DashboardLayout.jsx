@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -20,6 +20,7 @@ const MENU = [
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },
   { to: "/schoolgram", label: "Schoolgram", icon: Camera, roles: "*" },
   { to: "/inventory", label: "Inventaris", icon: Boxes, roles: "*" },
+  { to: "/library", label: "Perpustakaan", icon: BookOpen, roles: "*" },
   { to: "/classes", label: "Kelas", icon: School, roles: "*" },
   { to: "/reports", label: "Rapor Digital", icon: FileText, roles: ["guru","kepsek","super_admin","siswa","orang_tua"] },
   { to: "/chats", label: "Chat Wali-Ortu", icon: MessageSquare, roles: ["guru","orang_tua","super_admin"] },
@@ -33,7 +34,7 @@ const MENU = [
 const ROLE_LABEL = {
   super_admin: "Super Admin", kepsek: "Kepala Sekolah", staff_tu: "Staff TU",
   guru: "Guru / Wali Kelas", siswa: "Siswa", ketua_osis: "Ketua OSIS", ketua_kelas: "Ketua Kelas",
-  orang_tua: "Orang Tua",
+  orang_tua: "Orang Tua", admin_perpus: "Admin Perpustakaan",
 };
 
 export default function DashboardLayout() {

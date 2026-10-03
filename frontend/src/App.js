@@ -36,6 +36,7 @@ import ClassDetail from "@/pages/ClassDetail";
 import SchoolInfo from "@/pages/SchoolInfo";
 import OrgStructure from "@/pages/OrgStructure";
 import OrgStructureEditor from "@/pages/OrgStructureEditor";
+import Library from "@/pages/Library";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -84,6 +85,7 @@ function AppInner() {
           <Route path="admin-ppdb" element={<AdminPpdb/>}/>
           <Route path="settings" element={<SettingsPage/>}/>
           <Route path="my-card" element={<MyCard/>}/>
+          <Route path="library" element={<Library/>}/>
         </Route>
         <Route path="/print-cards" element={<Protected><PrintCards/></Protected>}/>
       </Routes>
