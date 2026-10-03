@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 8 - verified 3 fixes: Inventory stock decrement/restore + borrower info; Classes creation by role=guru; Attendance manual NISN + recognition panel. Backend pytest 9/9 passed (stock 5->3 on approve, ->5 on return, reject-after-approve restores to 4, over-borrow returns 400 'Stok tidak cukup', requester_role/kelas/nisn/email captured on POST /api/borrow, guru can POST /api/classes /api/assignments /api/quizzes, POST /api/attendance/scan with {nisn} matches siswa.demo, missing both returns 400, invalid NISN returns 404). Frontend verified against public URL: guru sees create-class-button visible on /classes; admin Approval Peminjaman tab renders borrow-request-{id} rows with borrower-info-{id} containing 'Siswa Demo · Siswa · Kelas XI IPA 1 · NISN 0099887766'; /attendance manual-nisn-input + manual-nisn-submit posts scan and shows recognition-panel with recognition-name='Siswa Demo', kelas XI IPA 1, NISN, HADIR badge.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_inv_att_classes.py",
+    "/app/test_reports/pytest/iter8_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PATCH /api/borrow/{bid} passes status as a query param instead of request body - unusual REST style but functional; consider a Pydantic body for consistency.",
+    "In update_borrow, the item lookup uses only {id: item_id} without dscope, so a staff_tu could theoretically approve requests for items outside their demo scope; low risk because borrow list is already scoped. Non-blocking.",
+    "server.py now >1720 lines - still recommend splitting into routers per domain (auth/users/inventory/attendance/classes/etc). Non-blocking."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter8_inv_att_classes.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin.demo@sekolahku.id/Demo12345, guru.demo@sekolahku.id/Demo12345, siswa.demo@sekolahku.id/Demo12345",
+  "seed_data_creation": "TEST_iter8_item, TEST_iter8_reject inventory items created & auto-cleaned in tests; TEST_iter8_kelas_guru class created & deleted; TEST_iter8_tugas assignment and TEST_iter8_quiz remain (small, isolated to demo scope).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use _load_url() pattern in test file to source REACT_APP_BACKEND_URL from /app/frontend/.env when env var isn't inherited by pytest runner. PATCH /api/borrow/{bid} takes status as a QUERY parameter (?status=Disetujui), not JSON body.",
+  "rca of the issue": "N/A - all three reported bugs are correctly fixed and verified end-to-end."
+}

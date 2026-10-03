@@ -3,8 +3,10 @@ import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { GraduationCap, Upload, CheckCircle2, ArrowLeft, FileUp, X } from "lucide-react";
+import { useSettings } from "@/context/SettingsContext";
 
 export default function PpdbPublic() {
+  const { settings } = useSettings();
   const [form, setForm] = useState({
     full_name:"", nisn:"", birth_place:"", birth_date:"", gender:"L",
     address:"", phone:"", parent_name:"", parent_phone:"", parent_email:"",
@@ -46,7 +48,7 @@ export default function PpdbPublic() {
             <CheckCircle2 className="w-10 h-10"/>
           </div>
           <h1 className="font-heading text-3xl font-extrabold text-slate-900">Pendaftaran Berhasil!</h1>
-          <p className="mt-3 text-slate-600">Terima kasih sudah mendaftar di <b>SEKOLAHKU</b>. Panitia PPDB akan meninjau dokumen Anda dan menghubungi via email/WA.</p>
+          <p className="mt-3 text-slate-600">Terima kasih sudah mendaftar di <b>{settings.school_full_name}</b>. Panitia PPDB akan meninjau dokumen Anda dan menghubungi via email/WA.</p>
           <div className="mt-6 p-4 bg-sky-50 border-2 border-dashed border-sky-300 rounded-2xl">
             <p className="text-xs uppercase tracking-widest text-sky-700 font-bold">Nomor Pendaftaran</p>
             <p className="mt-1 font-heading text-3xl font-extrabold text-sky-900 font-mono-alt">{done.id.slice(0,8).toUpperCase()}</p>
@@ -67,7 +69,7 @@ export default function PpdbPublic() {
             </div>
             <div>
               <h1 className="font-heading text-2xl sm:text-3xl font-extrabold">Pendaftaran Peserta Didik Baru</h1>
-              <p className="text-sm text-sky-100/85 mt-0.5">Tahun Ajaran 2026/2027 · SMA Negeri 1 SEKOLAHKU</p>
+              <p className="text-sm text-sky-100/85 mt-0.5">Tahun Ajaran 2026/2027 · {settings.school_full_name}</p>
             </div>
           </div>
           <Link to="/login" className="hidden sm:inline-flex items-center gap-1 text-sm text-sky-100 hover:text-white">
@@ -134,7 +136,7 @@ export default function PpdbPublic() {
           </Card>
 
           <div className="flex flex-col sm:flex-row items-center gap-3">
-            <p className="text-xs text-slate-500 flex-1">Dengan menekan tombol daftar, Anda menyetujui data akan diproses oleh panitia PPDB SEKOLAHKU.</p>
+            <p className="text-xs text-slate-500 flex-1">Dengan menekan tombol daftar, Anda menyetujui data akan diproses oleh panitia PPDB {settings.school_full_name}.</p>
             <button data-testid="ppdb-submit-button" disabled={busy}
               className="w-full sm:w-auto px-8 py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-bold rounded-xl shadow-lg shadow-slate-900/30 flex items-center justify-center gap-2">
               <Upload className="w-4 h-4"/>{busy?"Mendaftar...":"Daftar Sekarang"}

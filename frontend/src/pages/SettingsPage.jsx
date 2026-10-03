@@ -51,7 +51,7 @@ export default function SettingsPage() {
           <h1 className="font-heading text-3xl font-extrabold text-slate-900 flex items-center gap-2">
             <SettingsIcon className="w-7 h-7 text-sky-600"/>Pengaturan Sekolah
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Kustomisasi identitas & tampilan seluruh sistem SEKOLAHKU</p>
+          <p className="mt-1 text-sm text-slate-500">Kustomisasi identitas & tampilan seluruh sistem {form.school_name || "sekolah"}</p>
         </div>
         <button data-testid="settings-save-button" onClick={save} disabled={busy}
           className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white rounded-xl font-semibold flex items-center gap-2 shadow-lg">
@@ -73,6 +73,31 @@ export default function SettingsPage() {
             </Field>
             <Field label="Tagline / Deskripsi">
               <input value={form.footer_text || ""} onChange={e=>upd("footer_text", e.target.value)} className={inp}/>
+            </Field>
+            <Field label="Tahun Ajaran" hint="Muncul di cover presentasi & PPTX">
+              <input data-testid="academic-year-input" value={form.academic_year || ""} onChange={e=>upd("academic_year", e.target.value)} placeholder="2026/2027" className={inp}/>
+            </Field>
+          </Section>
+
+          <Section title="D. Teks Halaman Login" icon="✍️">
+            <p className="text-[11px] text-slate-400 -mt-1">Semua teks ini tampil di halaman login publik dan bisa diubah dengan leluasa.</p>
+            <Field label="Badge / Sub-judul" hint="Teks kecil di bawah nama sekolah (sidebar login)">
+              <input data-testid="login-badge-input" value={form.login_badge || ""} onChange={e=>upd("login_badge", e.target.value)} className={inp}/>
+            </Field>
+            <Field label="Headline Utama" hint="Gunakan baris baru (Enter) untuk memisah baris">
+              <textarea data-testid="login-headline-input" rows={3} value={form.login_headline || ""} onChange={e=>upd("login_headline", e.target.value)} className={inp}/>
+            </Field>
+            <Field label="Deskripsi">
+              <textarea data-testid="login-description-input" rows={3} value={form.login_description || ""} onChange={e=>upd("login_description", e.target.value)} className={inp}/>
+            </Field>
+            <Field label="Judul Form (kanan)">
+              <input data-testid="login-welcome-title-input" value={form.login_welcome_title || ""} onChange={e=>upd("login_welcome_title", e.target.value)} className={inp}/>
+            </Field>
+            <Field label="Sub-judul Form">
+              <input data-testid="login-welcome-subtitle-input" value={form.login_welcome_subtitle || ""} onChange={e=>upd("login_welcome_subtitle", e.target.value)} className={inp}/>
+            </Field>
+            <Field label="Teks Footer">
+              <input data-testid="login-footer-input" value={form.login_footer || ""} onChange={e=>upd("login_footer", e.target.value)} className={inp}/>
             </Field>
           </Section>
 
@@ -109,7 +134,7 @@ export default function SettingsPage() {
             </div>
           </Section>
 
-          <button data-testid="settings-reset" onClick={()=>{if(confirm("Reset ke default?")) setForm({school_name:"SEKOLAHKU",school_full_name:"SMA NEGERI 1 SEKOLAHKU",school_address:"Jl. Pendidikan No. 1, Jakarta",school_logo_url:"",id_card_valid_years:"2025 - 2028",id_card_rules:["Kartu ini wajib dibawa selama berada di lingkungan sekolah.","Digunakan untuk presensi QR & peminjaman inventaris.","Apabila hilang/rusak, segera lapor ke Tata Usaha."],footer_text:"Sistem Manajemen Sekolah Terpadu",primary_color:"#0284C7"});}}
+          <button data-testid="settings-reset" onClick={()=>{if(confirm("Reset ke default?")) setForm({...form,school_name:"SMA NEGERI 1 LAGUBOTI",school_full_name:"SMA NEGERI 1 LAGUBOTI",school_address:"Jl. Sekolah No. 3, Pasar Laguboti, Kec. Laguboti, Kab. Toba 22381",school_logo_url:"",id_card_valid_years:"2025 - 2028",id_card_rules:["Kartu ini wajib dibawa selama berada di lingkungan sekolah.","Digunakan untuk presensi QR & peminjaman inventaris.","Apabila hilang/rusak, segera lapor ke Tata Usaha."],footer_text:"Sistem Manajemen Sekolah Terpadu",primary_color:"#0284C7",login_badge:"SISTEM MANAJEMEN SEKOLAH TERPADU",login_headline:"Satu Platform.\nTujuh Peran.\nSekolah Modern.",login_description:"Absensi QR, Schoolgram, Inventaris, Tugas & Quiz, Uang Kas, Dana Sosial, Pemilu OSIS, dan Kartu Pelajar cetak KTP — semuanya dalam satu dashboard elegan.",login_welcome_title:"Masuk ke Akun Anda",login_welcome_subtitle:"Gunakan email dan password yang diberikan oleh Super Admin sekolah.",login_footer:"© 2026 SMA NEGERI 1 LAGUBOTI · Version 1.0"});}}
             className="w-full py-2.5 border-2 border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2">
             <RotateCcw className="w-4 h-4"/>Reset ke Default
           </button>
@@ -118,9 +143,17 @@ export default function SettingsPage() {
         <div className="lg:sticky lg:top-6 lg:self-start space-y-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <h3 className="font-heading font-bold text-slate-900 mb-4">🔍 Live Preview Kartu Pelajar</h3>
-            <div className="flex flex-col items-center py-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl">
-              <StudentIdCard student={previewStudent} school={form.school_full_name || "SMA NEGERI 1 SEKOLAHKU"}
-                validYears={form.id_card_valid_years} logoUrl={form.school_logo_url}/>
+            <div className="flex flex-col items-center gap-4 py-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Depan</span>
+                <StudentIdCard student={previewStudent} school={form.school_full_name || "SMA NEGERI 1 LAGUBOTI"}
+                  validYears={form.id_card_valid_years} logoUrl={form.school_logo_url} side="front"/>
+              </div>
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Belakang</span>
+                <StudentIdCard student={previewStudent} school={form.school_full_name || "SMA NEGERI 1 LAGUBOTI"}
+                  logoUrl={form.school_logo_url} rules={form.id_card_rules} side="back"/>
+              </div>
             </div>
             <p className="text-xs text-slate-500 text-center mt-4">
               Perubahan akan tampil di semua kartu siswa setelah disimpan.

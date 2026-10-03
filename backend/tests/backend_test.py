@@ -4,7 +4,7 @@ import io
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://laravel-school-sys.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://school-site-54.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 SUPER_ADMIN = {"email": "cassandramarsada@gmail.com", "password": "Admin@Sekolah2026"}

@@ -1,0 +1,23 @@
+{
+  "summary": "Iter 12 covered 4 feature areas: (1) Public Org Structure page (/struktur-organisasi, data-testid=public-org-link on /login) — accessible without login, lists all non-demo structures. Verified by creating 2 real-admin structures (TEST_UI_PUB_A/B), confirmed tabs render (public-org-tab-{id}), switching tabs updates public-org-title and public-org-tree, then cleaned up. (2) Dana Sosial edit/delete — PATCH/DELETE /api/social-fund/{id} works for ketua_osis & super_admin; kepsek receives 403; UI shows sf-edit-{id}/sf-delete-{id} for osis.demo (1 row visible) and none for kepsek. (3) Classes password & unlock — super_admin bypass confirmed; kelas.demo & siswa.demo already unlocked for XI IPA 1 (no class-unlock-page shown); wrong password returns 400. (4) Class Kas — ketua_kelas can POST/PATCH/DELETE; siswa gets 403; super_admin gets 403 (per spec ketua_kelas only); kas-balance/kas-amount-input/kas-add-button render for ketua_kelas; kas-readonly-note shows for siswa; kas export returns xlsx. /uang-kas redirects to /classes. (5) Attendance barcode — barcode-scanner-card renders below QR, 'Scan QR Code' title still present; barcode-input disabled until barcode-toggle-button pressed; API records attendance with method='barcode' via NISN; invalid method returns 400; attendance export works. Backend pytest: 15/15 PASSED. Frontend Playwright: all critical selectors verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_classes_kas_barcode.py",
+    "/app/test_reports/pytest/iter12.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~2220 lines; still functional but approaching the 'split into modules' threshold flagged in prior iterations.",
+    "BarcodeScanner.jsx auto-refocus with onBlur+setTimeout works, but if a focus-stealing modal opens the loop may fight it. Low priority.",
+    "ClassKas.jsx exportXlsx uses URL.createObjectURL without revokeObjectURL — tiny memory leak per export. Non-blocking.",
+    "assert_kas_manager permits only ketua_kelas of the exact class; super_admin cannot create kas rows. This matches the spec but may surprise admins managing seeded demos — spec takes precedence."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter12_classes_kas_barcode.py", "/app/test_reports/iteration_12.json"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all selectors + flows verified)"},
+  "test_credentials": "boassibarani123@gmail.com/Boas12345io (real super_admin); *.demo@sekolahku.id / Demo12345",
+  "seed_data_creation": "pytest TEST_PUB_* org-structures & TEST_SF_* social-fund rows (cleaned up in-test). UI test created & deleted TEST_UI_PUB_A/B structures via real admin for tabs verification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All iter12 features (public org page/, Dana Sosial edit/delete, class password+unlock, class-level kas, barcode attendance) are working end-to-end. XI IPA 1 class id = 97194f55-894d-44dc-957a-1c2a8522e2b0, demo password 'rahasia1' (super admin only sees). siswa.demo and kelas.demo are pre-unlocked. Attendance scan accepts method ∈ {qr, barcode, manual}. kas endpoints are POST/PATCH/DELETE restricted to ketua_kelas of that class (not super_admin). Attendance export includes 'Metode' column (verified via column mapping in server.py line 776)."
+}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
-import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp } from "lucide-react";
+import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas"};
 
@@ -10,11 +11,14 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [att, setAtt] = useState(null);
   const [ann, setAnn] = useState([]);
+  const [highlights, setHighlights] = useState([]);
+  const showHighlights = ["siswa", "guru"].includes(user.role);
   useEffect(()=>{
     api.get("/stats").then(r=>setStats(r.data));
     api.get("/attendance/stats").then(r=>setAtt(r.data));
     api.get("/announcements").then(r=>setAnn(r.data.slice(0,3)));
-  },[]);
+    if (showHighlights) api.get("/gallery?category=Prestasi").then(r=>setHighlights(r.data.slice(0,4))).catch(()=>{});
+  },[showHighlights]);
 
   const cards = [
     { label: "Total Siswa", value: stats?.siswa ?? "—", icon: GraduationCap, color: "sky" },
@@ -54,6 +58,29 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {showHighlights && highlights.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="dashboard-highlights">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500"/>Sorotan Prestasi Terbaru</h2>
+            <Link to="/achievements" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Lihat semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {highlights.map(h=>(
+              <div key={h.id} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50" data-testid="highlight-card">
+                <div className="h-24 bg-gradient-to-br from-sky-500 to-indigo-700 relative flex items-center justify-center">
+                  {h.image_url ? <img src={h.image_url} alt={h.title} className="absolute inset-0 w-full h-full object-cover"/> : <Trophy className="w-7 h-7 text-white/70"/>}
+                  {h.level && <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-900">{h.level}</span>}
+                </div>
+                <div className="p-3">
+                  <p className="font-semibold text-sm text-slate-900 line-clamp-2 leading-snug">{h.title}</p>
+                  {h.date && <p className="text-[10px] text-slate-400 mt-1">{h.date}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">

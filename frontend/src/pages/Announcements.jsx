@@ -16,7 +16,7 @@ const CATEGORIES = [
 const catCls = (c) => CATEGORIES.find(x => x.v === c)?.cls || "bg-slate-100 text-slate-700";
 const SCOPES = [{ v: "sekolah", l: "Sekolah" }, { v: "osis", l: "OSIS" }, { v: "kelas", l: "Kelas" }];
 
-const EMPTY = { title: "", content: "", scope: "sekolah", category: "Umum", image: "", pinned: false };
+const EMPTY = { title: "", content: "", scope: "sekolah", category: "Umum", image: "", pinned: false, show_on_login: false };
 
 export default function Announcements() {
   const { user } = useAuth();
@@ -74,6 +74,7 @@ export default function Announcements() {
                 <span className={`px-2.5 py-0.5 text-[11px] font-bold uppercase rounded-full ${catCls(a.category)}`}>{a.category || "Umum"}</span>
                 <span className="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full bg-slate-100 text-slate-500">{a.scope}</span>
                 {a.pinned && <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-sky-600 text-white"><Pin className="w-3 h-3"/>Disematkan</span>}
+                {a.show_on_login && <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-amber-500 text-white"><Megaphone className="w-3 h-3"/>Banner Login</span>}
               </div>
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-heading font-bold text-lg text-slate-900 leading-snug">{a.title}</h3>
@@ -93,12 +94,12 @@ export default function Announcements() {
         ))}
       </div>
 
-      {editing && <AnnouncementModal isAdmin={isAdmin} initial={editing} onClose={()=>setEditing(null)} onDone={()=>{load(); setEditing(null);}}/>}
+      {editing && <AnnouncementModal isAdmin={isAdmin} canLoginBanner={["super_admin","kepsek","staff_tu"].includes(user.role)} initial={editing} onClose={()=>setEditing(null)} onDone={()=>{load(); setEditing(null);}}/>}
     </div>
   );
 }
 
-function AnnouncementModal({ isAdmin, initial, onClose, onDone }) {
+function AnnouncementModal({ isAdmin, canLoginBanner, initial, onClose, onDone }) {
   const isEdit = !!initial.id;
   const [f, setF] = useState({ ...EMPTY, ...initial });
   const [busy, setBusy] = useState(false);
@@ -121,7 +122,7 @@ function AnnouncementModal({ isAdmin, initial, onClose, onDone }) {
     if (!f.title.trim() || !f.content.trim()) return toast.error("Judul & isi wajib diisi");
     setBusy(true);
     try {
-      const body = { title: f.title, content: f.content, scope: f.scope, category: f.category, image: f.image || "", pinned: !!f.pinned };
+      const body = { title: f.title, content: f.content, scope: f.scope, category: f.category, image: f.image || "", pinned: !!f.pinned, show_on_login: !!f.show_on_login };
       if (isEdit) await api.patch(`/announcements/${initial.id}`, body);
       else await api.post("/announcements", body);
       toast.success(isEdit ? "Pengumuman diperbarui" : "Pengumuman dipublikasi");
@@ -179,6 +180,12 @@ function AnnouncementModal({ isAdmin, initial, onClose, onDone }) {
             <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
               <input data-testid="announcement-pinned-checkbox" type="checkbox" checked={!!f.pinned} onChange={e=>upd("pinned", e.target.checked)} className="w-4 h-4 accent-sky-600"/>
               <Pin className="w-4 h-4 text-sky-600"/>Sematkan di paling atas
+            </label>
+          )}
+          {canLoginBanner && (
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+              <input data-testid="announcement-login-banner-checkbox" type="checkbox" checked={!!f.show_on_login} onChange={e=>upd("show_on_login", e.target.checked)} className="w-4 h-4 accent-amber-500"/>
+              <Megaphone className="w-4 h-4 text-amber-500"/>Tampilkan sebagai banner di halaman login
             </label>
           )}
           <div className="flex gap-2 pt-2">

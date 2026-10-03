@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 9 - verified 3 new features end-to-end. Backend pytest 6/6 passed (test_iter9_loan_photo_scope.py): (1) Inventory loan history: GET /api/inventory returns outstanding=2 & total=6 after approve, stock 6->4; history endpoint returns entries with requester_name/role/kelas/nisn/status/purpose/return_date/created_at; siswa forbidden (403); Dikembalikan restores stock=6 outstanding=0. (2) POST /api/attendance/scan accepts optional photo URL and persists on record; GET /api/attendance shows the photo; scan without photo still 200. (3) Teacher scope: guru POST /classes stores created_by; guru CAN PATCH/DELETE own class & POST /assignments & /quizzes; on class NOT owned/homeroom, PATCH/DELETE/assignments/quizzes all return 403; super_admin bypasses. Frontend verified on public URL: Inventory page shows stock-available-*, stock-outstanding-*, stock-total-* boxes and inventory-history-* button opens inventory-history-list modal; Attendance page renders attendance-photo-* thumbnail(s); Guru /classes shows create-class-button + edit/delete only on managed cards (3 icons across 5 cards); guru opening a NON-managed class detail shows readonly-badge and hides new-assignment-button + new-quiz-button.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_loan_photo_scope.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AssignmentIn/QuizIn still require 'kelas' as a separate string alongside 'class_id' - redundant since class_id already identifies the class; consider deriving kelas from the class doc server-side.",
+    "server.py is now ~1770 lines - continue to consider splitting into routers (auth/users/inventory/attendance/classes/borrow) for maintainability.",
+    "PATCH /api/borrow/{bid} still uses ?status= query param instead of a Pydantic body - inconsistent REST style."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9_loan_photo_scope.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin.demo@sekolahku.id/Demo12345, guru.demo@sekolahku.id/Demo12345, siswa.demo@sekolahku.id/Demo12345",
+  "seed_data_creation": "TEST_iter9_item (auto-deleted); TEST_iter9_guru_owned_<ts>, TEST_iter9_admin_owned_<ts>, TEST_iter9_admin_full_<ts> classes created & deleted in tests; one attendance record with photo=https://example.com/proof_iter9.jpg persists for siswa.demo (harmless, is_demo=true).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Assignments POST needs both class_id AND kelas (string). Attendance scan status must be lowercase (hadir/izin/sakit/alpa). Class 'name' has a uniqueness check - use timestamp suffix in test class names to avoid 'Nama kelas sudah ada'.",
+  "rca of the issue": "N/A - all three new features are correctly implemented and verified end-to-end."
+}

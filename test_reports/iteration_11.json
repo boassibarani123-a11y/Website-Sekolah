@@ -1,0 +1,39 @@
+{
+  "summary": "Iter 11 testing covered: (1) Forgot/reset password endpoints (generic responses, token validation), (2) Login announcement banner (public endpoint, super_admin create visible on /login, guru coerced to show_on_login=false), (3) Org structure editor unlimited depth, add child via 'Bawahan' button, cycle guard, cascade delete, Lapis labels, public GET endpoint non-demo filter. Backend pytest 11/11 PASSED. Frontend Playwright: login banner renders with 'Libur Semester' announcement; forgot-password-link visible on /login; forgot-password page accessible; org editor renders OrgTree with connectors; added UITEST_A at Lapis 3 then UITEST_B at Lapis 4 (unlimited depth confirmed) and cascade-deleted both; parent-select pre-selected to clicked card's id. 'Lapis N' labels found 7 times matching 7 cards after cleanup. GET /api/org/public works (non-auth, no is_demo items).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "send_reset_email", "issue": "Resend/Emergent email returns 422 when 'to' is @sekolahku.id (unverified domain) e.g. guru.demo@sekolahku.id. Emails to real addresses (boassibarani123@gmail.com) succeed and 'Reset email sent to ...' is logged. Not a code bug but worth noting: backend logs 'Reset email failed: Client error 422 unknown' for demo accounts. User still gets generic 200 message (no info leak)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "PublicOrg page", "issue": "Component /app/frontend/src/pages/PublicOrg.jsx exists and renders OrgTree with testid=public-org-tree, but it is NOT imported/routed anywhere in App.js/index.js. Visiting /org/public returns an empty page (no element with data-testid=public-org-tree). Backend endpoint GET /api/org/public works; just the FE route is missing.", "affected_selectors": ["public-org-tree"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_org_announce_forgot.py",
+    "/app/test_reports/pytest/iter11.xml"
+  ],
+  "action_items": [
+    "(Optional) Register PublicOrg route (e.g. <Route path='/org/public' element={<PublicOrg/>} />) in App.js if public access to the org chart is intended by the UX. Backend API already supports it.",
+    "(Optional) In send_reset_email, swallow 422 silently for unverified recipient domains or log at debug (currently logs ERROR which may be noisy for demo accounts). Not critical."
+  ],
+  "critical_code_review_comments": [
+    "server.py forgot-password rate-limit (5/15min) inserts a row BEFORE checking the count, so the 5th request is still processed (recent<5 at insertion time but the 6th is throttled). Reasonable design; just FYI.",
+    "OrgTree.jsx line 77 uses React.createElement for recursion (same pattern retained from iter10) — functional and justified as a workaround for babel plugin.",
+    "No defensive upper-bound on org depth; relies on client stack. For enormously deep inputs recursion in delete_org/_delete_subtree could blow stack (practical risk is negligible).",
+    "PublicOrg.jsx is dead code if not routed — either wire the route or remove the file to avoid confusion."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_org_announce_forgot.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "95% (all requested flows verified except PublicOrg which has unrouted component — minor)"},
+  "test_credentials": "boassibarani123@gmail.com/Boas12345io (super_admin), guru.demo@sekolahku.id/Demo12345",
+  "seed_data_creation": "Test created TEST_ prefixed org-structure and nodes via pytest (cleaned up in-fixture). UI test created and cascade-deleted UITEST_A and UITEST_B under seeded structure 5c019466; verified post-cleanup 7 nodes remain.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter11 covers forgot-password, login announcement banner, and org structure unlimited-depth CRUD + cascade. Login JSON uses key 'token' (not 'access_token'). Seeded org structure id: 5c019466-77e8-4c91-8922-9579b1258a28 contains 7 real-time nodes (Lapis 1-3). PublicOrg route is NOT wired despite API/component existing — flag for main agent."
+}

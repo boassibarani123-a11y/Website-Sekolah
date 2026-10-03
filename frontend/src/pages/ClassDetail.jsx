@@ -4,7 +4,13 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock, Network, ShieldCheck } from "lucide-react";
+import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
+import { QuizTakeModal, QuizTimeField } from "@/components/QuizTake";
+import { ClassKas } from "@/components/ClassKas";
+import { ClassUnlock } from "@/components/ClassUnlock";
+import { ClassBPH } from "@/components/ClassBPH";
+import { ClassExam } from "@/components/ClassExam";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -34,16 +40,38 @@ export default function ClassDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const isTeacher = ["guru", "super_admin"].includes(user.role);
-  const isStudent = user.role === "siswa";
+  const isStudent = ["siswa", "ketua_kelas", "ketua_osis"].includes(user.role);
   const [klass, setKlass] = useState(null);
   const [tab, setTab] = useState("tugas");
   const [subject, setSubject] = useState("all");
+  const [reschedules, setReschedules] = useState([]);
+  const [showResched, setShowResched] = useState(false);
 
-  useEffect(() => { api.get(`/classes/${id}`).then(r => setKlass(r.data)).catch(()=>toast.error("Kelas tidak ditemukan")); }, [id]);
+  const loadReschedules = useCallback(() => {
+    api.get(`/reschedules?class_id=${id}`).then(r => setReschedules(r.data)).catch(()=>{});
+  }, [id]);
+  const loadClass = useCallback(() => {
+    api.get(`/classes/${id}`).then(r => { setKlass(r.data); if (!r.data.locked) loadReschedules(); })
+      .catch(()=>toast.error("Anda tidak memiliki akses ke kelas ini"));
+  }, [id, loadReschedules]);
+  useEffect(() => { loadClass(); }, [loadClass]);
 
   if (!klass) return <div className="text-slate-400 py-20 text-center">Memuat kelas...</div>;
+  if (klass.locked) return <ClassUnlock klass={klass} onUnlocked={loadClass}/>;
 
+  // Class only loads if the user may access it, so any teacher here can manage tugas/quiz.
+  const canManage = user.role === "super_admin" || user.role === "guru";
   const subjects = klass.subjects || [];
+  // Subjects this teacher may create content for (homeroom/super_admin => all)
+  const isHomeroom = klass.homeroom_teacher_id === user.id;
+  const teachSubjects = (user.role === "super_admin" || isHomeroom)
+    ? subjects
+    : subjects.filter(s => (user.subjects || []).includes(s));
+
+  const delResched = async (rid) => {
+    try { await api.delete(`/reschedules/${rid}`); toast.success("Pemberitahuan dihapus"); loadReschedules(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
+  };
 
   return (
     <div className="space-y-6" data-testid="class-detail-page">
@@ -61,7 +89,37 @@ export default function ClassDetail() {
         </div>
       </div>
 
-      {/* Subject filter */}
+      {/* Reschedule / ketidakhadiran guru */}
+      {reschedules.length > 0 && (
+        <div className="space-y-2" data-testid="reschedule-alerts">
+          {reschedules.map(r => (
+            <div key={r.id} className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5"/>
+              <div className="flex-1 text-sm">
+                <p className="font-bold text-amber-900">
+                  Guru berhalangan{r.subject ? ` — ${r.subject}` : ""} <span className="font-semibold text-amber-700">({r.reason_type})</span>
+                </p>
+                <p className="text-amber-800 mt-0.5">{r.reason}</p>
+                <p className="text-[11px] text-amber-700/80 mt-1">
+                  Oleh {r.teacher_name}{r.date ? ` • ${r.date}` : ""}
+                  {(r.new_date || r.new_time) && <span className="font-semibold"> • Pengganti: {r.new_date || ""} {r.new_time || ""}</span>}
+                </p>
+              </div>
+              {(user.role === "super_admin" || r.teacher_id === user.id) && (
+                <button data-testid={`delete-reschedule-${r.id}`} onClick={()=>delResched(r.id)} className="p-1 text-amber-700 hover:bg-amber-100 rounded-lg"><X className="w-4 h-4"/></button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isTeacher && (
+        <button data-testid="open-reschedule-button" onClick={()=>setShowResched(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/30 transition-all">
+          <CalendarClock className="w-4 h-4"/>Reschedule / Berhalangan
+        </button>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <button onClick={()=>setSubject("all")} data-testid="subject-filter-all"
           className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${subject==="all"?"bg-sky-600 text-white":"bg-white border border-slate-200 text-slate-600 hover:border-sky-400"}`}>
@@ -85,17 +143,116 @@ export default function ClassDetail() {
           className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="quiz"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
           <BrainCircuit className="w-4 h-4"/>Mini-Quiz
         </button>
+        <button data-testid="tab-ujian" onClick={()=>setTab("ujian")}
+          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="ujian"?"border-indigo-600 text-indigo-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <ShieldCheck className="w-4 h-4"/>Ujian
+        </button>
+        <button data-testid="tab-kas" onClick={()=>setTab("kas")}
+          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="kas"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <PiggyBank className="w-4 h-4"/>Uang Kas
+        </button>
+        <button data-testid="tab-bph" onClick={()=>setTab("bph")}
+          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="bph"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <Network className="w-4 h-4"/>BPH
+        </button>
       </div>
 
-      {tab === "tugas"
-        ? <TugasTab klass={klass} subject={subject} subjects={subjects} isTeacher={isTeacher} isStudent={isStudent}/>
-        : <QuizTab klass={klass} subject={subject} subjects={subjects} isTeacher={isTeacher} isStudent={isStudent}/>}
+      {isTeacher && !canManage && (
+        <div data-testid="readonly-badge" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800 font-medium">
+          Mode baca-saja — Anda bukan pembuat / wali kelas ini, jadi tidak dapat menambah atau mengubah tugas & quiz.
+        </div>
+      )}
+
+      {tab === "bph" ? <ClassBPH klass={klass}/> : tab === "kas" ? <ClassKas klass={klass}/>
+        : tab === "ujian" ? <ClassExam klass={klass} subject={subject} teachSubjects={teachSubjects} isTeacher={isTeacher} canManage={canManage}/>
+        : tab === "tugas"
+        ? <TugasTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
+        : <QuizTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
+
+      {showResched && <RescheduleModal klass={klass} teachSubjects={teachSubjects} onClose={()=>setShowResched(false)} onDone={()=>{loadReschedules(); setShowResched(false);}}/>}
+    </div>
+  );
+}
+
+function RescheduleModal({ klass, teachSubjects, onClose, onDone }) {
+  const [f, setF] = useState({ subject: teachSubjects[0] || "", reason_type: "sakit", reason: "", date: "", new_date: "", new_time: "" });
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!f.reason.trim()) return toast.error("Alasan wajib diisi");
+    setBusy(true);
+    try {
+      await api.post("/reschedules", { class_id: klass.id, ...f, subject: f.subject || null });
+      toast.success("Pemberitahuan terkirim ke siswa kelas ini");
+      onDone();
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal mengirim"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-slate-200">
+          <h3 className="font-heading text-xl font-bold flex items-center gap-2"><CalendarClock className="w-5 h-5 text-amber-500"/>Reschedule / Berhalangan</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-slate-500">Pemberitahuan akan tampil sebagai alert di kelas <b>{klass.name}</b> dan dikirim sebagai notifikasi ke semua siswa kelas tersebut.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Mata Pelajaran</label>
+              <select data-testid="resched-subject" value={f.subject} onChange={e=>setF({...f,subject:e.target.value})}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none">
+                <option value="">(Umum)</option>
+                {teachSubjects.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Alasan</label>
+              <select data-testid="resched-reason-type" value={f.reason_type} onChange={e=>setF({...f,reason_type:e.target.value})}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none">
+                <option value="sakit">Sakit</option>
+                <option value="rapat">Rapat</option>
+                <option value="berhalangan">Berhalangan</option>
+                <option value="lainnya">Lainnya</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Keterangan / Alasan Lengkap *</label>
+            <textarea data-testid="resched-reason" rows={3} value={f.reason} onChange={e=>setF({...f,reason:e.target.value})}
+              placeholder="Tuliskan alasan ketidakhadiran atau kebutuhan reschedule..."
+              className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none"/>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Tgl Berhalangan</label>
+              <input type="date" value={f.date} onChange={e=>setF({...f,date:e.target.value})}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none"/>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Tgl Pengganti</label>
+              <input type="date" value={f.new_date} onChange={e=>setF({...f,new_date:e.target.value})}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none"/>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Jam Pengganti</label>
+              <input type="time" value={f.new_time} onChange={e=>setF({...f,new_time:e.target.value})}
+                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-amber-500 outline-none"/>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border-2 border-slate-200 rounded-xl font-semibold hover:bg-slate-50">Batal</button>
+            <button data-testid="save-reschedule-button" disabled={busy} onClick={save} className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl font-semibold hover:bg-amber-600 disabled:opacity-60">
+              {busy ? "Mengirim..." : "Kirim Pemberitahuan"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ---------------- TUGAS TAB ---------------- */
-function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
+function TugasTab({ klass, subject, subjects, teachSubjects, isTeacher, isStudent, canManage }) {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [detailFor, setDetailFor] = useState(null);
@@ -109,7 +266,7 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
 
   return (
     <div className="space-y-4">
-      {isTeacher && (
+      {canManage && (
         <button data-testid="new-assignment-button" onClick={()=>setShowNew(true)}
           className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold flex items-center gap-2">
           <Plus className="w-4 h-4"/>Beri Tugas Baru
@@ -124,7 +281,7 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
                 <span className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><ClipboardList className="w-5 h-5"/></span>
                 {a.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{a.subject}</span>}
               </div>
-              {isTeacher && (
+              {canManage && (
                 <div className="flex gap-1">
                   <button data-testid={`edit-assignment-${a.id}`}
                     onClick={()=>setEditItem(a)}
@@ -150,8 +307,8 @@ function TugasTab({ klass, subject, subjects, isTeacher, isStudent }) {
         ))}
       </div>
 
-      {showNew && <NewAssignModal klass={klass} subjects={subjects} onClose={()=>setShowNew(false)} onDone={()=>{load(); setShowNew(false);}}/>}
-      {editItem && <NewAssignModal klass={klass} subjects={subjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load(); setEditItem(null);}}/>}
+      {showNew && <NewAssignModal klass={klass} subjects={teachSubjects} onClose={()=>setShowNew(false)} onDone={()=>{load(); setShowNew(false);}}/>}
+      {editItem && <NewAssignModal klass={klass} subjects={teachSubjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load(); setEditItem(null);}}/>}
       {detailFor && <AssignDetailModal assignment={detailFor} isTeacher={isTeacher} isStudent={isStudent} onClose={()=>setDetailFor(null)}/>}
     </div>
   );
@@ -235,6 +392,7 @@ function NewAssignModal({ klass, subjects, initial, onClose, onDone }) {
 
 function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
   const [subs, setSubs] = useState([]);
+  const [roster, setRoster] = useState(null); // submission warehouse (status only)
   const [content, setContent] = useState("");
   const [atts, setAtts] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -245,6 +403,7 @@ function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
       setSubs(r.data);
       if (isStudent && r.data[0]) { setContent(r.data[0].content || ""); setAtts(r.data[0].attachments || []); }
     });
+    api.get(`/submissions/status?assignment_id=${assignment.id}`).then(r => setRoster(r.data)).catch(()=>{});
   }, [assignment.id, isStudent]);
   useEffect(() => { loadSubs(); }, [loadSubs]);
 
@@ -324,6 +483,31 @@ function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
               <button data-testid="submit-assignment-button" disabled={busy||uploading} onClick={submit} className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 disabled:opacity-60">
                 {mySub ? "Perbarui Pengumpulan" : "Kumpulkan Tugas"}
               </button>
+
+              {/* Gudang pengumpulan: lihat siapa yang sudah mengumpulkan (tanpa membuka file) */}
+              {roster && (
+                <div className="pt-2 border-t border-slate-200" data-testid="submission-warehouse">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase text-slate-500 flex items-center gap-1.5"><Users2 className="w-4 h-4"/>Gudang Pengumpulan</p>
+                    <span className="text-xs font-bold text-sky-600">{roster.submitted_count}/{roster.total} terkumpul</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Kamu bisa melihat siapa yang sudah mengumpulkan, tetapi tidak dapat membuka tugas siswa lain.</p>
+                  <div className="mt-2 space-y-1.5 max-h-56 overflow-y-auto">
+                    {roster.roster.map(r => (
+                      <div key={r.student_id} className={`flex items-center justify-between px-3 py-2 rounded-lg ${r.is_me ? "bg-sky-50 border border-sky-200" : "bg-slate-50"}`}>
+                        <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                          {r.submitted ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Circle className="w-4 h-4 text-slate-300"/>}
+                          {r.student_name}{r.is_me && <span className="text-[10px] font-bold text-sky-600">(Kamu)</span>}
+                        </span>
+                        <span className={`text-[11px] font-semibold ${r.submitted ? "text-emerald-600" : "text-slate-400"}`}>
+                          {r.submitted ? "Sudah" : "Belum"}
+                        </span>
+                      </div>
+                    ))}
+                    {roster.roster.length === 0 && <p className="text-sm text-slate-400 text-center py-3">Belum ada siswa terdaftar di kelas ini.</p>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -333,12 +517,13 @@ function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
 }
 
 /* ---------------- QUIZ TAB ---------------- */
-function QuizTab({ klass, subject, subjects, isTeacher }) {
+function QuizTab({ klass, subject, subjects, teachSubjects, isTeacher, canManage }) {
   const [list, setList] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [taking, setTaking] = useState(null);
-  const [answers, setAnswers] = useState([]);
   const [editItem, setEditItem] = useState(null);
+  const [unlocking, setUnlocking] = useState(null);
+  const startQuiz = (q) => { if (q.locked) return setUnlocking(q); setTaking(q); };
 
   const load = useCallback(() => {
     const q = subject !== "all" ? `&subject=${encodeURIComponent(subject)}` : "";
@@ -346,15 +531,10 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
   }, [klass.id, subject]);
   useEffect(() => { load(); }, [load]);
 
-  const submit = async () => {
-    const r = await api.post("/quizzes/attempt", { quiz_id: taking.id, answers });
-    toast.success(`Skor: ${r.data.score}/${r.data.total} (${r.data.percent.toFixed(0)}%)`);
-    setTaking(null);
-  };
 
   return (
     <div className="space-y-4">
-      {isTeacher && (
+      {canManage && (
         <button data-testid="new-quiz-button" onClick={()=>setShowNew(true)} className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold flex items-center gap-2">
           <Plus className="w-4 h-4"/>Buat Mini-Quiz
         </button>
@@ -367,8 +547,9 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
               <div className="flex items-center gap-2">
                 <span className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center"><BrainCircuit className="w-5 h-5"/></span>
                 {q.subject && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-700">{q.subject}</span>}
+                {q.has_password && <span data-testid={`quiz-lock-${q.id}`} className={`ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.locked?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}><Lock className="w-3 h-3"/>{q.locked?"Terkunci":"Berpassword"}</span>}
               </div>
-              {isTeacher && (
+              {canManage && (
                 <div className="flex gap-1">
                   <button data-testid={`edit-quiz-${q.id}`} onClick={()=>setEditItem(q)}
                     className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg"><Pencil className="w-4 h-4"/></button>
@@ -379,38 +560,17 @@ function QuizTab({ klass, subject, subjects, isTeacher }) {
               )}
             </div>
             <h3 className="font-heading font-bold mt-3">{q.title}</h3>
-            <p className="text-xs text-slate-500 mt-1">{(q.questions||[]).length} soal</p>
-            {!isTeacher && <button data-testid={`take-quiz-${q.id}`} onClick={()=>{setTaking(q); setAnswers(Array(q.questions.length).fill(-1));}}
+            <p className="text-xs text-slate-500 mt-1">{q.question_count ?? (q.questions||[]).length} soal{q.time_limit ? ` · ⏱ ${q.time_limit} menit` : ""}</p>
+            {!isTeacher && <button data-testid={`take-quiz-${q.id}`} onClick={()=>startQuiz(q)}
               className="mt-3 w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800">Kerjakan</button>}
           </div>
         ))}
       </div>
 
-      {showNew && <NewQuizModal klass={klass} subjects={subjects} onClose={()=>setShowNew(false)} onDone={()=>{load();setShowNew(false);}}/>}
-      {editItem && <NewQuizModal klass={klass} subjects={subjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load();setEditItem(null);}}/>}
-      {taking && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold">{taking.title}</h3>
-              <button onClick={()=>setTaking(null)} className="p-1.5"><X className="w-5 h-5"/></button></div>
-            <div className="p-5 space-y-4">
-              {taking.questions.map((q,i)=>(
-                <div key={i} className="p-4 bg-slate-50 rounded-xl">
-                  <p className="font-semibold text-sm mb-2">{i+1}. {q.q}</p>
-                  <div className="space-y-1.5">
-                    {q.options.map((o,oi)=>(
-                      <label key={oi} className="flex items-center gap-2 text-sm p-2 rounded-lg hover:bg-white cursor-pointer">
-                        <input type="radio" checked={answers[i]===oi} onChange={()=>{const a=[...answers];a[i]=oi;setAnswers(a);}}/>{o}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <button data-testid="submit-quiz-button" onClick={submit} className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold">Kirim Jawaban</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showNew && <NewQuizModal klass={klass} subjects={teachSubjects} onClose={()=>setShowNew(false)} onDone={()=>{load();setShowNew(false);}}/>}
+      {editItem && <NewQuizModal klass={klass} subjects={teachSubjects} initial={editItem} onClose={()=>setEditItem(null)} onDone={()=>{load();setEditItem(null);}}/>}
+      {unlocking && <QuizUnlockModal quiz={unlocking} onClose={()=>setUnlocking(null)} onUnlocked={(qz)=>{setUnlocking(null); load(); startQuiz(qz);}}/>}
+      {taking && <QuizTakeModal quiz={taking} onClose={()=>setTaking(null)} onDone={()=>setTaking(null)}/>}
     </div>
   );
 }
@@ -421,13 +581,16 @@ function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
   const [subject, setSubject] = useState(initial?.subject || subjects[0] || "");
   const [qs, setQs] = useState(initial?.questions?.length ? initial.questions.map(q=>({q:q.q,options:[...(q.options||["","","",""])],answer:q.answer ?? 0})) : [{ q:"", options:["","","",""], answer:0 }]);
   const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState("");
+  const [removePw, setRemovePw] = useState(false);
+  const [timeLimit, setTimeLimit] = useState(initial?.time_limit || "");
   const add = () => setQs([...qs, { q:"", options:["","","",""], answer:0 }]);
   const submit = async () => {
     if (!title.trim()) return toast.error("Judul quiz wajib diisi");
     setBusy(true);
     try {
-      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs }); toast.success("Quiz diperbarui"); }
-      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs }); toast.success("Quiz dibuat"); }
+      if (isEdit) { await api.patch(`/quizzes/${initial.id}`, { title, subject, questions: qs, time_limit: +timeLimit || 0, ...quizPasswordBody(password, removePw) }); toast.success("Quiz diperbarui"); }
+      else { await api.post("/quizzes", { title, kelas: klass.name, class_id: klass.id, subject, questions: qs, time_limit: +timeLimit || 0, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); }
       onDone();
     }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
@@ -450,6 +613,8 @@ function NewQuizModal({ klass, subjects, initial, onClose, onDone }) {
               <input placeholder="Mapel" value={subject} onChange={e=>setSubject(e.target.value)} className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
             )}
           </div>
+          <QuizTimeField value={timeLimit} onChange={setTimeLimit}/>
+          <QuizPasswordField hasPassword={!!initial?.has_password} value={password} onChange={setPassword} remove={removePw} onRemove={setRemovePw}/>
           {qs.map((q,qi)=>(
             <div key={qi} className="p-3 bg-slate-50 rounded-xl space-y-2 relative">
               <button onClick={()=>setQs(qs.filter((_,i)=>i!==qi))} className="absolute top-2 right-2 text-rose-500"><Trash2 className="w-4 h-4"/></button>

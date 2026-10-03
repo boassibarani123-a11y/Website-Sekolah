@@ -1,0 +1,20 @@
+{
+  "summary": "Iteration 17 — full backend + frontend testing of SMA Negeri 1 Laguboti rebrand/features. All 3 pytest cases green and every requested UI flow verified: public GET /api/settings returns new Laguboti fields (npsn, nss, land_area 3.444 m², accreditation A, principal Panjaitan, mission=13 items, history_periods=14 items, goals/environment/goals_short/medium/long/targets, login_* fields); PATCH /api/settings persists login text + list fields for super_admin and is correctly rejected without auth; Login page shows 'SMA NEGERI 1 LAGUBOTI' branding + school-info card (Berdiri 1966, NPSN 10208460, Akreditasi A, address/phone/email) + working 'Lihat Presentasi' link to /presentasi; Presentation deck has exactly 11 slides including PPDB Online, Tugas & Mini-Quiz and Kartu Pelajar Digital, slide-prev/next and slide-print visible; Informasi Sekolah page as super admin renders Profil, Visi, Misi, Tujuan, Berwawasan Lingkungan, Jangka pendek/menengah/panjang, Sasaran; editing 'about' saves + persists after reload with success toast; Settings page 'D. Teks Halaman Login' section exposes all six login-*-input fields, saving login_headline is reflected on /login immediately. Values were restored to original after each mutation.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter17_laguboti_settings.py", "/app/test_reports/pytest/iter17.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 3100+ lines — consider splitting into routers (auth/settings/academic/ppdb) for maintainability.",
+    "After successful login, frontend redirects to '/' instead of '/dashboard' — not a bug (both render dashboard) but inconsistent with the review request wording.",
+    "Two background 401 requests observed on first login render (likely /api/me or notifications polling before token set) — harmless but worth guarding."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter17_laguboti_settings.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "boassibarani123@gmail.com / Boas12345io (super_admin)",
+  "seed_data_creation": "None. Test used TEST_* markers for mission/goals/history_periods/about/login_headline and restored originals after each check.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite for this iteration is at /app/backend/tests/test_iter17_laguboti_settings.py. The Settings singleton is stored in collection 'settings' with _id='singleton'; DEFAULT_SETTINGS seeds Laguboti data on first boot via get_settings(). Login endpoint returns token in 'access_token' field.",
+  "rca of the issue": "No issues found."
+}

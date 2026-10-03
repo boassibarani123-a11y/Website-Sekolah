@@ -2,14 +2,15 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
-  BrainCircuit, Camera, PiggyBank, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School } from "lucide-react";
+  BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
+  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 
 const MENU = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: "*" },
   { to: "/school-info", label: "Informasi Sekolah", icon: Info, roles: "*" },
+  { to: "/org-structure", label: "Struktur Organisasi", icon: Network, roles: "*" },
   { to: "/my-card", label: "Kartu Saya", icon: IdCard, roles: ["siswa","ketua_kelas","ketua_osis"] },
   { to: "/accounts", label: "Kelola Akun", icon: UsersRound, roles: ["super_admin"] },
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, roles: ["super_admin"] },
@@ -22,7 +23,6 @@ const MENU = [
   { to: "/classes", label: "Kelas", icon: School, roles: "*" },
   { to: "/reports", label: "Rapor Digital", icon: FileText, roles: ["guru","kepsek","super_admin","siswa","orang_tua"] },
   { to: "/chats", label: "Chat Wali-Ortu", icon: MessageSquare, roles: ["guru","orang_tua","super_admin"] },
-  { to: "/uang-kas", label: "Uang Kas", icon: PiggyBank, roles: "*" },
   { to: "/social-fund", label: "Dana Sosial", icon: HandCoins, roles: ["super_admin","kepsek","ketua_osis"] },
   { to: "/elections", label: "Pemilu OSIS", icon: Vote, roles: "*" },
   { to: "/achievements", label: "Prestasi", icon: Trophy, roles: "*" },

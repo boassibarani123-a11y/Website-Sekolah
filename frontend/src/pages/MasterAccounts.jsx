@@ -84,13 +84,26 @@ export default function MasterAccounts() {
 }
 
 function CreateModal({onClose, onCreated}) {
-  const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", kelas:"", jurusan:"IPA", photo:"", parent_name:"", parent_email:"", parent_phone:"", student_id:""});
+  const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", kelas:"", jurusan:"IPA", photo:"", parent_name:"", parent_email:"", parent_phone:"", student_id:"", subjects:[]});
   const [siswaList, setSiswaList] = useState([]);
+  const [classList, setClassList] = useState([]);
+  const [subjectList, setSubjectList] = useState([]);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.get("/classes").then(r=>setClassList(r.data)).catch(()=>{});
+    api.get("/subjects").then(r=>setSubjectList(r.data)).catch(()=>{});
+  }, []);
   useEffect(() => { if (form.role === "orang_tua") api.get("/users?role=siswa").then(r=>setSiswaList(r.data)); }, [form.role]);
+  const toggleSubject = (name) => setForm(f => ({...f, subjects: f.subjects.includes(name) ? f.subjects.filter(s=>s!==name) : [...f.subjects, name]}));
   const submit = async e => {
     e.preventDefault(); setBusy(true);
-    try { await api.post("/users", form); toast.success("Akun berhasil dibuat"); onCreated(); }
+    // Drop empty optional fields so EmailStr/validators don't reject "" values
+    const payload = {};
+    Object.entries(form).forEach(([k, v]) => {
+      if (Array.isArray(v)) { if (v.length) payload[k] = v; }
+      else if (typeof v === "string" ? v.trim() !== "" : v != null) payload[k] = v;
+    });
+    try { await api.post("/users", payload); toast.success("Akun berhasil dibuat"); onCreated(); }
     catch (err) { toast.error(err.response?.data?.detail || "Gagal membuat akun"); }
     finally { setBusy(false); }
   };
@@ -126,7 +139,15 @@ function CreateModal({onClose, onCreated}) {
             <>
               <div className="grid grid-cols-3 gap-3">
                 <Input label="NISN" v={form.nisn} on={v=>setForm({...form,nisn:v})}/>
-                <Input label="Kelas" v={form.kelas} on={v=>setForm({...form,kelas:v})} placeholder="XI IPA 1"/>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Kelas</label>
+                  <select data-testid="new-account-kelas" value={form.kelas} onChange={e=>setForm({...form,kelas:e.target.value})}
+                    className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
+                    <option value="">-- Pilih kelas --</option>
+                    {classList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                  {classList.length===0 && <p className="mt-1 text-[10px] text-amber-600">Belum ada kelas. Buat kelas dulu di menu Ruang Kelas.</p>}
+                </div>
                 <Input label="Jurusan" v={form.jurusan} on={v=>setForm({...form,jurusan:v})}/>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -136,7 +157,30 @@ function CreateModal({onClose, onCreated}) {
             </>
           )}
           {form.role === "guru" && (
-            <Input label="Wali Kelas (opsional)" v={form.kelas} on={v=>setForm({...form,kelas:v})} placeholder="XI IPA 1"/>
+            <>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Mata Pelajaran yang Diampu</label>
+                <div className="mt-1.5 flex flex-wrap gap-2" data-testid="guru-subjects">
+                  {subjectList.length===0 && <p className="text-[11px] text-amber-600">Belum ada mapel. Tambahkan di Ruang Kelas → Kelola Mapel.</p>}
+                  {subjectList.map(s=>(
+                    <button type="button" key={s.id} data-testid={`subject-pick-${s.name}`} onClick={()=>toggleSubject(s.name)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${form.subjects.includes(s.name) ? "bg-sky-600 border-sky-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-sky-400"}`}>
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[10px] text-slate-400">Guru otomatis dapat mengakses semua kelas yang memuat mapel ini.</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Wali Kelas (opsional)</label>
+                <select value={form.kelas} onChange={e=>setForm({...form,kelas:e.target.value})}
+                  className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
+                  <option value="">-- Bukan wali kelas --</option>
+                  {classList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+                <p className="mt-1 text-[10px] text-slate-400">Penetapan wali kelas resmi dilakukan di menu Ruang Kelas.</p>
+              </div>
+            </>
           )}
           {form.role === "orang_tua" && (
             <div>
