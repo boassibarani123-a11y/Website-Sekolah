@@ -365,7 +365,7 @@ app.add_middleware(
 )
 
 # ---------------- ROLES ----------------
-ROLES = ["super_admin", "kepsek", "staff_tu", "guru", "siswa", "ketua_osis", "ketua_kelas", "orang_tua"]
+ROLES = ["super_admin", "kepsek", "staff_tu", "guru", "siswa", "ketua_osis", "ketua_kelas", "orang_tua", "admin_perpus"]
 
 # ---------------- UTIL ----------------
 def now_iso():
@@ -2910,6 +2910,368 @@ async def ppdb_export(user=Depends(require_roles("super_admin","kepsek","staff_t
                         columns, rows, summary, "PPDB")
     return xlsx_response(data, "PPDB_Rekap.xlsx")
 
+# ==================== SMART LIBRARY (PERPUSTAKAAN PINTAR) ====================
+from datetime import timedelta, date as _date
+
+LIB_DEFAULTS = {"loan_days": 7, "max_books": 3, "fine_per_day": 500, "currency": "Rp"}
+LIB_MANAGE = require_roles("admin_perpus")  # super_admin auto-allowed by require_roles
+
+async def get_lib_config():
+    doc = await db.library_config.find_one({"_id": "singleton"})
+    if not doc:
+        await db.library_config.insert_one({"_id": "singleton", **LIB_DEFAULTS})
+        return LIB_DEFAULTS.copy()
+    doc.pop("_id", None)
+    return {**LIB_DEFAULTS, **doc}
+
+class BookIn(BaseModel):
+    title: str
+    author: Optional[str] = ""
+    isbn: Optional[str] = None
+    category: Optional[str] = "Umum"
+    publisher: Optional[str] = None
+    year: Optional[int] = None
+    total_copies: int = 1
+    location: Optional[str] = None       # lokasi rak
+    cover_url: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class BookUpdate(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    isbn: Optional[str] = None
+    category: Optional[str] = None
+    publisher: Optional[str] = None
+    year: Optional[int] = None
+    total_copies: Optional[int] = None
+    location: Optional[str] = None
+    cover_url: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class LoanIn(BaseModel):
+    book_id: str
+    student_id: Optional[str] = None     # admin desk borrows on behalf of a student
+
+class ReviewIn(BaseModel):
+    rating: int
+    text: Optional[str] = ""
+
+class LibConfigUpdate(BaseModel):
+    loan_days: Optional[int] = None
+    max_books: Optional[int] = None
+    fine_per_day: Optional[int] = None
+
+# ---- specific routes BEFORE /books/{bid} ----
+@api.get("/library/config")
+async def lib_config(user=Depends(get_current_user)):
+    return await get_lib_config()
+
+@api.patch("/library/config")
+async def lib_config_update(body: LibConfigUpdate, user=Depends(LIB_MANAGE)):
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.library_config.update_one({"_id": "singleton"}, {"$set": upd}, upsert=True)
+    return await get_lib_config()
+
+@api.get("/books/categories")
+async def book_categories(user=Depends(get_current_user)):
+    cats = await db.books.distinct("category", dscope(user))
+    return sorted([c for c in cats if c])
+
+@api.get("/library/stats")
+async def library_stats(user=Depends(LIB_MANAGE)):
+    scope = dscope(user)
+    books = await db.books.find(scope, {"_id": 0}).to_list(5000)
+    total_titles = len(books)
+    total_copies = sum(int(b.get("total_copies", 0) or 0) for b in books)
+    available = sum(int(b.get("available_copies", 0) or 0) for b in books)
+    borrowed = await db.loans.count_documents({**scope, "status": "dipinjam"})
+    today = datetime.now(timezone.utc).date().isoformat()
+    overdue = await db.loans.count_documents({**scope, "status": "dipinjam", "due_date": {"$lt": today}})
+    reservations = await db.reservations.count_documents({**scope, "status": "menunggu"})
+    returns_today = await db.loans.count_documents({**scope, "status": "dikembalikan", "returned_at": {"$gte": today}})
+    popular = sorted(books, key=lambda b: b.get("borrow_count", 0), reverse=True)[:5]
+    popular = [{"id": b["id"], "title": b["title"], "author": b.get("author"),
+                "cover_url": b.get("cover_url"), "borrow_count": b.get("borrow_count", 0)} for b in popular]
+    by_cat = {}
+    for b in books:
+        by_cat[b.get("category") or "Umum"] = by_cat.get(b.get("category") or "Umum", 0) + 1
+    return {"total_titles": total_titles, "total_copies": total_copies, "available": available,
+            "borrowed": borrowed, "overdue": overdue, "reservations": reservations,
+            "returns_today": returns_today, "popular": popular,
+            "by_category": [{"name": k, "value": v} for k, v in sorted(by_cat.items())]}
+
+@api.get("/library/popular")
+async def library_popular(user=Depends(get_current_user)):
+    books = await db.books.find(dscope(user), {"_id": 0}).sort("borrow_count", -1).to_list(8)
+    return books
+
+@api.get("/books")
+async def list_books(q: Optional[str] = None, category: Optional[str] = None,
+                     available: Optional[str] = None, user=Depends(get_current_user)):
+    query = dscope(user)
+    if q:
+        rx = {"$regex": q, "$options": "i"}
+        query["$or"] = [{"title": rx}, {"author": rx}, {"isbn": rx}, {"category": rx}, {"tags": rx}]
+    if category and category not in ("", "Semua"):
+        query["category"] = category
+    if available == "true":
+        query["available_copies"] = {"$gt": 0}
+    return await db.books.find(query, {"_id": 0}).sort("title", 1).to_list(1000)
+
+@api.get("/books/{bid}")
+async def get_book(bid: str, user=Depends(get_current_user)):
+    b = await db.books.find_one({"id": bid}, {"_id": 0})
+    if not b:
+        raise HTTPException(404, "Buku tidak ditemukan")
+    reviews = await db.book_reviews.find({"book_id": bid}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    b["reviews"] = reviews
+    b["rating_avg"] = round(sum(r["rating"] for r in reviews) / len(reviews), 1) if reviews else 0
+    b["rating_count"] = len(reviews)
+    return b
+
+@api.post("/books")
+async def create_book(body: BookIn, user=Depends(LIB_MANAGE)):
+    tc = max(1, int(body.total_copies or 1))
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "total_copies": tc,
+           "available_copies": tc, "borrow_count": 0, "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.books.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.patch("/books/{bid}")
+async def update_book(bid: str, body: BookUpdate, user=Depends(LIB_MANAGE)):
+    book = await db.books.find_one({"id": bid})
+    if not book:
+        raise HTTPException(404, "Buku tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "total_copies" in upd:
+        new_total = max(0, int(upd["total_copies"]))
+        delta = new_total - int(book.get("total_copies", 0))
+        new_avail = max(0, int(book.get("available_copies", 0)) + delta)
+        upd["total_copies"] = new_total
+        upd["available_copies"] = new_avail
+    if upd:
+        await db.books.update_one({"id": bid}, {"$set": upd})
+    return await db.books.find_one({"id": bid}, {"_id": 0})
+
+@api.delete("/books/{bid}")
+async def delete_book(bid: str, user=Depends(LIB_MANAGE)):
+    active = await db.loans.count_documents({"book_id": bid, "status": "dipinjam"})
+    if active > 0:
+        raise HTTPException(400, f"Tidak bisa menghapus: masih ada {active} eksemplar dipinjam")
+    await db.books.delete_one({"id": bid})
+    await db.reservations.delete_many({"book_id": bid})
+    return {"ok": True}
+
+# ---- LOANS (sirkulasi) ----
+@api.get("/loans/my")
+async def my_loans(user=Depends(get_current_user)):
+    loans = await db.loans.find({"borrower_id": user["id"]}, {"_id": 0}).sort("borrowed_at", -1).to_list(500)
+    today = datetime.now(timezone.utc).date()
+    for l in loans:
+        if l.get("status") == "dipinjam":
+            due = _date.fromisoformat(l["due_date"])
+            l["overdue"] = today > due
+            l["days_late"] = max(0, (today - due).days)
+    return loans
+
+@api.get("/loans")
+async def list_loans(status: Optional[str] = None, user=Depends(get_current_user)):
+    q = dscope(user)
+    if user["role"] not in ("admin_perpus", "super_admin"):
+        q["borrower_id"] = user["id"]
+    if status == "active":
+        q["status"] = "dipinjam"
+    elif status == "returned":
+        q["status"] = "dikembalikan"
+    loans = await db.loans.find(q, {"_id": 0}).sort("borrowed_at", -1).to_list(3000)
+    today = datetime.now(timezone.utc).date()
+    for l in loans:
+        if l.get("status") == "dipinjam":
+            due = _date.fromisoformat(l["due_date"])
+            l["overdue"] = today > due
+            l["days_late"] = max(0, (today - due).days)
+    return loans
+
+@api.post("/loans")
+async def borrow_book(body: LoanIn, user=Depends(get_current_user)):
+    cfg = await get_lib_config()
+    if body.student_id:
+        if user["role"] not in ("admin_perpus", "super_admin"):
+            raise HTTPException(403, "Hanya Admin Perpus yang bisa meminjamkan atas nama siswa")
+        borrower = await db.users.find_one({"id": body.student_id, **dscope(user)})
+        if not borrower:
+            raise HTTPException(404, "Siswa tidak ditemukan")
+    else:
+        borrower = user
+    book = await db.books.find_one({"id": body.book_id, **dscope(user)})
+    if not book:
+        raise HTTPException(404, "Buku tidak ditemukan")
+    if int(book.get("available_copies", 0)) <= 0:
+        raise HTTPException(400, "Stok buku habis / sedang dipinjam semua")
+    active = await db.loans.count_documents({"borrower_id": borrower["id"], "status": "dipinjam"})
+    if active >= int(cfg["max_books"]):
+        raise HTTPException(400, f"Batas maksimal {cfg['max_books']} buku per anggota sudah tercapai")
+    dup = await db.loans.find_one({"borrower_id": borrower["id"], "book_id": book["id"], "status": "dipinjam"})
+    if dup:
+        raise HTTPException(400, "Anggota masih meminjam judul yang sama")
+    now = datetime.now(timezone.utc)
+    due = now + timedelta(days=int(cfg["loan_days"]))
+    loan = {"id": str(uuid.uuid4()), "book_id": book["id"], "book_title": book["title"],
+            "book_cover": book.get("cover_url"), "borrower_id": borrower["id"],
+            "borrower_name": borrower["name"], "kelas": borrower.get("kelas"),
+            "borrowed_at": now_iso(), "due_date": due.date().isoformat(), "returned_at": None,
+            "status": "dipinjam", "fine": 0, "days_late": 0, "handled_by": user["name"]}
+    dstamp(loan, user)
+    await db.loans.insert_one(loan)
+    loan.pop("_id", None)
+    await db.books.update_one({"id": book["id"]}, {"$inc": {"available_copies": -1, "borrow_count": 1}})
+    # fulfil reservation if borrower had one
+    await db.reservations.update_many(
+        {"book_id": book["id"], "user_id": borrower["id"], "status": "menunggu"},
+        {"$set": {"status": "selesai"}})
+    return loan
+
+@api.post("/loans/{lid}/return")
+async def return_book(lid: str, user=Depends(get_current_user)):
+    loan = await db.loans.find_one({"id": lid})
+    if not loan:
+        raise HTTPException(404, "Data peminjaman tidak ditemukan")
+    if user["role"] not in ("admin_perpus", "super_admin") and loan["borrower_id"] != user["id"]:
+        raise HTTPException(403, "Tidak berwenang")
+    if loan["status"] == "dikembalikan":
+        return {"ok": True, "fine": loan.get("fine", 0), "days_late": loan.get("days_late", 0)}
+    cfg = await get_lib_config()
+    today = datetime.now(timezone.utc).date()
+    due = _date.fromisoformat(loan["due_date"])
+    days_late = max(0, (today - due).days)
+    fine = days_late * int(cfg["fine_per_day"])
+    await db.loans.update_one({"id": lid}, {"$set": {"status": "dikembalikan",
+                              "returned_at": now_iso(), "fine": fine, "days_late": days_late}})
+    await db.books.update_one({"id": loan["book_id"]}, {"$inc": {"available_copies": 1}})
+    nextq = await db.reservations.find_one({"book_id": loan["book_id"], "status": "menunggu"}, sort=[("created_at", 1)])
+    if nextq:
+        await notify([nextq["user_id"]], "📚 Buku tersedia",
+                     f"Buku '{loan['book_title']}' yang Anda reservasi kini tersedia untuk dipinjam.", "/library")
+    return {"ok": True, "fine": fine, "days_late": days_late}
+
+@api.get("/library/loans/export")
+async def export_loans(user=Depends(LIB_MANAGE)):
+    docs = await db.loans.find(dscope(user), {"_id": 0}).sort("borrowed_at", -1).to_list(5000)
+    columns = ["Judul Buku", "Peminjam", "Kelas", "Tgl Pinjam", "Jatuh Tempo", "Dikembalikan", "Status", "Telat (hari)", "Denda"]
+    rows = [{"Judul Buku": d.get("book_title"), "Peminjam": d.get("borrower_name"),
+             "Kelas": d.get("kelas") or "-", "Tgl Pinjam": (d.get("borrowed_at") or "")[:10],
+             "Jatuh Tempo": d.get("due_date") or "-",
+             "Dikembalikan": (d.get("returned_at") or "-")[:10],
+             "Status": (d.get("status") or "").upper(), "Telat (hari)": d.get("days_late", 0),
+             "Denda": d.get("fine", 0)} for d in docs]
+    summary = {"Total Transaksi": len(docs),
+               "Sedang Dipinjam": sum(1 for d in docs if d.get("status") == "dipinjam"),
+               "Dikembalikan": sum(1 for d in docs if d.get("status") == "dikembalikan"),
+               "Total Denda": sum(int(d.get("fine", 0) or 0) for d in docs)}
+    data = pretty_excel("Laporan Sirkulasi Perpustakaan",
+                        f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
+                        columns, rows, summary, "Sirkulasi")
+    return xlsx_response(data, "Perpustakaan_Sirkulasi.xlsx")
+
+# ---- RESERVATIONS ----
+@api.get("/reservations")
+async def list_reservations(user=Depends(get_current_user)):
+    q = dscope(user)
+    if user["role"] not in ("admin_perpus", "super_admin"):
+        q["user_id"] = user["id"]
+    return await db.reservations.find(q, {"_id": 0}).sort("created_at", 1).to_list(1000)
+
+@api.post("/books/{bid}/reserve")
+async def reserve_book(bid: str, user=Depends(get_current_user)):
+    book = await db.books.find_one({"id": bid, **dscope(user)})
+    if not book:
+        raise HTTPException(404, "Buku tidak ditemukan")
+    if int(book.get("available_copies", 0)) > 0:
+        raise HTTPException(400, "Buku tersedia — silakan langsung pinjam")
+    dup = await db.reservations.find_one({"book_id": bid, "user_id": user["id"], "status": "menunggu"})
+    if dup:
+        raise HTTPException(400, "Anda sudah mereservasi buku ini")
+    doc = {"id": str(uuid.uuid4()), "book_id": bid, "book_title": book["title"],
+           "book_cover": book.get("cover_url"), "user_id": user["id"], "user_name": user["name"],
+           "kelas": user.get("kelas"), "status": "menunggu", "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.reservations.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.delete("/reservations/{rid}")
+async def cancel_reservation(rid: str, user=Depends(get_current_user)):
+    r = await db.reservations.find_one({"id": rid})
+    if not r:
+        raise HTTPException(404, "Reservasi tidak ditemukan")
+    if user["role"] not in ("admin_perpus", "super_admin") and r["user_id"] != user["id"]:
+        raise HTTPException(403, "Tidak berwenang")
+    await db.reservations.delete_one({"id": rid})
+    return {"ok": True}
+
+# ---- REVIEWS ----
+@api.post("/books/{bid}/review")
+async def add_review(bid: str, body: ReviewIn, user=Depends(get_current_user)):
+    if body.rating < 1 or body.rating > 5:
+        raise HTTPException(400, "Rating harus 1-5")
+    book = await db.books.find_one({"id": bid, **dscope(user)})
+    if not book:
+        raise HTTPException(404, "Buku tidak ditemukan")
+    doc = {"book_id": bid, "user_id": user["id"], "user_name": user["name"],
+           "rating": body.rating, "text": (body.text or "").strip(), "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.book_reviews.update_one({"book_id": bid, "user_id": user["id"]}, {"$set": doc}, upsert=True)
+    doc["id"] = str(uuid.uuid4())
+    doc.pop("_id", None)
+    return doc
+
+# ---- AI (Perpustakaan Pintar) ----
+async def _ai_text(system: str, prompt: str, session: str) -> str:
+    if not EMERGENT_KEY:
+        raise HTTPException(400, "Fitur AI belum aktif: EMERGENT_LLM_KEY belum diset")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=session, system_message=system).with_model("openai", "gpt-5.4")
+    resp = await chat.send_message(UserMessage(text=prompt))
+    return resp if isinstance(resp, str) else getattr(resp, "text", str(resp))
+
+@api.post("/books/{bid}/ai-summary")
+async def ai_book_summary(bid: str, user=Depends(get_current_user)):
+    book = await db.books.find_one({"id": bid, **dscope(user)})
+    if not book:
+        raise HTTPException(404, "Buku tidak ditemukan")
+    if book.get("ai_summary"):
+        return {"summary": book["ai_summary"], "cached": True}
+    system = "Anda pustakawan ahli. Jawab ringkas dalam Bahasa Indonesia yang mudah dipahami siswa SMA."
+    prompt = (f"Buatkan ringkasan menarik (3-4 kalimat) dan alasan kenapa buku ini layak dibaca siswa SMA.\n"
+              f"Judul: {book.get('title')}\nPenulis: {book.get('author') or '-'}\n"
+              f"Kategori: {book.get('category') or '-'}\nDeskripsi: {book.get('description') or '(tidak ada)'}")
+    text = await _ai_text(system, prompt, f"booksum-{bid}")
+    await db.books.update_one({"id": bid}, {"$set": {"ai_summary": text}})
+    return {"summary": text, "cached": False}
+
+@api.get("/library/ai-recommendations")
+async def ai_recommendations(user=Depends(get_current_user)):
+    history = await db.loans.find({"borrower_id": user["id"]}, {"_id": 0, "book_title": 1}).sort("borrowed_at", -1).to_list(15)
+    titles = [h["book_title"] for h in history]
+    catalog = await db.books.find(dscope(user), {"_id": 0, "title": 1, "author": 1, "category": 1}).to_list(200)
+    cat_lines = "\n".join(f"- {b['title']} ({b.get('category') or 'Umum'})" for b in catalog[:80])
+    system = "Anda pustakawan yang memberi rekomendasi buku untuk siswa SMA. Jawab dalam Bahasa Indonesia."
+    if titles:
+        intro = f"Siswa ini pernah meminjam: {', '.join(titles[:8])}."
+    else:
+        intro = "Siswa ini belum pernah meminjam buku."
+    prompt = (f"{intro}\nBerikut katalog yang tersedia:\n{cat_lines}\n\n"
+              f"Rekomendasikan 3 buku dari katalog di atas yang paling cocok, "
+              f"masing-masing 1 kalimat alasan. Format daftar bernomor.")
+    text = await _ai_text(system, prompt, f"librec-{user['id']}")
+    return {"recommendations": text, "based_on": titles[:8]}
+
+
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():
@@ -3019,6 +3381,7 @@ async def _seed():
         ("siswa.demo@sekolahku.id", "Demo12345", "Siswa Demo", "siswa", "0099887766", "XI IPA 1"),
         ("osis.demo@sekolahku.id", "Demo12345", "Ketua OSIS Demo", "ketua_osis", "0099887701", "XII IPA 2"),
         ("kelas.demo@sekolahku.id", "Demo12345", "Ketua Kelas Demo", "ketua_kelas", "0099887702", "XI IPA 1"),
+        ("perpus.demo@sekolahku.id", "Demo12345", "Admin Perpus Demo", "admin_perpus", None, None),
     ]
     for email, pw, name, role, nisn, kelas in demo:
         if not await db.users.find_one({"email": email}):
@@ -3028,6 +3391,35 @@ async def _seed():
                 "role": role, "nisn": nisn, "kelas": kelas, "jurusan": "IPA" if kelas else None,
                 "is_demo": True, "qr_code": f"SEKOLAHKU-{uid}", "created_at": now_iso(),
             })
+    # Seed Smart Library books (for both demo and real scopes) if empty
+    BOOK_SEED = [
+        ("Laskar Pelangi", "Andrea Hirata", "Novel", "Bentang Pustaka", 2005, 5, "Rak A-1",
+         "Kisah inspiratif anak-anak Belitung yang berjuang menempuh pendidikan."),
+        ("Bumi Manusia", "Pramoedya Ananta Toer", "Novel", "Hasta Mitra", 1980, 4, "Rak A-2",
+         "Roman sejarah tentang Minke di masa kolonial Hindia Belanda."),
+        ("Fisika Dasar untuk SMA", "Marthen Kanginan", "Pelajaran", "Erlangga", 2016, 8, "Rak B-1",
+         "Buku pegangan Fisika lengkap untuk jenjang SMA."),
+        ("Sejarah Indonesia Modern", "M.C. Ricklefs", "Sejarah", "Serambi", 2008, 3, "Rak C-1",
+         "Tinjauan menyeluruh sejarah Indonesia dari abad ke-13 hingga modern."),
+        ("Matematika Peminatan XI", "Sukino", "Pelajaran", "Erlangga", 2017, 6, "Rak B-2",
+         "Materi dan soal Matematika peminatan kelas XI."),
+        ("Atomic Habits", "James Clear", "Pengembangan Diri", "Gramedia", 2019, 5, "Rak D-1",
+         "Panduan praktis membangun kebiasaan baik dan menghapus kebiasaan buruk."),
+        ("Sapiens", "Yuval Noah Harari", "Sains", "KPG", 2017, 4, "Rak D-2",
+         "Sejarah singkat umat manusia dari zaman purba hingga kini."),
+        ("Biologi SMA Kelas XII", "Irnaningtyas", "Pelajaran", "Erlangga", 2018, 7, "Rak B-3",
+         "Buku Biologi lengkap untuk kelas XII dengan latihan soal."),
+    ]
+    for is_demo in (False, True):
+        if await db.books.count_documents({"is_demo": is_demo}) == 0:
+            for title, author, cat, pub, year, copies, loc, desc in BOOK_SEED:
+                await db.books.insert_one({
+                    "id": str(uuid.uuid4()), "title": title, "author": author, "isbn": None,
+                    "category": cat, "publisher": pub, "year": year, "total_copies": copies,
+                    "available_copies": copies, "location": loc, "cover_url": None,
+                    "description": desc, "tags": [cat], "borrow_count": 0,
+                    "is_demo": is_demo, "created_at": now_iso(),
+                })
     # Seed demo classes so demo users have instant content
     guru_demo = await db.users.find_one({"email": "guru.demo@sekolahku.id"}, {"id": 1})
     guru_id = guru_demo["id"] if guru_demo else None

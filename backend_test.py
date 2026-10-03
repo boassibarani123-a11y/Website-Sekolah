@@ -1,535 +1,513 @@
 #!/usr/bin/env python3
 """
-Backend Test Suite for SEKOLAHKU - Multiple Org Structures Feature
-Tests all scenarios for org-structures CRUD and org node filtering
+Smart Library (Perpustakaan Pintar) Backend Test Suite
+Tests all library endpoints with demo accounts (isolated sandbox)
 """
 import requests
 import json
-import sys
-import random
-import string
+import time
 from typing import Optional
 
-# Configuration
-BASE_URL = "https://school-site-54.preview.emergentagent.com/api"
-SUPER_ADMIN_EMAIL = "boassibarani123@gmail.com"
-SUPER_ADMIN_PASSWORD = "Boas12345io"
+# Base URL from frontend/.env
+BASE_URL = "https://education-site-9.preview.emergentagent.com/api"
+
+# Demo credentials (is_demo=True, isolated sandbox)
+ADMIN_PERPUS = {"email": "perpus.demo@sekolahku.id", "password": "Demo12345"}
+SISWA = {"email": "siswa.demo@sekolahku.id", "password": "Demo12345"}
 
 # Test state
-token = None
-structure_id = None
-root_node_id = None
-child_node_id = None
-guru_token = None
-guru_user_id = None
+admin_token = None
+siswa_token = None
+test_book_id = None
+test_loan_id = None
+test_reservation_id = None
+created_test_data = []
 
-def random_suffix():
-    """Generate random suffix for unique names"""
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+def login(creds: dict) -> str:
+    """Login and return token"""
+    resp = requests.post(f"{BASE_URL}/auth/login", json=creds)
+    assert resp.status_code == 200, f"Login failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    assert "token" in data, "No token in login response"
+    return data["token"]
 
-def log(msg: str, level: str = "INFO"):
-    """Log test messages"""
-    print(f"[{level}] {msg}")
+def headers(token: str) -> dict:
+    """Return auth headers"""
+    return {"Authorization": f"Bearer {token}"}
 
-def login(email: str, password: str) -> tuple[Optional[str], Optional[dict]]:
-    """Login and return (token, user_object)"""
-    try:
-        resp = requests.post(f"{BASE_URL}/auth/login", json={"email": email, "password": password}, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("token"), data.get("user")
-        else:
-            log(f"Login failed: {resp.status_code} - {resp.text}", "ERROR")
-            return None, None
-    except Exception as e:
-        log(f"Login exception: {e}", "ERROR")
-        return None, None
-
-def test_scenario_1_create_structure():
-    """Scenario 1: POST /api/org-structures as super_admin"""
-    global structure_id
-    log("=== SCENARIO 1: Create Org Structure ===")
+def test_scenario_1_get_books():
+    """Scenario 1: GET /api/books returns 8 seeded books, test search & filters"""
+    print("\n=== SCENARIO 1: GET /api/books (list, search, filter) ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
-    rand = random_suffix()
-    payload = {
-        "name": f"QA Struktur {rand}",
-        "subtitle": "TA 2025"
+    # 1.1: Get all books (any auth)
+    resp = requests.get(f"{BASE_URL}/books", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /books failed: {resp.status_code} {resp.text}"
+    books = resp.json()
+    assert isinstance(books, list), "Books should be a list"
+    assert len(books) == 8, f"Expected 8 seeded books, got {len(books)}"
+    print(f"✅ 1.1: GET /api/books returns {len(books)} books")
+    
+    # 1.2: Search ?q=Laskar
+    resp = requests.get(f"{BASE_URL}/books?q=Laskar", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"Search failed: {resp.status_code}"
+    results = resp.json()
+    assert len(results) >= 1, "Should find 'Laskar Pelangi'"
+    assert any("Laskar" in b["title"] for b in results), "Laskar Pelangi not in search results"
+    print(f"✅ 1.2: Search ?q=Laskar returns {len(results)} book(s)")
+    
+    # 1.3: Filter ?category=Novel
+    resp = requests.get(f"{BASE_URL}/books?category=Novel", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"Category filter failed: {resp.status_code}"
+    novels = resp.json()
+    assert len(novels) >= 2, f"Expected at least 2 novels, got {len(novels)}"
+    assert all(b["category"] == "Novel" for b in novels), "All results should be Novel category"
+    print(f"✅ 1.3: Filter ?category=Novel returns {len(novels)} book(s)")
+    
+    # 1.4: Filter ?available=true
+    resp = requests.get(f"{BASE_URL}/books?available=true", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"Available filter failed: {resp.status_code}"
+    available = resp.json()
+    assert len(available) >= 1, "Should have available books"
+    assert all(b["available_copies"] > 0 for b in available), "All should have available_copies > 0"
+    print(f"✅ 1.4: Filter ?available=true returns {len(available)} book(s)")
+
+def test_scenario_2_get_categories_and_config():
+    """Scenario 2: GET /api/books/categories and /api/library/config"""
+    print("\n=== SCENARIO 2: GET categories & config ===")
+    
+    # 2.1: GET /api/books/categories
+    resp = requests.get(f"{BASE_URL}/books/categories", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET categories failed: {resp.status_code}"
+    cats = resp.json()
+    assert isinstance(cats, list), "Categories should be a list"
+    assert len(cats) >= 4, f"Expected at least 4 categories, got {len(cats)}"
+    print(f"✅ 2.1: GET /api/books/categories returns {len(cats)} categories: {cats}")
+    
+    # 2.2: GET /api/library/config
+    resp = requests.get(f"{BASE_URL}/library/config", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET config failed: {resp.status_code}"
+    cfg = resp.json()
+    assert cfg["loan_days"] == 7, f"Expected loan_days=7, got {cfg['loan_days']}"
+    assert cfg["max_books"] == 3, f"Expected max_books=3, got {cfg['max_books']}"
+    assert cfg["fine_per_day"] == 500, f"Expected fine_per_day=500, got {cfg['fine_per_day']}"
+    print(f"✅ 2.2: GET /api/library/config returns loan_days={cfg['loan_days']}, max_books={cfg['max_books']}, fine_per_day={cfg['fine_per_day']}")
+
+def test_scenario_3_admin_crud():
+    """Scenario 3: Admin CRUD operations (POST/PATCH/DELETE books) + permission checks"""
+    global test_book_id
+    print("\n=== SCENARIO 3: Admin CRUD operations ===")
+    
+    # 3.1: As admin_perpus: POST /api/books (create test book)
+    new_book = {
+        "title": "QA Test Book",
+        "author": "QA Tester",
+        "category": "Test",
+        "publisher": "QA Publisher",
+        "year": 2025,
+        "total_copies": 3,
+        "location": "Rak QA-1",
+        "description": "Test book for QA automation"
     }
+    resp = requests.post(f"{BASE_URL}/books", json=new_book, headers=headers(admin_token))
+    assert resp.status_code == 200, f"POST /books failed: {resp.status_code} {resp.text}"
+    book = resp.json()
+    assert "id" in book, "Created book should have id"
+    test_book_id = book["id"]
+    assert book["title"] == new_book["title"], "Title mismatch"
+    assert book["total_copies"] == 3, "total_copies should be 3"
+    assert book["available_copies"] == 3, "available_copies should be 3"
+    created_test_data.append(("book", test_book_id))
+    print(f"✅ 3.1: POST /api/books created book id={test_book_id}")
     
-    try:
-        resp = requests.post(f"{BASE_URL}/org-structures", json=payload, headers=headers, timeout=10)
-        log(f"POST /api/org-structures -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and "name" in data and "subtitle" in data and "member_count" in data:
-                structure_id = data["id"]
-                if data["member_count"] == 0:
-                    log(f"✅ PASS: Structure created with id={structure_id}, member_count=0", "SUCCESS")
-                    return True
-                else:
-                    log(f"❌ FAIL: member_count should be 0, got {data['member_count']}", "ERROR")
-                    return False
-            else:
-                log(f"❌ FAIL: Missing required fields in response: {data}", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+    # 3.2: PATCH /api/books/{id} - change total_copies (verify available_copies adjusts by delta)
+    # Change total_copies from 3 to 5 (delta +2)
+    resp = requests.patch(f"{BASE_URL}/books/{test_book_id}", 
+                         json={"total_copies": 5}, 
+                         headers=headers(admin_token))
+    assert resp.status_code == 200, f"PATCH /books failed: {resp.status_code} {resp.text}"
+    updated = resp.json()
+    assert updated["total_copies"] == 5, f"Expected total_copies=5, got {updated['total_copies']}"
+    assert updated["available_copies"] == 5, f"Expected available_copies=5 (3+2), got {updated['available_copies']}"
+    print(f"✅ 3.2: PATCH /api/books/{test_book_id} updated total_copies to 5, available_copies adjusted to 5")
+    
+    # 3.3: As siswa: POST /api/books -> expect 403
+    resp = requests.post(f"{BASE_URL}/books", json=new_book, headers=headers(siswa_token))
+    assert resp.status_code == 403, f"Siswa POST /books should return 403, got {resp.status_code}"
+    print(f"✅ 3.3: Siswa POST /api/books correctly returns 403 (forbidden)")
+    
+    # 3.4: As siswa: PATCH /api/library/config -> 403
+    resp = requests.patch(f"{BASE_URL}/library/config", 
+                         json={"max_books": 5}, 
+                         headers=headers(siswa_token))
+    assert resp.status_code == 403, f"Siswa PATCH /library/config should return 403, got {resp.status_code}"
+    print(f"✅ 3.4: Siswa PATCH /api/library/config correctly returns 403 (forbidden)")
+    
+    # 3.5: As admin_perpus: PATCH /api/library/config -> 200
+    resp = requests.patch(f"{BASE_URL}/library/config", 
+                         json={"max_books": 3}, 
+                         headers=headers(admin_token))
+    assert resp.status_code == 200, f"Admin PATCH /library/config failed: {resp.status_code}"
+    cfg = resp.json()
+    assert cfg["max_books"] == 3, "max_books should be 3"
+    print(f"✅ 3.5: Admin PATCH /api/library/config returns 200")
 
-def test_scenario_2_list_structures():
-    """Scenario 2: GET /api/org-structures includes new structure"""
-    log("=== SCENARIO 2: List Org Structures ===")
+def test_scenario_4_borrow_flow():
+    """Scenario 4: Borrow flow - first borrow, duplicate prevention, max_books limit"""
+    global test_loan_id
+    print("\n=== SCENARIO 4: Borrow flow ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
+    # 4.1: First borrow succeeds and available_copies decrements
+    resp = requests.post(f"{BASE_URL}/loans", 
+                        json={"book_id": test_book_id}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 200, f"POST /loans failed: {resp.status_code} {resp.text}"
+    loan = resp.json()
+    assert "id" in loan, "Loan should have id"
+    test_loan_id = loan["id"]
+    assert loan["book_id"] == test_book_id, "book_id mismatch"
+    assert loan["status"] == "dipinjam", "Status should be 'dipinjam'"
+    created_test_data.append(("loan", test_loan_id))
+    print(f"✅ 4.1: POST /api/loans created loan id={test_loan_id}")
     
-    try:
-        resp = requests.get(f"{BASE_URL}/org-structures", headers=headers, timeout=10)
-        log(f"GET /api/org-structures -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            found = any(s["id"] == structure_id for s in data)
-            if found:
-                log(f"✅ PASS: Structure {structure_id} found in list", "SUCCESS")
-                return True
-            else:
-                log(f"❌ FAIL: Structure {structure_id} not found in list", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+    # Verify available_copies decremented
+    resp = requests.get(f"{BASE_URL}/books/{test_book_id}", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /books/{test_book_id} failed"
+    book = resp.json()
+    assert book["available_copies"] == 4, f"Expected available_copies=4 (5-1), got {book['available_copies']}"
+    print(f"✅ 4.1b: Book available_copies decremented to {book['available_copies']}")
+    
+    # 4.2: Borrowing SAME title again while active -> 400
+    resp = requests.post(f"{BASE_URL}/loans", 
+                        json={"book_id": test_book_id}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 400, f"Duplicate borrow should return 400, got {resp.status_code}"
+    assert "masih meminjam judul yang sama" in resp.text.lower(), "Error message should mention duplicate"
+    print(f"✅ 4.2: Duplicate borrow correctly returns 400 (already borrowing same title)")
+    
+    # 4.3: Borrow until 3 active loans, 4th distinct book -> 400 (max_books=3)
+    # Get 2 more distinct books from seeded books
+    resp = requests.get(f"{BASE_URL}/books", headers=headers(siswa_token))
+    books = resp.json()
+    other_books = [b for b in books if b["id"] != test_book_id and b["available_copies"] > 0][:3]
+    assert len(other_books) >= 3, "Need at least 3 other available books for testing"
+    
+    # Borrow 2nd book
+    resp = requests.post(f"{BASE_URL}/loans", 
+                        json={"book_id": other_books[0]["id"]}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 200, f"2nd borrow failed: {resp.status_code}"
+    loan2 = resp.json()
+    created_test_data.append(("loan", loan2["id"]))
+    print(f"✅ 4.3a: 2nd borrow succeeded (loan id={loan2['id']})")
+    
+    # Borrow 3rd book
+    resp = requests.post(f"{BASE_URL}/loans", 
+                        json={"book_id": other_books[1]["id"]}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 200, f"3rd borrow failed: {resp.status_code}"
+    loan3 = resp.json()
+    created_test_data.append(("loan", loan3["id"]))
+    print(f"✅ 4.3b: 3rd borrow succeeded (loan id={loan3['id']})")
+    
+    # Try 4th book -> should fail (max_books=3)
+    resp = requests.post(f"{BASE_URL}/loans", 
+                        json={"book_id": other_books[2]["id"]}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 400, f"4th borrow should return 400, got {resp.status_code}"
+    assert "batas maksimal" in resp.text.lower() or "max" in resp.text.lower(), "Error should mention max limit"
+    print(f"✅ 4.3c: 4th borrow correctly returns 400 (max_books=3 limit reached)")
 
-def test_scenario_3_get_structure():
-    """Scenario 3: GET /api/org-structures/{id} -> 200, non-existent -> 404"""
-    log("=== SCENARIO 3: Get Specific Structure ===")
+def test_scenario_5_return_flow():
+    """Scenario 5: Return flow - available_copies increments, fine calculation"""
+    print("\n=== SCENARIO 5: Return flow ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
+    # 5.1: POST /api/loans/{loan_id}/return -> 200
+    resp = requests.post(f"{BASE_URL}/loans/{test_loan_id}/return", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"POST /loans/{test_loan_id}/return failed: {resp.status_code} {resp.text}"
+    result = resp.json()
+    assert "fine" in result, "Return response should have 'fine'"
+    assert "days_late" in result, "Return response should have 'days_late'"
+    assert result["fine"] == 0, f"Expected fine=0 (returned on time), got {result['fine']}"
+    assert result["days_late"] == 0, f"Expected days_late=0, got {result['days_late']}"
+    print(f"✅ 5.1: POST /api/loans/{test_loan_id}/return returns 200, fine={result['fine']}, days_late={result['days_late']}")
     
-    # Test valid ID
-    try:
-        resp = requests.get(f"{BASE_URL}/org-structures/{structure_id}", headers=headers, timeout=10)
-        log(f"GET /api/org-structures/{structure_id} -> {resp.status_code}")
-        
-        if resp.status_code != 200:
-            log(f"❌ FAIL: Expected 200 for valid ID, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on valid ID - {e}", "ERROR")
-        return False
-    
-    # Test non-existent ID
-    try:
-        fake_id = "non-existent-structure-id-12345"
-        resp = requests.get(f"{BASE_URL}/org-structures/{fake_id}", headers=headers, timeout=10)
-        log(f"GET /api/org-structures/{fake_id} -> {resp.status_code}")
-        
-        if resp.status_code == 404:
-            log(f"✅ PASS: Valid ID returns 200, non-existent returns 404", "SUCCESS")
-            return True
-        else:
-            log(f"❌ FAIL: Expected 404 for non-existent ID, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on non-existent ID - {e}", "ERROR")
-        return False
+    # 5.2: Verify available_copies incremented back
+    resp = requests.get(f"{BASE_URL}/books/{test_book_id}", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /books/{test_book_id} failed"
+    book = resp.json()
+    assert book["available_copies"] == 5, f"Expected available_copies=5 (4+1), got {book['available_copies']}"
+    print(f"✅ 5.2: Book available_copies incremented back to {book['available_copies']}")
 
-def test_scenario_4_create_root_node():
-    """Scenario 4: POST /api/org with structure_id (root node)"""
-    global root_node_id
-    log("=== SCENARIO 4: Create Root Org Node ===")
+def test_scenario_6_loan_visibility():
+    """Scenario 6: GET /api/loans/my (siswa sees own) and GET /api/loans (admin sees all, siswa sees only own)"""
+    print("\n=== SCENARIO 6: Loan visibility ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {
-        "name": "Kepala",
-        "title": "Kepala Sekolah",
-        "structure_id": structure_id
-    }
+    # 6.1: GET /api/loans/my as siswa
+    resp = requests.get(f"{BASE_URL}/loans/my", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /loans/my failed: {resp.status_code}"
+    my_loans = resp.json()
+    assert isinstance(my_loans, list), "my_loans should be a list"
+    assert len(my_loans) >= 2, f"Siswa should see at least 2 loans (created in test), got {len(my_loans)}"
+    print(f"✅ 6.1: GET /api/loans/my returns {len(my_loans)} loan(s) for siswa")
     
-    try:
-        resp = requests.post(f"{BASE_URL}/org", json=payload, headers=headers, timeout=10)
-        log(f"POST /api/org (root) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data.get("structure_id") == structure_id:
-                root_node_id = data["id"]
-                log(f"✅ PASS: Root node created with id={root_node_id}, structure_id set", "SUCCESS")
-                return True
-            else:
-                log(f"❌ FAIL: Missing id or structure_id not set: {data}", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+    # 6.2: GET /api/loans as siswa (should see only own)
+    resp = requests.get(f"{BASE_URL}/loans", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /loans failed: {resp.status_code}"
+    siswa_loans = resp.json()
+    assert len(siswa_loans) == len(my_loans), "Siswa GET /loans should return same as /loans/my"
+    print(f"✅ 6.2: GET /api/loans as siswa returns {len(siswa_loans)} loan(s) (only own)")
+    
+    # 6.3: GET /api/loans as admin_perpus (should see all)
+    resp = requests.get(f"{BASE_URL}/loans", headers=headers(admin_token))
+    assert resp.status_code == 200, f"GET /loans as admin failed: {resp.status_code}"
+    all_loans = resp.json()
+    assert len(all_loans) >= len(siswa_loans), f"Admin should see at least as many loans as siswa, got {len(all_loans)}"
+    print(f"✅ 6.3: GET /api/loans as admin_perpus returns {len(all_loans)} loan(s) (all loans)")
 
-def test_scenario_5_create_child_node():
-    """Scenario 5: POST /api/org with parent_id and structure_id"""
-    global child_node_id
-    log("=== SCENARIO 5: Create Child Org Node ===")
+def test_scenario_7_reservation():
+    """Scenario 7: Reservation flow - reserve when available_copies=0, cannot reserve when available>0"""
+    global test_reservation_id
+    print("\n=== SCENARIO 7: Reservation flow ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {
-        "name": "Wakil",
-        "title": "Wakasek",
-        "parent_id": root_node_id,
-        "structure_id": structure_id
-    }
+    # 7.1: Make a book unavailable (borrow all copies or PATCH total_copies to low number then borrow)
+    # Let's use the test book and reduce total_copies to 1, then borrow it
+    resp = requests.patch(f"{BASE_URL}/books/{test_book_id}", 
+                         json={"total_copies": 1}, 
+                         headers=headers(admin_token))
+    assert resp.status_code == 200, f"PATCH /books failed: {resp.status_code}"
+    book = resp.json()
+    print(f"✅ 7.1a: Reduced test book total_copies to 1, available_copies={book['available_copies']}")
     
-    try:
-        resp = requests.post(f"{BASE_URL}/org", json=payload, headers=headers, timeout=10)
-        log(f"POST /api/org (child) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if "id" in data and data.get("structure_id") == structure_id and data.get("parent_id") == root_node_id:
-                child_node_id = data["id"]
-                log(f"✅ PASS: Child node created with id={child_node_id}, parent_id and structure_id set", "SUCCESS")
-                return True
-            else:
-                log(f"❌ FAIL: Missing id or parent_id/structure_id not set: {data}", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+    # Borrow it to make available_copies=0
+    resp = requests.post(f"{BASE_URL}/loans", 
+                        json={"book_id": test_book_id}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 200, f"Borrow failed: {resp.status_code} {resp.text}"
+    loan = resp.json()
+    created_test_data.append(("loan", loan["id"]))
+    print(f"✅ 7.1b: Borrowed test book, loan id={loan['id']}")
+    
+    # Verify available_copies=0
+    resp = requests.get(f"{BASE_URL}/books/{test_book_id}", headers=headers(siswa_token))
+    book = resp.json()
+    assert book["available_copies"] == 0, f"Expected available_copies=0, got {book['available_copies']}"
+    print(f"✅ 7.1c: Book now has available_copies=0")
+    
+    # 7.2: Try to reserve when available>0 -> should fail (but we just made it 0, so skip this)
+    # Instead, let's test reserving when available=0 first, then test the error case
+    
+    # 7.3: Reserve when available_copies=0 -> 200
+    # Need to use a different siswa account or logout/login as different user
+    # For simplicity, let's use admin_perpus to reserve (admin can also reserve)
+    resp = requests.post(f"{BASE_URL}/books/{test_book_id}/reserve", headers=headers(admin_token))
+    assert resp.status_code == 200, f"POST /books/{test_book_id}/reserve failed: {resp.status_code} {resp.text}"
+    reservation = resp.json()
+    assert "id" in reservation, "Reservation should have id"
+    test_reservation_id = reservation["id"]
+    assert reservation["book_id"] == test_book_id, "book_id mismatch"
+    assert reservation["status"] == "menunggu", "Status should be 'menunggu'"
+    created_test_data.append(("reservation", test_reservation_id))
+    print(f"✅ 7.3: POST /api/books/{test_book_id}/reserve created reservation id={test_reservation_id}")
+    
+    # 7.4: GET /api/reservations
+    resp = requests.get(f"{BASE_URL}/reservations", headers=headers(admin_token))
+    assert resp.status_code == 200, f"GET /reservations failed: {resp.status_code}"
+    reservations = resp.json()
+    assert isinstance(reservations, list), "Reservations should be a list"
+    assert any(r["id"] == test_reservation_id for r in reservations), "Created reservation should be in list"
+    print(f"✅ 7.4: GET /api/reservations returns {len(reservations)} reservation(s)")
+    
+    # 7.5: DELETE /api/reservations/{id}
+    resp = requests.delete(f"{BASE_URL}/reservations/{test_reservation_id}", headers=headers(admin_token))
+    assert resp.status_code == 200, f"DELETE /reservations/{test_reservation_id} failed: {resp.status_code}"
+    print(f"✅ 7.5: DELETE /api/reservations/{test_reservation_id} returns 200")
+    
+    # 7.6: Test reserve when available>0 -> 400
+    # Return the loan to make book available again
+    resp = requests.post(f"{BASE_URL}/loans/{loan['id']}/return", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"Return failed: {resp.status_code}"
+    print(f"✅ 7.6a: Returned loan to make book available")
+    
+    # Now try to reserve -> should fail
+    resp = requests.post(f"{BASE_URL}/books/{test_book_id}/reserve", headers=headers(admin_token))
+    assert resp.status_code == 400, f"Reserve when available>0 should return 400, got {resp.status_code}"
+    assert "tersedia" in resp.text.lower() or "available" in resp.text.lower(), "Error should mention book is available"
+    print(f"✅ 7.6b: Reserve when available>0 correctly returns 400")
 
-def test_scenario_6_filter_and_count():
-    """Scenario 6: GET /api/org?structure_id filters correctly, member_count updates"""
-    log("=== SCENARIO 6: Filter Nodes and Verify Member Count ===")
+def test_scenario_8_review():
+    """Scenario 8: Review flow - rating validation, reflected in GET /api/books/{id}"""
+    print("\n=== SCENARIO 8: Review flow ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
+    # 8.1: POST /api/books/{id}/review with rating 1-5 -> 200
+    resp = requests.post(f"{BASE_URL}/books/{test_book_id}/review", 
+                        json={"rating": 5, "text": "Buku bagus sekali!"}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 200, f"POST /books/{test_book_id}/review failed: {resp.status_code} {resp.text}"
+    review = resp.json()
+    assert review["rating"] == 5, "Rating should be 5"
+    print(f"✅ 8.1: POST /api/books/{test_book_id}/review with rating=5 returns 200")
     
-    # Test filtering
-    try:
-        resp = requests.get(f"{BASE_URL}/org", params={"structure_id": structure_id}, headers=headers, timeout=10)
-        log(f"GET /api/org?structure_id={structure_id} -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if len(data) == 2:
-                log(f"✅ PASS: Filtering returns exactly 2 nodes", "SUCCESS")
-            else:
-                log(f"❌ FAIL: Expected 2 nodes, got {len(data)}", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on filtering - {e}", "ERROR")
-        return False
+    # 8.2: POST with rating 6 -> 400
+    resp = requests.post(f"{BASE_URL}/books/{test_book_id}/review", 
+                        json={"rating": 6, "text": "Invalid rating"}, 
+                        headers=headers(siswa_token))
+    assert resp.status_code == 400, f"Review with rating=6 should return 400, got {resp.status_code}"
+    assert "1-5" in resp.text or "rating" in resp.text.lower(), "Error should mention rating range"
+    print(f"✅ 8.2: POST /api/books/{test_book_id}/review with rating=6 correctly returns 400")
     
-    # Test member_count
-    try:
-        resp = requests.get(f"{BASE_URL}/org-structures", headers=headers, timeout=10)
-        log(f"GET /api/org-structures (check member_count) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            structure = next((s for s in data if s["id"] == structure_id), None)
-            if structure and structure.get("member_count") == 2:
-                log(f"✅ PASS: member_count updated to 2", "SUCCESS")
-                return True
-            else:
-                log(f"❌ FAIL: member_count should be 2, got {structure.get('member_count') if structure else 'structure not found'}", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on member_count check - {e}", "ERROR")
-        return False
+    # 8.3: GET /api/books/{id} shows rating_avg and rating_count
+    resp = requests.get(f"{BASE_URL}/books/{test_book_id}", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /books/{test_book_id} failed: {resp.status_code}"
+    book = resp.json()
+    assert "rating_avg" in book, "Book should have rating_avg"
+    assert "rating_count" in book, "Book should have rating_count"
+    assert book["rating_count"] >= 1, f"Expected rating_count >= 1, got {book['rating_count']}"
+    assert book["rating_avg"] > 0, f"Expected rating_avg > 0, got {book['rating_avg']}"
+    print(f"✅ 8.3: GET /api/books/{test_book_id} shows rating_avg={book['rating_avg']}, rating_count={book['rating_count']}")
 
-def test_scenario_7_update_structure():
-    """Scenario 7: PATCH /api/org-structures/{id} updates name"""
-    log("=== SCENARIO 7: Update Structure Name ===")
+def test_scenario_9_admin_stats():
+    """Scenario 9: Admin stats - GET /api/library/stats and /api/library/popular"""
+    print("\n=== SCENARIO 9: Admin stats ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {"name": "QA Renamed"}
+    # 9.1: GET /api/library/stats (admin only)
+    resp = requests.get(f"{BASE_URL}/library/stats", headers=headers(admin_token))
+    assert resp.status_code == 200, f"GET /library/stats failed: {resp.status_code} {resp.text}"
+    stats = resp.json()
+    required_fields = ["total_titles", "total_copies", "available", "borrowed", "overdue", 
+                      "reservations", "popular", "by_category"]
+    for field in required_fields:
+        assert field in stats, f"Stats should have '{field}' field"
+    assert stats["total_titles"] >= 8, f"Expected total_titles >= 8, got {stats['total_titles']}"
+    assert isinstance(stats["popular"], list), "popular should be a list"
+    assert isinstance(stats["by_category"], list), "by_category should be a list"
+    print(f"✅ 9.1: GET /api/library/stats returns all required fields: total_titles={stats['total_titles']}, "
+          f"total_copies={stats['total_copies']}, available={stats['available']}, borrowed={stats['borrowed']}")
     
-    try:
-        resp = requests.patch(f"{BASE_URL}/org-structures/{structure_id}", json=payload, headers=headers, timeout=10)
-        log(f"PATCH /api/org-structures/{structure_id} -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("name") == "QA Renamed":
-                log(f"✅ PASS: Structure name updated to 'QA Renamed'", "SUCCESS")
-                return True
-            else:
-                log(f"❌ FAIL: Name not updated, got {data.get('name')}", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+    # 9.2: GET /api/library/popular
+    resp = requests.get(f"{BASE_URL}/library/popular", headers=headers(siswa_token))
+    assert resp.status_code == 200, f"GET /library/popular failed: {resp.status_code}"
+    popular = resp.json()
+    assert isinstance(popular, list), "Popular should be a list"
+    assert len(popular) >= 1, "Should have at least 1 popular book"
+    print(f"✅ 9.2: GET /api/library/popular returns {len(popular)} book(s)")
 
-def test_scenario_8_invalid_structure_id():
-    """Scenario 8: POST /api/org with non-existent structure_id -> 404"""
-    log("=== SCENARIO 8: Create Node with Invalid Structure ID ===")
+def test_scenario_10_ai_features():
+    """Scenario 10: AI features - POST /api/books/{id}/ai-summary and GET /api/library/ai-recommendations"""
+    print("\n=== SCENARIO 10: AI features (OpenAI gpt-5.4) ===")
     
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {
-        "name": "x",
-        "title": "y",
-        "structure_id": "does-not-exist-12345"
-    }
+    # 10.1: POST /api/books/{id}/ai-summary
+    print(f"⏳ 10.1: Calling POST /api/books/{test_book_id}/ai-summary (may take a few seconds)...")
+    resp = requests.post(f"{BASE_URL}/books/{test_book_id}/ai-summary", headers=headers(siswa_token), timeout=30)
+    assert resp.status_code == 200, f"POST /books/{test_book_id}/ai-summary failed: {resp.status_code} {resp.text}"
+    result = resp.json()
+    assert "summary" in result, "AI summary response should have 'summary' field"
+    assert len(result["summary"]) > 10, f"Summary should be non-empty, got: {result['summary']}"
+    print(f"✅ 10.1: POST /api/books/{test_book_id}/ai-summary returns summary (length={len(result['summary'])} chars)")
     
-    try:
-        resp = requests.post(f"{BASE_URL}/org", json=payload, headers=headers, timeout=10)
-        log(f"POST /api/org (invalid structure_id) -> {resp.status_code}")
-        
-        if resp.status_code == 404:
-            log(f"✅ PASS: Invalid structure_id returns 404", "SUCCESS")
-            return True
-        else:
-            log(f"❌ FAIL: Expected 404, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+    # 10.2: GET /api/library/ai-recommendations
+    print("⏳ 10.2: Calling GET /api/library/ai-recommendations (may take a few seconds)...")
+    resp = requests.get(f"{BASE_URL}/library/ai-recommendations", headers=headers(siswa_token), timeout=30)
+    assert resp.status_code == 200, f"GET /library/ai-recommendations failed: {resp.status_code} {resp.text}"
+    result = resp.json()
+    assert "recommendations" in result, "AI recommendations response should have 'recommendations' field"
+    assert len(result["recommendations"]) > 10, f"Recommendations should be non-empty, got: {result['recommendations']}"
+    print(f"✅ 10.2: GET /api/library/ai-recommendations returns recommendations (length={len(result['recommendations'])} chars)")
 
-def test_scenario_9_auth_permissions():
-    """Scenario 9: Create guru, test write=403 and read=200"""
-    global guru_token, guru_user_id
-    log("=== SCENARIO 9: Auth Permissions (Guru) ===")
+def test_scenario_11_excel_export():
+    """Scenario 11: Excel export - GET /api/library/loans/export returns xlsx file"""
+    print("\n=== SCENARIO 11: Excel export ===")
     
-    # Create guru account
-    headers = {"Authorization": f"Bearer {token}"}
-    rand = random_suffix()
-    guru_email = f"qa.guru.orgtest.{rand}@sekolah.id"
-    payload = {
-        "email": guru_email,
-        "password": "Guru12345",
-        "name": "QA Guru Org Test",
-        "role": "guru"
-    }
-    
-    try:
-        resp = requests.post(f"{BASE_URL}/users", json=payload, headers=headers, timeout=10)
-        log(f"POST /api/users (create guru) -> {resp.status_code}")
-        
-        if resp.status_code != 200:
-            log(f"❌ FAIL: Could not create guru account: {resp.status_code} - {resp.text}", "ERROR")
-            return False
-        
-        guru_data = resp.json()
-        guru_user_id = guru_data.get("id")
-        log(f"Guru account created: {guru_email}, id={guru_user_id}")
-    except Exception as e:
-        log(f"❌ FAIL: Exception creating guru - {e}", "ERROR")
-        return False
-    
-    # Login as guru
-    guru_token, guru_user = login(guru_email, "Guru12345")
-    if not guru_token:
-        log(f"❌ FAIL: Could not login as guru", "ERROR")
-        return False
-    
-    log(f"Logged in as guru: {guru_email}")
-    
-    # Test write (should be 403)
-    guru_headers = {"Authorization": f"Bearer {guru_token}"}
-    write_payload = {"name": "Test Structure", "subtitle": "Should Fail"}
-    
-    try:
-        resp = requests.post(f"{BASE_URL}/org-structures", json=write_payload, headers=guru_headers, timeout=10)
-        log(f"POST /api/org-structures (as guru) -> {resp.status_code}")
-        
-        if resp.status_code != 403:
-            log(f"❌ FAIL: Expected 403 for guru write, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on guru write - {e}", "ERROR")
-        return False
-    
-    # Test read (should be 200)
-    try:
-        resp = requests.get(f"{BASE_URL}/org-structures", headers=guru_headers, timeout=10)
-        log(f"GET /api/org-structures (as guru) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            log(f"✅ PASS: Guru write=403, read=200", "SUCCESS")
-            return True
-        else:
-            log(f"❌ FAIL: Expected 200 for guru read, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on guru read - {e}", "ERROR")
-        return False
-
-def test_scenario_10_delete_cascade():
-    """Scenario 10: DELETE /api/org-structures/{id} cascades to nodes"""
-    log("=== SCENARIO 10: Delete Structure with Cascade ===")
-    
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    # Delete structure
-    try:
-        resp = requests.delete(f"{BASE_URL}/org-structures/{structure_id}", headers=headers, timeout=10)
-        log(f"DELETE /api/org-structures/{structure_id} -> {resp.status_code}")
-        
-        if resp.status_code != 200:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code} - {resp.text}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on delete - {e}", "ERROR")
-        return False
-    
-    # Verify cascade: nodes should be gone
-    try:
-        resp = requests.get(f"{BASE_URL}/org", params={"structure_id": structure_id}, headers=headers, timeout=10)
-        log(f"GET /api/org?structure_id={structure_id} (after delete) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if len(data) == 0:
-                log(f"✅ PASS: Nodes cascaded (list empty)", "SUCCESS")
-            else:
-                log(f"❌ FAIL: Expected empty list, got {len(data)} nodes", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on cascade check - {e}", "ERROR")
-        return False
-    
-    # Verify structure no longer in list
-    try:
-        resp = requests.get(f"{BASE_URL}/org-structures", headers=headers, timeout=10)
-        log(f"GET /api/org-structures (after delete) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            found = any(s["id"] == structure_id for s in data)
-            if not found:
-                log(f"✅ PASS: Structure removed from list", "SUCCESS")
-                return True
-            else:
-                log(f"❌ FAIL: Structure still in list", "ERROR")
-                return False
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception on list check - {e}", "ERROR")
-        return False
+    resp = requests.get(f"{BASE_URL}/library/loans/export", headers=headers(admin_token))
+    assert resp.status_code == 200, f"GET /library/loans/export failed: {resp.status_code} {resp.text}"
+    assert "spreadsheet" in resp.headers.get("Content-Type", "").lower() or \
+           "excel" in resp.headers.get("Content-Type", "").lower(), \
+           f"Content-Type should be spreadsheet/excel, got: {resp.headers.get('Content-Type')}"
+    assert len(resp.content) > 100, f"Excel file should be non-empty, got {len(resp.content)} bytes"
+    print(f"✅ 11: GET /api/library/loans/export returns xlsx file ({len(resp.content)} bytes, "
+          f"Content-Type: {resp.headers.get('Content-Type')})")
 
 def cleanup():
-    """Cleanup: delete guru account"""
-    log("=== CLEANUP ===")
+    """Clean up test data"""
+    print("\n=== CLEANUP: Removing test data ===")
     
-    if guru_user_id:
-        headers = {"Authorization": f"Bearer {token}"}
+    # Delete in reverse order (loans, reservations, then book)
+    for data_type, data_id in reversed(created_test_data):
         try:
-            resp = requests.delete(f"{BASE_URL}/users/{guru_user_id}", headers=headers, timeout=10)
-            log(f"DELETE /api/users/{guru_user_id} (guru cleanup) -> {resp.status_code}")
-            if resp.status_code == 200:
-                log(f"✅ Guru account deleted", "SUCCESS")
-            else:
-                log(f"⚠️ Could not delete guru account: {resp.status_code}", "WARN")
+            if data_type == "loan":
+                # Return loan first if not already returned
+                resp = requests.post(f"{BASE_URL}/loans/{data_id}/return", headers=headers(siswa_token))
+                if resp.status_code == 200:
+                    print(f"✅ Returned loan {data_id}")
+            elif data_type == "reservation":
+                resp = requests.delete(f"{BASE_URL}/reservations/{data_id}", headers=headers(admin_token))
+                if resp.status_code == 200:
+                    print(f"✅ Deleted reservation {data_id}")
         except Exception as e:
-            log(f"⚠️ Exception during cleanup: {e}", "WARN")
-
-def test_demo_filtering():
-    """Additional test: Verify super_admin only sees non-demo structures"""
-    log("=== ADDITIONAL: Demo Filtering ===")
+            print(f"⚠️  Cleanup warning for {data_type} {data_id}: {e}")
     
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    try:
-        resp = requests.get(f"{BASE_URL}/org-structures", headers=headers, timeout=10)
-        log(f"GET /api/org-structures (check demo filtering) -> {resp.status_code}")
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            demo_structures = [s for s in data if s.get("is_demo") == True]
-            if len(demo_structures) == 0:
-                log(f"✅ PASS: Super admin sees no demo structures (correct)", "SUCCESS")
-                return True
+    # Delete test book
+    if test_book_id:
+        try:
+            resp = requests.delete(f"{BASE_URL}/books/{test_book_id}", headers=headers(admin_token))
+            if resp.status_code == 200:
+                print(f"✅ Deleted test book {test_book_id}")
             else:
-                log(f"⚠️ WARNING: Super admin sees {len(demo_structures)} demo structures (should be 0)", "WARN")
-                return True  # Not a critical failure
-        else:
-            log(f"❌ FAIL: Expected 200, got {resp.status_code}", "ERROR")
-            return False
-    except Exception as e:
-        log(f"❌ FAIL: Exception - {e}", "ERROR")
-        return False
+                print(f"⚠️  Could not delete test book {test_book_id}: {resp.status_code} {resp.text}")
+        except Exception as e:
+            print(f"⚠️  Cleanup error for test book: {e}")
 
 def main():
-    global token
+    global admin_token, siswa_token
     
-    log("=" * 60)
-    log("SEKOLAHKU - Multiple Org Structures Backend Test Suite")
-    log("=" * 60)
+    print("=" * 80)
+    print("SMART LIBRARY (PERPUSTAKAAN PINTAR) BACKEND TEST SUITE")
+    print("=" * 80)
+    print(f"Base URL: {BASE_URL}")
+    print(f"Demo Admin Perpus: {ADMIN_PERPUS['email']}")
+    print(f"Demo Siswa: {SISWA['email']}")
+    print("=" * 80)
     
-    # Login as super_admin
-    log("Logging in as super_admin...")
-    token, user = login(SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD)
-    if not token:
-        log("❌ FATAL: Could not login as super_admin", "ERROR")
-        sys.exit(1)
-    
-    log(f"✅ Logged in as {user.get('email')} (role: {user.get('role')})")
-    log("")
-    
-    # Run all test scenarios
-    results = []
-    
-    results.append(("Scenario 1: Create Structure", test_scenario_1_create_structure()))
-    results.append(("Scenario 2: List Structures", test_scenario_2_list_structures()))
-    results.append(("Scenario 3: Get Structure (200/404)", test_scenario_3_get_structure()))
-    results.append(("Scenario 4: Create Root Node", test_scenario_4_create_root_node()))
-    results.append(("Scenario 5: Create Child Node", test_scenario_5_create_child_node()))
-    results.append(("Scenario 6: Filter & Member Count", test_scenario_6_filter_and_count()))
-    results.append(("Scenario 7: Update Structure", test_scenario_7_update_structure()))
-    results.append(("Scenario 8: Invalid Structure ID", test_scenario_8_invalid_structure_id()))
-    results.append(("Scenario 9: Auth Permissions", test_scenario_9_auth_permissions()))
-    results.append(("Scenario 10: Delete Cascade", test_scenario_10_delete_cascade()))
-    results.append(("Additional: Demo Filtering", test_demo_filtering()))
-    
-    # Cleanup
-    cleanup()
-    
-    # Summary
-    log("")
-    log("=" * 60)
-    log("TEST SUMMARY")
-    log("=" * 60)
-    
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
-    
-    for name, result in results:
-        status = "✅ PASS" if result else "❌ FAIL"
-        log(f"{status}: {name}")
-    
-    log("")
-    log(f"TOTAL: {passed}/{total} tests passed")
-    log("=" * 60)
-    
-    if passed == total:
-        log("🎉 ALL TESTS PASSED!", "SUCCESS")
-        sys.exit(0)
-    else:
-        log(f"⚠️ {total - passed} test(s) failed", "ERROR")
-        sys.exit(1)
+    try:
+        # Login
+        print("\n=== LOGIN ===")
+        admin_token = login(ADMIN_PERPUS)
+        print(f"✅ Logged in as admin_perpus: {ADMIN_PERPUS['email']}")
+        siswa_token = login(SISWA)
+        print(f"✅ Logged in as siswa: {SISWA['email']}")
+        
+        # Run all scenarios
+        test_scenario_1_get_books()
+        test_scenario_2_get_categories_and_config()
+        test_scenario_3_admin_crud()
+        test_scenario_4_borrow_flow()
+        test_scenario_5_return_flow()
+        test_scenario_6_loan_visibility()
+        test_scenario_7_reservation()
+        test_scenario_8_review()
+        test_scenario_9_admin_stats()
+        test_scenario_10_ai_features()
+        test_scenario_11_excel_export()
+        
+        # Cleanup
+        cleanup()
+        
+        print("\n" + "=" * 80)
+        print("✅ ALL TESTS PASSED - Smart Library backend is fully functional!")
+        print("=" * 80)
+        return 0
+        
+    except AssertionError as e:
+        print(f"\n❌ TEST FAILED: {e}")
+        print("\nAttempting cleanup...")
+        cleanup()
+        return 1
+    except Exception as e:
+        print(f"\n❌ UNEXPECTED ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\nAttempting cleanup...")
+        cleanup()
+        return 1
 
 if __name__ == "__main__":
-    main()
+    exit(main())
