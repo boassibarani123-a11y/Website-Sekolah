@@ -79,9 +79,9 @@ def test_week_export_xlsx(tu_tok):
     wb = load_workbook(io.BytesIO(r.content))
     ws = wb.active
     # title bar
-    assert "LAGUBOTI" in str(ws["A1"].value).upper()
+    assert "LAGUBOTI" in str(ws["B2"].value).upper()
     # we expect at least Nama, Kelas and 7 day columns + totals somewhere
-    headers_row = [c.value for c in ws[4]] if ws.max_row >= 4 else []
+    headers_row = [c.value for c in ws[5]] if ws.max_row >= 5 else []
     joined = " ".join(str(x) for x in headers_row if x)
     assert "Nama" in joined or "Senin" in joined
 
@@ -196,9 +196,9 @@ def test_inventory_export_neat(tu_tok):
     assert r.status_code == 200
     wb = load_workbook(io.BytesIO(r.content))
     ws = wb.active
-    assert "LAGUBOTI" in str(ws["A1"].value).upper()
+    assert "LAGUBOTI" in str(ws["B2"].value).upper()
     # column A width >=18
-    assert ws.column_dimensions["A"].width >= 18
+    assert ws.column_dimensions["B"].width >= 18
     # check summary labels present fully
     text = " ".join(str(c.value) for row in ws.iter_rows() for c in row if c.value)
     assert "Total Item" in text or "Belum ada data" in text
@@ -209,7 +209,7 @@ def test_social_fund_export_neat(tu_tok):
     assert r.status_code == 200
     wb = load_workbook(io.BytesIO(r.content))
     ws = wb.active
-    assert "LAGUBOTI" in str(ws["A1"].value).upper()
+    assert "LAGUBOTI" in str(ws["B2"].value).upper()
     text = " ".join(str(c.value) for row in ws.iter_rows() for c in row if c.value)
     # summary labels must not be truncated
     for lab in ["Pemasukan (Rp)", "Pengeluaran (Rp)", "Saldo Akhir (Rp)", "Total Transaksi"]:

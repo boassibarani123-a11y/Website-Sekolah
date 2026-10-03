@@ -39,6 +39,13 @@ Regression suites: /app/backend/tests/test_iter17_laguboti_settings.py, /app/bac
 - Verified: testing agent iteration_20 — backend 12/12, frontend 100% (full archive+purge cycle, cron auth/idempotency, role 403s, Excel structure, card layout). Regression: `/app/backend/tests/test_iter20_weekly_attendance.py`.
 - Note: archive xlsx stored as base64 in Mongo (fine for weekly cadence/MVP); migrate to object storage if volume grows.
 
+## Added (2026-06, Presentation rewrite + Excel margins + Public Profile)
+- **Presentation deck rewritten** (`pages/Presentation.jsx`): now 17 elegant slides covering ALL features, each with a "MASALAH YANG KAMI JAWAB" problem→solution banner. New slides: Rekap Mingguan & Auto-Arsip, Rapor Digital, Dana Sosial, Perpustakaan Pintar, Pemilu OSIS, Komunikasi & Budaya. Deck mechanics (nav/print/PPTX link) unchanged.
+- **All Excel exports** now have a clean whitespace margin (empty column A + top row 1; content starts at B2) and a unified sky/slate theme via refactored `pretty_excel` (CO=2 offset, PageMargins, print centered). Same treatment applied to `weekly_attendance_excel`. Affects inventory, dana sosial, uang kas, users, attendance daily & weekly exports.
+- **Login page** (`pages/Login.jsx`): school-info card moved to the TOP of the left panel (under logo) with a public **"Lihat Profil Sekolah"** button; headline/description moved below.
+- **Public Profile** (`pages/PublicProfile.jsx`, route `/profil-sekolah`): unauthenticated visitors can view school hero, facts, Tentang, Visi/Misi, Sejarah, Tujuan, alamat & kontak, with Masuk CTA.
+- Verified: testing agent iteration_21 — backend 7/7, frontend 10/10, no bugs. Regression suites green (19/19) after updating iter20 asserts to B2/row-5 offsets.
+
 ## Credentials
 Super admin: boassibarani123@gmail.com / Boas12345io
 
