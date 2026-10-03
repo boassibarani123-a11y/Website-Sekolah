@@ -31,6 +31,14 @@ Regression suites: /app/backend/tests/test_iter17_laguboti_settings.py, /app/bac
 ## Credentials
 Super admin: boassibarani123@gmail.com / Boas12345io
 
+## Added (2026-06, Perpustakaan Pintar / Smart Library)
+- New role **admin_perpus** ("Admin Perpustakaan") wired into role labels (sidebar, Dashboard, Inventory) + demo account `perpus.demo@sekolahku.id / Demo12345`.
+- Frontend `/library` built on the pre-existing backend API (`/api/books`, `/api/loans`, `/api/reservations`, `/api/books/{id}/review`, `/api/books/{id}/ai-summary`, `/api/library/{config,stats,popular,ai-recommendations,loans/export}`).
+- Admin Perpus/super_admin only: Ringkasan (stats + popular + category chart), Kelola Buku (CRUD modal), Sirkulasi (lend-on-behalf desk, active loans, return, Excel export, return history), Reservasi (queue mgmt), Pengaturan (loan_days/max_books/fine_per_day).
+- Students & other roles: Katalog (search/filter/available toggle + AI recommendations), book detail modal (borrow/reserve, AI summary, star reviews), Pinjaman Saya (return with fine calc), Reservasi.
+- Files: pages/Library.jsx, pages/LibraryAdmin.jsx, components/library/{shared.jsx,BookDetailModal.jsx}; route in App.js + sidebar entry in DashboardLayout.jsx.
+- Verified: testing agent iteration_19 — backend 17/17, frontend 100% core flows (role enforcement confirmed via UI tab-hiding + API 403 for siswa). Regression suite: /app/backend/tests/test_iter19_library.py.
+
 ## Backlog / Next
 - P2: split server.py into routers.
 - P2: guard harmless 401 on first login render.

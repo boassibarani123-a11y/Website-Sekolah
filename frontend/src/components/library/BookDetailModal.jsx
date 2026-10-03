@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, MapPin, Calendar, Building2, BookMarked, Loader2, Send } from "lucide-react";
@@ -56,6 +56,8 @@ export default function BookDetailModal({ bookId, open, onClose, onChanged, canR
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl p-0 overflow-hidden max-h-[90vh] overflow-y-auto" data-testid="book-detail-modal">
+        <DialogTitle className="sr-only">{book?.title || "Detail Buku"}</DialogTitle>
+        <DialogDescription className="sr-only">Detail buku, ringkasan AI, dan ulasan pembaca</DialogDescription>
         {loading || !book ? (
           <div className="h-80 flex items-center justify-center"><Loader2 className="w-7 h-7 animate-spin text-sky-500" /></div>
         ) : (
