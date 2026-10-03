@@ -28,6 +28,17 @@ Regression suites: /app/backend/tests/test_iter17_laguboti_settings.py, /app/bac
 - Galeri Prestasi & Kegiatan: gallery collection + CRUD (GET public; POST/PATCH super_admin/kepsek/staff_tu/ketua_osis; DELETE super_admin/kepsek); public page /galeri with category filters + link from login; admin management embedded in /achievements.
 - Settings: academic_year field (used in PPTX cover).
 
+## Added (2026-06, Rekap Absensi Mingguan + Auto-Archive + Excel polish)
+- **Student ID card** (`components/StudentIdCard.jsx`): QR enlarged to 72px at top-right, NISN barcode widened (barWidth=2, h=30) spanning the card bottom, VERIFIED tag left — matches requested layout.
+- **Weekly Attendance Recap** (`pages/AttendanceRecap.jsx`, route `/attendance-recap`, nav gated to super_admin/kepsek/guru/staff_tu): hero, week navigation (prev/next/Minggu Ini), 5 summary cards, colored H/I/S/A matrix (Senin–Minggu + per-student totals), Export Excel, "Arsipkan & Bersihkan".
+- **Storage Rekap Absensi Siswa**: archived weekly Excel files stored in Mongo (`attendance_archives`, xlsx as base64) with metadata; list/download/delete endpoints (download/list for super_admin/kepsek/guru/staff_tu; delete for super_admin/kepsek/staff_tu).
+- **Auto backup (cron)**: `.emergent/crons.yml` runs `POST /api/cron/attendance-archive` every Monday 01:00 Asia/Jakarta → `run_attendance_weekly_archive` archives every COMPLETED week (date ≤ last Sunday) into Storage then PURGES those attendance records; current in-progress week kept live. Manual trigger `POST /api/attendance/archive-now` (caller scope). Webhook secured via `WEBHOOK_CRON_SECRET` (bearer, constant-time) + `cron_runs` idempotency.
+- **Weekly Excel** (`weekly_attendance_excel`): branded matrix sheet, colored status cells, daily totals footer, legend, frozen panes.
+- **Excel neatness fix** (`pretty_excel`): summary now full-width connected bands with labels merged across first half (no more truncation e.g. "Pengeluaran (Rp)"), values aligned; "Belum ada data" placeholder when empty; wider column A; brand = "SMA NEGERI 1 LAGUBOTI". Fixes Inventory & Dana Sosial exports.
+- New backend endpoints: GET `/attendance/week`, GET `/attendance/week/export`, GET `/attendance/archives`, GET `/attendance/archives/{id}/download`, DELETE `/attendance/archives/{id}`, POST `/attendance/archive-now`, POST `/cron/attendance-archive`.
+- Verified: testing agent iteration_20 — backend 12/12, frontend 100% (full archive+purge cycle, cron auth/idempotency, role 403s, Excel structure, card layout). Regression: `/app/backend/tests/test_iter20_weekly_attendance.py`.
+- Note: archive xlsx stored as base64 in Mongo (fine for weekly cadence/MVP); migrate to object storage if volume grows.
+
 ## Credentials
 Super admin: boassibarani123@gmail.com / Boas12345io
 
