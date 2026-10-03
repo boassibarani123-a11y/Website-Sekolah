@@ -7,3 +7,19 @@ crons:
     method: POST
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
     enabled: true
+  - name: attendance-reminder
+    description: "Senin-Sabtu 08:00 WIB: email + notifikasi ke siswa yang belum absen agar konfirmasi Sakit/Izin"
+    cron: "0 8 * * 1-6"
+    timezone: "Asia/Jakarta"
+    endpoint: "{{BASE_URL}}/api/cron/attendance-reminder"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true
+  - name: attendance-auto-alpha
+    description: "Senin-Sabtu 09:00 WIB: siswa tanpa scan atau konfirmasi otomatis tercatat Alpa"
+    cron: "0 9 * * 1-6"
+    timezone: "Asia/Jakarta"
+    endpoint: "{{BASE_URL}}/api/cron/attendance-auto-alpha"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

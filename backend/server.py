@@ -18,11 +18,12 @@ import httpx
 import requests
 import pandas as pd
 from html import escape
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Header, Query, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
+import re
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
@@ -480,6 +481,7 @@ class UserCreate(BaseModel):
     parent_name: Optional[str] = None
     parent_email: Optional[EmailStr] = None
     parent_phone: Optional[str] = None
+    phone: Optional[str] = None  # nomor WhatsApp (wajib untuk siswa)
     student_id: Optional[str] = None  # for orang_tua linking
     subjects: Optional[List[str]] = None  # mapel yang diampu (guru)
 
@@ -494,6 +496,7 @@ class UserUpdate(BaseModel):
     parent_name: Optional[str] = None
     parent_email: Optional[EmailStr] = None
     parent_phone: Optional[str] = None
+    phone: Optional[str] = None
     student_id: Optional[str] = None
     subjects: Optional[List[str]] = None
 
@@ -530,6 +533,10 @@ async def list_users(role: Optional[str] = None, user=Depends(get_current_user))
 async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"))):
     if body.role not in ROLES:
         raise HTTPException(400, "Role tidak valid")
+    if body.role == "siswa" and not (body.phone or "").strip():
+        raise HTTPException(400, "Nomor WhatsApp aktif wajib diisi untuk akun siswa")
+    if body.phone and not re.fullmatch(r"\+?[0-9][0-9 ()-]{7,17}", body.phone.strip()):
+        raise HTTPException(400, "Format nomor WhatsApp tidak valid (contoh: 081234567890)")
     email = body.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(400, "Email sudah terdaftar")
@@ -541,6 +548,7 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
         "nisn": body.nisn, "kelas": body.kelas, "jurusan": body.jurusan,
         "photo": body.photo, "qr_code": qr_payload,
         "parent_name": body.parent_name, "parent_email": body.parent_email, "parent_phone": body.parent_phone,
+        "phone": (body.phone or "").strip() or None,
         "student_id": body.student_id,
         "subjects": body.subjects or [],
         "created_at": now_iso(),
@@ -1058,7 +1066,7 @@ async def export_attendance(date: Optional[str] = None, user=Depends(get_current
     columns = ["Tanggal", "Nama Siswa", "Kelas", "Status", "Metode", "Waktu Scan", "Petugas"]
     rows = [{"Tanggal": d.get("date"), "Nama Siswa": d.get("student_name"),
              "Kelas": d.get("kelas") or "-", "Status": (d.get("status") or "").upper(),
-             "Metode": {"barcode": "Barcode USB", "manual": "Manual"}.get(d.get("method"), "QR Code"),
+             "Metode": {"barcode": "Barcode USB", "manual": "Manual", "email": "Konfirmasi Email", "sistem": "Otomatis (Sistem)"}.get(d.get("method"), "QR Code"),
              "Waktu Scan": d.get("scanned_at","")[:19].replace("T"," "),
              "Petugas": d.get("scanned_by") or "-"} for d in docs]
     from collections import Counter
@@ -1294,6 +1302,133 @@ async def cron_attendance_archive(request: Request, bg: BackgroundTasks):
         return {"ok": True, "duplicate": True}
     await db.cron_runs.insert_one({"run_id": run_id, "job": "attendance-archive", "created_at": now_iso()})
     bg.add_task(run_attendance_weekly_archive)
+    return {"ok": True}
+
+
+# ---------------- ATTENDANCE REMINDER & AUTO-ALPA (08:00 / 09:00 WIB) ----------------
+WIB = timezone(timedelta(hours=7))
+
+def _today_wib():
+    return datetime.now(WIB).date().isoformat()
+
+async def _students_tanpa_absen(today: str):
+    done = await db.attendance.distinct("student_id", {"date": today, "is_demo": {"$ne": True}})
+    return await db.users.find({"role": "siswa", "is_demo": {"$ne": True}, "id": {"$nin": done}},
+                               {"password_hash": 0, "_id": 0}).to_list(5000)
+
+async def run_attendance_reminder():
+    """08:00 WIB — tanya siswa yang belum absen: Sakit / Izin? (email tombol + notifikasi aplikasi)."""
+    today = _today_wib()
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    brand = escape(os.environ.get("EMAIL_FROM_NAME", "SMA NEGERI 1 LAGUBOTI"))
+    total, sent = 0, 0
+    for s in await _students_tanpa_absen(today):
+        if await db.attendance_confirm_tokens.find_one({"student_id": s["id"], "date": today}):
+            continue
+        total += 1
+        token = secrets.token_urlsafe(24)
+        await db.attendance_confirm_tokens.insert_one({
+            "id": str(uuid.uuid4()), "token": token, "student_id": s["id"], "date": today,
+            "used": False, "created_at": now_iso()})
+        sakit_url = f"{base}/api/attendance/confirm?token={token}&status=sakit"
+        izin_url = f"{base}/api/attendance/confirm?token={token}&status=izin"
+        html = (f'<div style="font-family:Arial;padding:24px;max-width:560px;margin:auto">'
+                f'<h2 style="color:#0284C7">Kamu Belum Absen Hari Ini</h2>'
+                f'<p>Halo <b>{escape(s["name"])}</b>, sampai pukul 08.00 WIB kehadiranmu di <b>{brand}</b> belum tercatat.</p>'
+                f'<p>Jika kamu tidak dapat hadir, cukup tekan salah satu tombol ini:</p>'
+                f'<p><a href="{sakit_url}" style="display:inline-block;padding:12px 28px;background:#D97706;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold">Saya Sakit</a>'
+                f'&nbsp;&nbsp;<a href="{izin_url}" style="display:inline-block;padding:12px 28px;background:#0284C7;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold">Saya Izin</a></p>'
+                f'<p style="color:#64748B;font-size:12px">Jika kamu sebenarnya hadir di sekolah, abaikan email ini dan segera scan kartu pelajarmu. '
+                f'Tanpa scan atau konfirmasi sampai pukul 09.00 WIB, kehadiranmu otomatis tercatat <b>Alpa</b>.</p>'
+                f'<p style="color:#94A3B8;font-size:11px;margin-top:24px">— {brand}. Tautan konfirmasi hanya berlaku hari ini dan sekali pakai.</p></div>')
+        if await send_email(s["email"], f"Konfirmasi Kehadiran - {s['name']}", html):
+            sent += 1
+        await notify(s["id"], "Kamu belum absen hari ini",
+                     "Sampai pukul 08.00 WIB kehadiranmu belum tercatat. Konfirmasi Sakit/Izin lewat tombol di email atau buka tautan ini. Lewat 09.00 WIB tanpa kabar = Alpa.",
+                     f"/konfirmasi-absensi?token={token}")
+    logger.info("Attendance reminder %s: %d siswa belum absen, %d email terkirim", today, total, sent)
+    return sent
+
+async def run_attendance_auto_alpha():
+    """09:00 WIB — siswa yang tetap tanpa kehadiran otomatis tercatat Alpa."""
+    today = _today_wib()
+    students = await _students_tanpa_absen(today)
+    for s in students:
+        await db.attendance.insert_one({
+            "id": str(uuid.uuid4()), "student_id": s["id"], "student_name": s["name"],
+            "kelas": s.get("kelas"), "date": today, "status": "alpa", "scanned_at": now_iso(),
+            "scanned_by": "Sistem (Auto-Alpa lewat 09.00 WIB)", "photo": None, "method": "sistem",
+            "is_demo": False})
+    if students:
+        await notify([s["id"] for s in students], "Kamu tercatat Alpa hari ini",
+                     "Tidak ada scan atau konfirmasi Sakit/Izin sampai pukul 09.00 WIB, sehingga kehadiranmu hari ini otomatis tercatat Alpa. Hubungi wali kelas jika ini keliru.")
+    logger.info("Auto-alpa %s: %d siswa ditandai alpa", today, len(students))
+    return len(students)
+
+@api.get("/attendance/confirm")
+async def attendance_confirm(token: str = "", status: str = ""):
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    def red(**params):
+        return RedirectResponse(f"{base}/konfirmasi-absensi?{urlencode(params)}", status_code=303)
+    if status not in ("sakit", "izin"):
+        return red(result="invalid")
+    rec = await db.attendance_confirm_tokens.find_one({"token": token})
+    if not rec:
+        return red(result="invalid")
+    student = await db.users.find_one({"id": rec["student_id"]}, {"password_hash": 0, "_id": 0})
+    nama = (student or {}).get("name", "")
+    if rec.get("used"):
+        return red(result="used", nama=nama)
+    today = _today_wib()
+    if rec.get("date") != today:
+        return red(result="expired", nama=nama)
+    existing = await db.attendance.find_one({"student_id": rec["student_id"], "date": today})
+    if existing:
+        await db.attendance_confirm_tokens.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now_iso(), "status": status}})
+        return red(result="already", status=existing.get("status", ""), nama=nama)
+    await db.attendance.insert_one({
+        "id": str(uuid.uuid4()), "student_id": student["id"], "student_name": student["name"],
+        "kelas": student.get("kelas"), "date": today, "status": status, "scanned_at": now_iso(),
+        "scanned_by": "Konfirmasi Siswa (Email)", "photo": None, "method": "email", "is_demo": False})
+    await db.attendance_confirm_tokens.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now_iso(), "status": status}})
+    await notify(rec["student_id"], "Konfirmasi kehadiran diterima",
+                 f"Kehadiranmu hari ini tercatat sebagai {status.capitalize()}. Terima kasih sudah memberi kabar.")
+    return red(result="ok", status=status, nama=nama)
+
+async def _cron_guard(request: Request, job: str) -> str:
+    """Verifikasi bearer secret + idempotensi run_id untuk endpoint cron. Return '' jika duplikat."""
+    secret = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    if not secret or not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], secret):
+        raise HTTPException(401, "Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid body")
+    run_id = request.headers.get("X-Webhook-Id") or (body or {}).get("run_id")
+    if not run_id:
+        raise HTTPException(400, "Missing run id")
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return ""
+    await db.cron_runs.insert_one({"run_id": run_id, "job": job, "created_at": now_iso()})
+    return run_id
+
+@api.post("/cron/attendance-reminder")
+async def cron_attendance_reminder(request: Request, bg: BackgroundTasks):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    run_id = await _cron_guard(request, "attendance-reminder")
+    if not run_id:
+        return {"ok": True, "duplicate": True}
+    bg.add_task(run_attendance_reminder)
+    return {"ok": True}
+
+@api.post("/cron/attendance-auto-alpha")
+async def cron_attendance_auto_alpha(request: Request, bg: BackgroundTasks):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    run_id = await _cron_guard(request, "attendance-auto-alpha")
+    if not run_id:
+        return {"ok": True, "duplicate": True}
+    bg.add_task(run_attendance_auto_alpha)
     return {"ok": True}
 
 

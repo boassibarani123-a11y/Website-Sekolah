@@ -39,6 +39,7 @@ import OrgStructure from "@/pages/OrgStructure";
 import OrgStructureEditor from "@/pages/OrgStructureEditor";
 import Library from "@/pages/Library";
 import AttendanceRecap from "@/pages/AttendanceRecap";
+import AttendanceConfirmed from "@/pages/AttendanceConfirmed";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -62,6 +63,7 @@ function AppInner() {
         <Route path="/presentasi" element={<Presentation/>}/>
         <Route path="/galeri" element={<PublicGallery/>}/>
         <Route path="/profil-sekolah" element={<PublicProfile/>}/>
+        <Route path="/konfirmasi-absensi" element={<AttendanceConfirmed/>}/>
         <Route path="/" element={<Protected><DashboardLayout/></Protected>}>
           <Route index element={<Dashboard/>}/>
           <Route path="accounts" element={<MasterAccounts/>}/>

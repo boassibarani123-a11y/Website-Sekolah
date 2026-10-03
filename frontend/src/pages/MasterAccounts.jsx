@@ -84,7 +84,7 @@ export default function MasterAccounts() {
 }
 
 function CreateModal({onClose, onCreated}) {
-  const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", kelas:"", jurusan:"IPA", photo:"", parent_name:"", parent_email:"", parent_phone:"", student_id:"", subjects:[]});
+  const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", kelas:"", jurusan:"IPA", photo:"", phone:"", parent_name:"", parent_email:"", parent_phone:"", student_id:"", subjects:[]});
   const [siswaList, setSiswaList] = useState([]);
   const [classList, setClassList] = useState([]);
   const [subjectList, setSubjectList] = useState([]);
@@ -150,6 +150,7 @@ function CreateModal({onClose, onCreated}) {
                 </div>
                 <Input label="Jurusan" v={form.jurusan} on={v=>setForm({...form,jurusan:v})}/>
               </div>
+              <Input label={form.role==="siswa" ? "Nomor WhatsApp Aktif (wajib)" : "Nomor WhatsApp"} v={form.phone} on={v=>setForm({...form,phone:v})} required={form.role==="siswa"} placeholder="08xxxxxxxxxx" data-testid="new-account-phone"/>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Nama Ortu" v={form.parent_name} on={v=>setForm({...form,parent_name:v})}/>
                 <Input label="Email Ortu" type="email" v={form.parent_email} on={v=>setForm({...form,parent_email:v})}/>
