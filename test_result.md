@@ -451,3 +451,40 @@ agent_communication:
     -message: "Fresh import of main4. The login failure was caused by missing .env files (backend crashed on startup). Fixed by creating .env for backend+frontend and restarting. Please run focused backend testing on auth: super_admin login, demo login, /auth/me, and a quick health check (classes, settings, announcements, stats, notifications). Use creds boassibarani123@gmail.com / Boas12345io. Do NOT run destructive seed/reset flows."
     -agent: "testing"
     -message: "✅ BACKEND TESTING COMPLETE - ALL 10 TESTS PASSED. Login flow is fully functional. The .env fix has completely resolved the 'cannot login' issue. All auth endpoints working correctly: super_admin login (200 with token + user), demo admin login (200), /auth/me (200), wrong password rejection (401 with correct error message). All health check endpoints returning 200: settings (public), announcements, classes, stats, notifications, attendance/stats. No issues found. Backend is production-ready. The user can now successfully login and access the dashboard."
+    -agent: "main"
+    -message: "SECOND login bug: user still saw 'Login gagal'. Screenshot showed app accessed at https://education-site-9.preview.emergentagent.com but REACT_APP_BACKEND_URL was wrongly set to a different preview domain (19a1cb33-...), causing cross-origin/CORS failure. FIXED: frontend/.env REACT_APP_BACKEND_URL and backend/.env FRONTEND_URL both set to https://education-site-9.preview.emergentagent.com; restarted both. Verify UI login flow at /login with boassibarani123@gmail.com / Boas12345io -> dashboard 'Selamat datang, Boas'."
+
+frontend:
+  - task: "Login flow UI verification after REACT_APP_BACKEND_URL fix"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/Login.jsx, frontend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: false
+        -agent: "user"
+        -comment: "User reported 'Login gagal' (login failed). Root cause: REACT_APP_BACKEND_URL was pointing to wrong preview domain (19a1cb33-...) instead of the correct same-origin domain (education-site-9.preview.emergentagent.com), causing CORS/cross-origin failures on /api/auth/login requests."
+        -working: "NA"
+        -agent: "main"
+        -comment: "Fixed REACT_APP_BACKEND_URL in frontend/.env to point to correct same-origin domain: https://education-site-9.preview.emergentagent.com. Also updated backend/.env FRONTEND_URL to match. Restarted both services. Manually verified in browser: login with boassibarani123@gmail.com succeeds and redirects to dashboard. Need comprehensive UI testing with Playwright to verify: (1) Real super admin login (boassibarani123@gmail.com / Boas12345io) -> redirect to dashboard with 'Selamat datang, Boas', (2) Demo super admin login via demo card click -> auto-fill and successful login, (3) Negative test with wrong password -> error toast 'Email atau password salah' and stay on /login."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL 3 UI TESTS PASSED - Login flow completely fixed and working perfectly. Comprehensive Playwright testing completed: (1) TEST 1 PASSED: Real super admin login (boassibarani123@gmail.com / Boas12345io) -> POST /api/auth/login returned 200, successfully redirected from /login to / (dashboard), dashboard loaded with correct welcome heading 'Selamat datang, Boas 👋', no 'Login gagal' toast appeared. (2) TEST 2 PASSED: Demo super admin login -> clicked demo card, credentials auto-filled correctly (admin.demo@sekolahku.id / Demo12345), POST /api/auth/login returned 200, successfully redirected to dashboard showing 'Selamat datang, Admin 👋'. (3) TEST 3 PASSED: Negative test with wrong password (boassibarani123@gmail.com / wrongpass) -> POST /api/auth/login returned 401 Unauthorized (expected), stayed on /login page (expected), error toast displayed 'Email atau password salah' (correct error message). Network monitoring: All auth API requests properly sent to https://education-site-9.preview.emergentagent.com/api/auth/login, no CORS errors detected, same-origin configuration working correctly. Console logs: No critical JavaScript errors. The REACT_APP_BACKEND_URL fix has completely resolved the user's 'Login gagal' issue. Login flow is production-ready."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 4
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "testing"
+    -message: "✅ UI LOGIN TESTING COMPLETE - ALL 3 TESTS PASSED. The REACT_APP_BACKEND_URL fix has completely resolved the 'Login gagal' issue. Comprehensive Playwright testing verified: (1) Real super admin login works perfectly (redirects to dashboard with 'Selamat datang, Boas'), (2) Demo account login via demo card works (auto-fill + successful login), (3) Wrong password properly rejected with error toast 'Email atau password salah'. All auth API requests sent to correct same-origin domain, no CORS errors, no console errors. Login flow is fully functional and production-ready. User can now successfully login and access the dashboard."
