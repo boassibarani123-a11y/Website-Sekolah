@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 20 testing: Weekly Attendance Recap API, auto-archive+purge cycle, cron webhook, role gating, Excel neatness (Inventory, Dana Sosial, Weekly), and frontend recap page / student ID card layout. 12/12 backend tests passed. All frontend checks passed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_weekly_attendance.py",
+    "/app/test_reports/pytest/iter20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 4000+ lines — consider splitting into routers (attendance, inventory, auth, etc.) for maintainability.",
+    "ATT_RECAP_ROLES=require_roles('kepsek','guru','staff_tu'); super_admin bypass is handled inside require_roles, which is correct but non-obvious. Consider documenting this.",
+    "attendance_archives documents embed the xlsx bytes as base64 in Mongo — for large schools (800 students * many weeks) this can grow unbounded. Consider external storage (filesystem or S3) with just a reference in Mongo.",
+    "_archive_week uses db.attendance.delete_many without a transaction after inserting the archive; a crash between insert and delete could leave duplicate data. Low risk but worth noting.",
+    "Cron webhook uses hmac.compare_digest correctly; dedup via cron_runs is good. Consider adding a TTL index on cron_runs to prevent unbounded growth."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter20_weekly_attendance.py"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100%"},
+  "test_credentials": "tu.demo@sekolahku.id / Demo12345 ; siswa.demo@sekolahku.id / Demo12345 (nisn 0099887766); WEBHOOK_CRON_SECRET from backend/.env",
+  "seed_data_creation": "test_archive_now_cycle inserts a demo-scope attendance doc dated 2 weeks ago (prefix TEST_) directly into Mongo and cleans up both the doc and the resulting archive after the test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression file /app/backend/tests/test_iter20_weekly_attendance.py covers: GET /attendance/week (default+custom start), /attendance/scan + week visibility, /attendance/week/export xlsx, archive-now full cycle with prior-week doc insertion and purge verification, cron webhook (auth/badsecret/missing-run-id/ok/duplicate), siswa 403 on archives endpoints, and Inventory + Dana Sosial xlsx neatness (title, column widths, summary labels fully visible). Weekly recap matrix uses marks keyed by YYYY-MM-DD with lowercase statuses (hadir/izin/sakit/alpa), not H/I/S/A letters.",
+  "rca of the issue": "N/A — no bugs found. One minor test fix during authoring: initial draft assumed students[].marks was a list indexed by weekday and used H/I/S/A letters; actual API returns marks as a dict keyed by date string with lowercase status. Fixed in test file.",
+  "frontend_verified": {
+    "tu_sidebar_rekap_absensi": true,
+    "recap_page_testids": ["attendance-recap-page","week-prev","week-next","recap-export-button","recap-archive-button","storage-rekap","week-today after prev"],
+    "siswa_sidebar_hides_recap": true,
+    "siswa_card_barcode_present": true,
+    "siswa_card_qr_visible_top_right_wide_barcode_bottom": "Confirmed via screenshot (/app/.screenshots/card_siswa.png) — QR renders top-right, barcode wide across bottom with testid id-card-barcode (246px wide)."
+  }
+}

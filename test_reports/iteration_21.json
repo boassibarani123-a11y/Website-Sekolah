@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 21: validated Excel margin/theme refactor (pretty_excel + weekly_attendance_excel now start content at B2, with col A and row 1 as spacers) and three frontend changes (public /profil-sekolah page, Login school-info card moved to top with 'Lihat Profil Sekolah' link, 17-slide Presentation deck with 'MASALAH YANG KAMI JAWAB' banners). 7/7 backend tests passed (0 skipped after fix). All 10 frontend UI assertions passed. No bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_excel_margins.py",
+    "/app/test_reports/pytest/iter21.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The old iteration_20 regression test (test_iter20_weekly_attendance.py) still asserts `ws['A1']` contains 'LAGUBOTI' and `test_inventory_export_neat` / `test_social_fund_export_neat` do the same — after the B2 refactor these three asserts will FAIL on next run. Main agent should update that file (change `ws['A1']` -> `ws['B2']`) or delete the superseded assertions. The newer file /app/backend/tests/test_iter21_excel_margins.py already covers the margin layout correctly.",
+    "server.py is now ~4028 lines — strongly consider splitting (attendance, inventory, exports, auth, library...) into routers.",
+    "pretty_excel and weekly_attendance_excel duplicate a lot of margin/title boilerplate; worth extracting a `_write_margin_header(ws, title, subtitle, n_cols, CO=2)` helper to keep the two in sync.",
+    "weekly_attendance_excel: column widths are set with hard-coded indexes assuming CO=2; if CO ever changes this will silently misalign. Consider deriving indexes from CO."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter21_excel_margins.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (10/10)"},
+  "test_credentials": "tu.demo@sekolahku.id / Demo12345 ; boassibarani123@gmail.com / Boas12345io",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter21 covers Excel margin/theme refactor and the three frontend changes. Backend assertions: _assert_margin_layout(ws) checks row 1 empty, col A empty, B2 contains brand, col A width <=4. Covered endpoints: /inventory/export, /social-fund/export, /users/export, /classes/{cid}/kas/export, /attendance/week/export, /attendance/export (regression), /presentation/pptx (regression). Frontend verified: /login -> school-info card at top (y=120, below name y=48) with 'Lihat Profil Sekolah' button; /profil-sekolah accessible unauthenticated with Tentang/Visi/Misi sections and Masuk button; /presentasi shows '1 / 17', 17 dots, slide-dot/next/prev navigation working, pptx download link and print button present, and 7/7 feature slides (indices 2,3,6,8,10,12,13) carry 'MASALAH YANG KAMI JAWAB' banner. NOTE: test_iter20_weekly_attendance.py has 3 stale asserts (`ws['A1']` -> should be `ws['B2']`) — see critical_code_review_comments.",
+  "rca of the issue": "N/A — no bugs found."
+}

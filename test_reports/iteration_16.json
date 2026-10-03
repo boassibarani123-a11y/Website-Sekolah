@@ -1,0 +1,20 @@
+{
+  "summary": "Iter 16: Class BPH (Badan Pengurus Harian) per-class tested end-to-end. 18/18 backend pytest cases pass including role-based permissions (ketua writes, siswa/guru/super_admin forbidden with 403), 5-depth chain creation, multiple siblings, edit, parent-move, cycle prevention (400), delete subtree cascade, and class isolation. Frontend verified for all 4 roles on /classes/{XI IPA 1}: tab-bph renders OrgTree same design as global Struktur Organisasi, ketua gets full management UI (bph-add-root, bph-root-dropzone, org-add-child/edit/delete per node), modal fields (name/title/parent/order/dashed/photo/save) all present, non-ketua users (siswa, guru, super_admin) correctly see bph-readonly-note and no modification controls. Seed node 'Ketua Demo' preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter16_bph.py", "/app/test_reports/pytest/iter16.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ClassBPH.jsx: unused imports Pencil and Upload at top-level (Pencil only used inside OrgTree; Upload used - OK). Pencil import unused in ClassBPH - minor lint.",
+    "server.py BPH endpoints: 423 class-locked path depends on assert_class_unlocked; not retested here but consistent with existing pattern used in classes module.",
+    "ClassBPH drag-drop uses optimistic Promise.all PATCH reorder — if any fails, state inconsistent. Low priority since reorder is per-sibling and idempotent on reload."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter16_bph.py"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (4/4 role flows)"},
+  "test_credentials": "Demo accounts (@sekolahku.id) password Demo12345: admin.demo, guru.demo, siswa.demo, kelas.demo",
+  "seed_data_creation": "None persisted. Backend test cleanup via module fixture removed all TEST_ nodes. UI test cleanup deleted TEST_UI_Baw. Seed 'Ketua Demo' intact.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "BPH class endpoints: GET /api/classes/{cid}/bph (any class viewer), POST/PATCH/DELETE restricted to ketua_kelas whose user.kelas == class.name (super_admin NOT allowed by design). Class XI IPA 1 id 97194f55-894d-44dc-957a-1c2a8522e2b0 is unlocked (no password). Seed BPH node id d758ab62-f0d2-4363-99d3-cbadaa6d4618 (Ketua Demo) must be preserved. Login response key is 'token' (not 'access_token').",
+  "rca of the issue": "N/A — no issues found."
+}

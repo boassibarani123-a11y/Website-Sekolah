@@ -1,0 +1,183 @@
+{
+  "project_name": "SEKOLAHKU",
+  "app_title": "SEKOLAHKU - Sistem Manajemen Sekolah Terpadu",
+  "language": "Bahasa Indonesia",
+  "theme": {
+    "mode": "Light-Dominant with High Contrast Dark Accents",
+    "primary_color": "#0284C7",
+    "primary_light": "#38BDF8",
+    "primary_dark": "#0369A1",
+    "background_default": "#F8FAFC",
+    "surface_white": "#FFFFFF",
+    "accent_dark": "#0F172A",
+    "accent_subtle": "#1E293B",
+    "gamification_gold": "#F59E0B",
+    "success_emerald": "#10B981",
+    "danger_rose": "#EF4444",
+    "info_indigo": "#6366F1"
+  },
+  "typography": {
+    "font_family_heading": "'Plus Jakarta Sans', 'Outfit', sans-serif",
+    "font_family_body": "'DM Sans', sans-serif",
+    "font_family_mono": "'JetBrains Mono', monospace",
+    "h1": "text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900",
+    "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+    "h3": "text-xl sm:text-2xl font-semibold text-slate-900",
+    "h4": "text-lg font-semibold text-slate-800",
+    "body_lg": "text-base font-normal leading-relaxed text-slate-700",
+    "body_md": "text-sm font-normal leading-normal text-slate-600",
+    "body_sm": "text-xs font-medium text-slate-500",
+    "mono_badge": "font-mono text-xs font-semibold tracking-wider text-slate-800"
+  },
+  "roles": [
+    {
+      "key": "super_admin",
+      "label": "Super Admin",
+      "badge_color": "bg-purple-100 text-purple-700 border-purple-200",
+      "permissions": ["Kelola Akun Master", "Cetak Kartu Siswa", "Pengaturan Sistem", "Semua Modul"]
+    },
+    {
+      "key": "kepsek",
+      "label": "Kepala Sekolah (Kepsek)",
+      "badge_color": "bg-amber-100 text-amber-800 border-amber-200",
+      "permissions": ["Dashboard Analitik Utama", "Laporan Keuangan & Kas", "Persetujuan Inventaris", "Monitoring Laporan"]
+    },
+    {
+      "key": "staff_tu",
+      "label": "Staff Tata Usaha (TU)",
+      "badge_color": "bg-blue-100 text-blue-800 border-blue-200",
+      "permissions": ["Presensi Scanner & Manual", "Export Excel Absensi", "Pengelolaan Inventaris", "Surat & Pengumuman"]
+    },
+    {
+      "key": "guru",
+      "label": "Guru Mata Pelajaran / Wali Kelas",
+      "badge_color": "bg-emerald-100 text-emerald-800 border-emerald-200",
+      "permissions": ["Input Tugas & Nilai", "Buat Mini-Quiz", "Presensi Kelas", "Leaderboard Prestasi"]
+    },
+    {
+      "key": "siswa",
+      "label": "Siswa",
+      "badge_color": "bg-sky-100 text-sky-800 border-sky-200",
+      "permissions": ["Lihat Kartu Pelajar", "Schoolgram Feed", "Kerjakan Quiz & Tugas", "Voting Pemilu OSIS", "Pinjam Inventaris"]
+    },
+    {
+      "key": "ketua_osis",
+      "label": "Ketua OSIS",
+      "badge_color": "bg-indigo-100 text-indigo-800 border-indigo-200",
+      "permissions": ["Kelola Event OSIS", "Monitoring Pemilu OSIS", "Pengadaan Dana Sosial", "Posting Schoolgram Resmi"]
+    },
+    {
+      "key": "ketua_kelas",
+      "label": "Ketua Kelas",
+      "badge_color": "bg-teal-100 text-teal-800 border-teal-200",
+      "permissions": ["Catat Uang Kas Kelas", "Laporan Presensi Harian Kelas", "Pengumuman Internal Kelas"]
+    }
+  ],
+  "printable_student_id_card": {
+    "dimensions": "Aspect ratio 1.586 (~85.6mm x 53.98mm / KTP Standard)",
+    "container_class": "w-[340px] h-[215px] rounded-xl overflow-hidden shadow-2xl relative border border-slate-200 bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 text-white p-4 font-sans select-none",
+    "front_side": {
+      "header_school_logo": "https://images.unsplash.com/photo-1551161001-5c4184cc4317?w=100&auto=format&fit=crop&q=80",
+      "header_title": "SMA NEGERI 1 SEKOLAHKU",
+      "header_subtitle": "KARTU TANDA PELAJAR (KTP-S)",
+      "photo_box": "w-20 h-24 rounded-lg border-2 border-white/80 object-cover shadow-md bg-slate-800",
+      "qr_box": "w-16 h-16 bg-white p-1 rounded-md border border-slate-300 shadow-sm flex items-center justify-center",
+      "details": ["Nama Lengkap", "NISN / NIS", "Kelas & Jurusan", "Masa Berluku (2024-2027)"]
+    },
+    "back_side": {
+      "header_text": "TATA TERTIB & KETENTUAN",
+      "rules": [
+        "1. Kartu ini wajib dibawa selama berada di lingkungan sekolah.",
+        "2. Digunakan untuk Presensi QR Code & Peminjaman Perpustakaan/Inventaris.",
+        "3. Apabila hilang/rusak, segera lapor ke Tata Usaha."
+      ],
+      "signature_area": "Tanda Tangan Kepala Sekolah + Cap Basah Digital",
+      "barcode_footer": "Code-128 / Dynamic QR Reader Format"
+    },
+    "print_styles": "@media print { body * { visibility: hidden; } .printable-id-card, .printable-id-card * { visibility: visible; } .printable-id-card { position: absolute; left: 0; top: 0; width: 85.6mm; height: 53.98mm; box-shadow: none; border: 1px solid #ccc; page-break-after: always; } }"
+  },
+  "components_and_modules": {
+    "sidebar_navigation": {
+      "style": "bg-slate-900 text-slate-100 w-64 min-h-screen border-r border-slate-800 flex flex-col justify-between p-4",
+      "active_link": "bg-sky-600 text-white font-semibold rounded-lg shadow-sm px-3 py-2.5 transition-all flex items-center gap-3",
+      "inactive_link": "text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 rounded-lg px-3 py-2.5 transition-all flex items-center gap-3"
+    },
+    "qr_attendance_scanner": {
+      "webcam_container": "relative rounded-2xl overflow-hidden border-4 border-sky-500/30 shadow-2xl bg-slate-950 aspect-video flex items-center justify-center",
+      "scan_overlay": "absolute inset-0 border-2 border-sky-400/60 rounded-xl m-12 pointer-events-none animate-pulse flex items-center justify-center text-sky-400 text-xs font-mono",
+      "realtime_counters": "grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6",
+      "counter_card_present": "bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-xl shadow-sm text-center",
+      "counter_card_absent": "bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-xl shadow-sm text-center",
+      "counter_card_sick": "bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl shadow-sm text-center",
+      "counter_card_permission": "bg-sky-50 border border-sky-200 text-sky-900 p-4 rounded-xl shadow-sm text-center"
+    },
+    "schoolgram_social_feed": {
+      "concept": "Jejaring Sosial Internal Sekolah (Instagram-styled)",
+      "story_bar": "flex gap-4 overflow-x-auto pb-4 pt-2 no-scrollbar border-b border-slate-200 mb-6",
+      "post_card": "bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden mb-6 max-w-xl mx-auto",
+      "post_header": "flex items-center justify-between p-4 border-b border-slate-100",
+      "post_image": "w-full aspect-square object-cover bg-slate-100",
+      "interaction_bar": "flex items-center justify-between p-4 text-slate-700",
+      "like_button_active": "text-rose-500 fill-rose-500 animate-bounce"
+    },
+    "inventory_borrowing_hub": {
+      "status_badges": {
+        "Dipinjam": "bg-amber-100 text-amber-800 border-amber-200",
+        "Disetujui": "bg-emerald-100 text-emerald-800 border-emerald-200",
+        "Menunggu Approval": "bg-sky-100 text-sky-800 border-sky-200",
+        "Dikembalikan": "bg-slate-100 text-slate-700 border-slate-200"
+      }
+    },
+    "osis_elections": {
+      "candidate_card": "bg-white border-2 border-slate-200 hover:border-sky-500 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all relative flex flex-col justify-between",
+      "candidate_number": "w-10 h-10 rounded-full bg-slate-900 text-white font-black flex items-center justify-center text-lg absolute -top-3 -left-3 shadow-md border-2 border-white",
+      "vote_button": "w-full mt-4 bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2.5 rounded-xl shadow transition-all"
+    },
+    "gamification_achievements": {
+      "trophy_banner": "bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-500 text-white p-6 rounded-2xl shadow-lg flex items-center justify-between mb-6",
+      "rank_badge_gold": "w-8 h-8 rounded-full bg-amber-400 text-slate-900 font-extrabold flex items-center justify-center border-2 border-amber-200 shadow",
+      "rank_badge_silver": "w-8 h-8 rounded-full bg-slate-300 text-slate-900 font-extrabold flex items-center justify-center border-2 border-slate-100 shadow",
+      "rank_badge_bronze": "w-8 h-8 rounded-full bg-amber-700 text-white font-extrabold flex items-center justify-center border-2 border-amber-600 shadow"
+    }
+  },
+  "image_urls": {
+    "students": [
+      {
+        "url": "https://images.unsplash.com/photo-1534751516642-a1af1ef26a56?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "category": "student_avatar_female",
+        "description": "Female student portrait"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1551848500-8d18e58e7d27?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "category": "student_avatar_male",
+        "description": "Male student portrait with glasses"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1520689728498-7dd1a9814607?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "category": "student_avatar_female_2",
+        "description": "Student avatar portrait"
+      }
+    ],
+    "school_building": "https://images.unsplash.com/photo-1614655683452-5bedbf434db7?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "students_activity": "https://images.unsplash.com/photo-1551161001-5c4184cc4317?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "testing": {
+    "attribute_name": "data-testid",
+    "convention": "kebab-case",
+    "mandatory_elements": [
+      "login-form-submit-button",
+      "role-switcher-dropdown",
+      "student-id-card-modal-trigger",
+      "print-student-id-card-button",
+      "qr-scanner-toggle-button",
+      "attendance-export-excel-button",
+      "schoolgram-create-post-button",
+      "schoolgram-like-button",
+      "inventory-borrow-request-button",
+      "osis-vote-candidate-button",
+      "uang-kas-add-transaction-button",
+      "feedback-submit-button"
+    ]
+  },
+  "instructions_to_main_agent": "Ensure proper data-testid on every interactive element. Follow the Sky Blue, Clean White, and Dark Black color theme strictly. The Kartu Pelajar component MUST match standard KTP proportions (aspect 1.586) and provide a crisp printable view."
+}

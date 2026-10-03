@@ -1,0 +1,33 @@
+{
+  "summary": "Smart Library (Perpustakaan Pintar) tested end-to-end (both backend and frontend). Backend: 17/17 pytest tests pass covering role guards (siswa 403 on POST/PATCH/DELETE books, PATCH /library/config, GET /library/stats), Books CRUD with GET-persist verification, loan borrow+return (siswa and admin-on-behalf), reservation flow when available_copies=0, reviews, library config PATCH persistence, and AI endpoints (ai-summary + ai-recommendations returned 200 without crashing). Frontend: Admin Perpus logs in → Perpustakaan page shows 5 tabs (Ringkasan/Kelola Buku/Sirkulasi/Reservasi/Pengaturan); Tambah Buku modal creates a book that appears in grid, edit/delete testids present per card; Settings tab has cfg-loan-days/max-books/fine + save button; Sirkulasi has lend-student-select/lend-book-select/lend-submit-button/export-loans-button. Siswa logs in → Perpustakaan shows ONLY 3 tabs (Katalog/Pinjaman Saya/Reservasi); admin tabs are NOT present; search/category/avail-toggle/ai-reco-button all render; opening a book card opens BookDetailModal with borrow/ai-summary/submit-review/review-text controls; borrow succeeded (loan appeared under Pinjaman Saya) and return-my-loan worked. Role enforcement verified both via UI (tabs hidden) and API (403 responses).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DashboardLayout sidebar entry Perpustakaan", "issue": "Missing data-testid=\"nav-library\" on sidebar <a> (text selector works but testid absent)", "selector": "[data-testid=\"nav-library\"]", "priority": "LOW"},
+      {"component": "BookDetailModal", "issue": "Radix DialogContent emits a11y warning: 'DialogContent requires a DialogTitle'. Wrap title in VisuallyHidden or add proper DialogTitle.", "selector": "[data-testid=\"book-detail-modal\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_library.py",
+    "/app/test_reports/pytest/iter19_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid=\"nav-library\" to the Perpustakaan sidebar link in DashboardLayout.jsx",
+    "(Optional) Add a <DialogTitle> (or VisuallyHidden wrapper) inside BookDetailModal to silence Radix a11y warning"
+  ],
+  "critical_code_review_comments": [
+    "Library backend code is clean: proper async usage, dscope() scoping for is_demo isolation, correct 403 via require_roles, _id excluded from projections, Pydantic validation on inputs.",
+    "AI _ai_text uses model string 'gpt-5.4' with with_model('openai','gpt-5.4') — verify this model id is valid with emergentintegrations; endpoint returned 200 during tests so key budget is fine, but model name is unusual and worth double-checking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_library.py"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% core flows"},
+  "test_credentials": "Admin Perpus perpus.demo@sekolahku.id / Demo12345; Siswa siswa.demo@sekolahku.id / Demo12345",
+  "seed_data_creation": "Transient: created and deleted TEST_Buku Iter19, TEST_SingleCopy, TEST_FE_Book_Iter19; TEST_review and borrow/return state cleaned at end of flows. No residual TEST_ data remained.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Library backend endpoints live at /api/books, /api/loans, /api/loans/{id}/return, /api/reservations, /api/books/{id}/reserve, /api/books/{id}/review, /api/books/{id}/ai-summary, /api/library/{config,stats,popular,ai-recommendations,loans/export}. Loan status values are Indonesian ('dipinjam'/'dikembalikan'). Admin perpus demo and siswa demo share the is_demo scope so cross-role borrow tests work out of the box. Catalog UI uses data-testid pattern described in review request; all present. Only minor gaps: nav-library testid, DialogTitle a11y warning."
+}

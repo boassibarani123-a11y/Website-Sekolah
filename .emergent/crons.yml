@@ -1,0 +1,9 @@
+crons:
+  - name: attendance-archive
+    description: "Tiap Senin dini hari: ekspor rekap absensi mingguan ke Excel, simpan ke Storage Rekap, lalu hapus data absensi mingguan dari website"
+    cron: "0 1 * * 1"
+    timezone: "Asia/Jakarta"
+    endpoint: "{{BASE_URL}}/api/cron/attendance-archive"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true
