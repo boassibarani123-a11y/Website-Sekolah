@@ -76,7 +76,7 @@ export function IdCardFront({ student, schoolName, validUntil, logoUrl }) {
         </span>
         <div className="flex-1 bg-white rounded px-1.5 py-1 flex items-center justify-center overflow-hidden" data-testid="id-card-barcode">
           {student.nisn
-            ? <NisnBarcode value={student.nisn} height={34} barWidth={2.1}/>
+            ? <NisnBarcode value={student.nisn} height={38} barWidth={2.3}/>
             : <span className="text-[7px] text-slate-400 px-2">NISN belum diisi</span>}
         </div>
       </div>
