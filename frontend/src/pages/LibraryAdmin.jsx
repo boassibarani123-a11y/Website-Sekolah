@@ -112,6 +112,16 @@ export default function LibraryAdmin({ config, setConfig, reload }) {
   };
 
   const availBooks = books.filter((b) => b.available_copies > 0);
+  const overdueLoans = loans.filter((l) => l.overdue);
+  const _bmap = {};
+  loans.forEach((l) => {
+    const k = l.borrower_id || l.borrower_name;
+    if (!_bmap[k]) _bmap[k] = { name: l.borrower_name, kelas: l.kelas, count: 0, overdue: 0 };
+    _bmap[k].count += 1;
+    if (l.overdue) _bmap[k].overdue += 1;
+  });
+  const activeBorrowers = Object.values(_bmap).sort((a, b) => b.overdue - a.overdue || b.count - a.count);
+  const daysLate = (due) => { try { return Math.max(0, Math.floor((new Date() - new Date(due)) / 86400000)); } catch { return 0; } };
 
   return (
     <Tabs defaultValue="overview" className="w-full">
@@ -125,6 +135,50 @@ export default function LibraryAdmin({ config, setConfig, reload }) {
 
       {/* ---- OVERVIEW ---- */}
       <TabsContent value="overview" className="mt-5 space-y-6">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-2xl border border-rose-200 p-5 shadow-sm" data-testid="overdue-panel">
+            <h3 className="font-heading font-bold text-slate-800 flex items-center gap-2 mb-3">
+              <AlertTriangle className="w-5 h-5 text-rose-500" />Buku Terlambat
+              <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">{overdueLoans.length}</span>
+            </h3>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {overdueLoans.length === 0 && <p className="text-sm text-emerald-600">🎉 Tidak ada buku yang terlambat. Kerja bagus!</p>}
+              {overdueLoans.map((l) => (
+                <div key={l.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-rose-50/60 border border-rose-100" data-testid={`overdue-row-${l.id}`}>
+                  <div className="w-8 h-11 rounded overflow-hidden shrink-0"><BookCover book={{ title: l.book_title, cover_url: l.book_cover }} className="w-full h-full" /></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{l.book_title}</p>
+                    <p className="text-xs text-slate-500 truncate">{l.borrower_name}{l.kelas ? ` · ${l.kelas}` : ""}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-600 text-white">{daysLate(l.due_date)} hari</span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">tempo {l.due_date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm" data-testid="active-borrowers-panel">
+            <h3 className="font-heading font-bold text-slate-800 flex items-center gap-2 mb-3">
+              <BookUp className="w-5 h-5 text-sky-600" />Peminjam Aktif
+              <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">{activeBorrowers.length}</span>
+            </h3>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {activeBorrowers.length === 0 && <p className="text-sm text-slate-400">Belum ada peminjaman aktif.</p>}
+              {activeBorrowers.map((b, i) => (
+                <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50" data-testid={`active-borrower-${i}`}>
+                  <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-sm shrink-0">{(b.name || "?")[0]}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{b.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{b.kelas || "—"}</p>
+                  </div>
+                  {b.overdue > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">{b.overdue} telat</span>}
+                  <span className="text-xs font-bold text-sky-600 shrink-0">{b.count} buku</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
         {stats && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

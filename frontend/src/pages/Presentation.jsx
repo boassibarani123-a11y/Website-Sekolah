@@ -441,10 +441,9 @@ function SlideKomunikasi() {
           <Bullet icon={CalendarDays}><b className="text-white">Kalender akademik</b> terpusat: ujian, libur & agenda sekolah.</Bullet>
           <Bullet icon={Camera}><b className="text-white">Schoolgram</b> — galeri kegiatan sekolah bergaya media sosial.</Bullet>
           <Bullet icon={Trophy}><b className="text-white">Dinding Prestasi</b> memajang pencapaian siswa secara publik.</Bullet>
-          <Bullet icon={MessageSquare}><b className="text-white">Chat Wali–Orang Tua</b> yang privat & tercatat rapi.</Bullet>
         </ul>
         <div className="grid grid-cols-2 gap-3 content-center">
-          {[[Megaphone, "Pengumuman"], [CalendarDays, "Kalender"], [Camera, "Schoolgram"], [Trophy, "Prestasi"], [MessageSquare, "Chat"], [HandCoins, "Kritik & Saran"]].map(([Icon, l]) => (
+          {[[Megaphone, "Pengumuman"], [CalendarDays, "Kalender"], [Camera, "Schoolgram"], [Trophy, "Prestasi"], [HandCoins, "Kritik & Saran"]].map(([Icon, l]) => (
             <div key={l} className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/5 py-5 hover:bg-white/10 transition-colors">
               <Icon className="w-7 h-7 text-sky-400" /><span className="text-xs font-semibold text-slate-300">{l}</span>
             </div>
