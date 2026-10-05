@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash } from "lucide-react";
+import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash, ShieldAlert } from "lucide-react";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { useAuth } from "@/context/AuthContext";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const OPERATOR_ROLES = ["super_admin", "staff_tu", "guru"];
 
 export default function Attendance() {
+  const { user } = useAuth();
+  const isOperator = user && OPERATOR_ROLES.includes(user.role);
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);
   const [manual, setManual] = useState("");
@@ -18,10 +22,10 @@ export default function Attendance() {
   const lockRef = useRef(false);
 
   const load = () => {
-    api.get("/attendance/stats").then(r=>setStats(r.data));
-    api.get("/attendance").then(r=>setRows(r.data));
+    api.get("/attendance/stats").then(r=>setStats(r.data)).catch(()=>{});
+    api.get("/attendance").then(r=>setRows(r.data)).catch(()=>{});
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (isOperator) load(); }, [isOperator]);
 
   const submit = async (payload) => {
     try {
@@ -90,6 +94,23 @@ export default function Attendance() {
     const url = URL.createObjectURL(r.data);
     const a = document.createElement("a"); a.href = url; a.download = `absensi_${stats?.date}.xlsx`; a.click();
   };
+
+  if (user && !isOperator) {
+    return (
+      <div className="max-w-xl mx-auto mt-10" data-testid="attendance-access-denied">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-7 h-7"/>
+          </div>
+          <h1 className="font-heading text-2xl font-extrabold text-slate-900 mt-4">Halaman Khusus Petugas Presensi</h1>
+          <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+            Stasiun scan presensi hanya dapat diakses oleh <b>Staff TU</b>, <b>Guru/Wali Kelas</b>, dan <b>Super Admin</b>.
+            Kehadiranmu dicatat saat petugas memindai Kartu Pelajar, atau lewat konfirmasi email bila belum absen.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" data-testid="attendance-page">
