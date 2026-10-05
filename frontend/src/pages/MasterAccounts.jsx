@@ -6,7 +6,7 @@ import StudentIdCard from "@/components/StudentIdCard";
 const ROLES = [
   {v:"siswa", l:"Siswa"}, {v:"guru", l:"Guru / Wali Kelas"}, {v:"kepsek", l:"Kepala Sekolah"},
   {v:"staff_tu", l:"Staff TU"}, {v:"ketua_osis", l:"Ketua OSIS"},
-  {v:"ketua_kelas", l:"Ketua Kelas"}, {v:"orang_tua", l:"Orang Tua"}, {v:"super_admin", l:"Super Admin"},
+  {v:"ketua_kelas", l:"Ketua Kelas"}, {v:"admin_perpus", l:"Admin Perpustakaan"}, {v:"super_admin", l:"Super Admin"},
 ];
 
 export default function MasterAccounts() {
@@ -24,7 +24,7 @@ export default function MasterAccounts() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="font-heading text-3xl font-extrabold text-slate-900">Kelola Akun Master</h1>
-          <p className="mt-1 text-sm text-slate-500">Buat, edit, dan kelola akun untuk seluruh warga sekolah. Setiap akun siswa otomatis mendapat QR permanen & Kartu Pelajar.</p>
+          <p className="mt-1 text-sm text-slate-500">Buat, edit, dan kelola akun untuk seluruh warga sekolah. Setiap akun siswa otomatis mendapat barcode NISN permanen & Kartu Pelajar.</p>
         </div>
         <div className="flex gap-2">
           <a href="/print-cards" target="_blank" rel="noreferrer" data-testid="bulk-print-link"
@@ -85,7 +85,6 @@ export default function MasterAccounts() {
 
 function CreateModal({onClose, onCreated}) {
   const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", kelas:"", jurusan:"IPA", photo:"", phone:"", parent_name:"", parent_email:"", parent_phone:"", student_id:"", subjects:[]});
-  const [siswaList, setSiswaList] = useState([]);
   const [classList, setClassList] = useState([]);
   const [subjectList, setSubjectList] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -93,7 +92,6 @@ function CreateModal({onClose, onCreated}) {
     api.get("/classes").then(r=>setClassList(r.data)).catch(()=>{});
     api.get("/subjects").then(r=>setSubjectList(r.data)).catch(()=>{});
   }, []);
-  useEffect(() => { if (form.role === "orang_tua") api.get("/users?role=siswa").then(r=>setSiswaList(r.data)); }, [form.role]);
   const toggleSubject = (name) => setForm(f => ({...f, subjects: f.subjects.includes(name) ? f.subjects.filter(s=>s!==name) : [...f.subjects, name]}));
   const submit = async e => {
     e.preventDefault(); setBusy(true);
@@ -137,7 +135,7 @@ function CreateModal({onClose, onCreated}) {
           </div>
           {(form.role==="siswa" || form.role==="ketua_kelas" || form.role==="ketua_osis") && (
             <>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Input label="NISN" v={form.nisn} on={v=>setForm({...form,nisn:v})}/>
                 <div>
                   <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Kelas</label>
@@ -148,7 +146,6 @@ function CreateModal({onClose, onCreated}) {
                   </select>
                   {classList.length===0 && <p className="mt-1 text-[10px] text-amber-600">Belum ada kelas. Buat kelas dulu di menu Ruang Kelas.</p>}
                 </div>
-                <Input label="Jurusan" v={form.jurusan} on={v=>setForm({...form,jurusan:v})}/>
               </div>
               <Input label={form.role==="siswa" ? "Nomor WhatsApp Aktif (wajib)" : "Nomor WhatsApp"} v={form.phone} on={v=>setForm({...form,phone:v})} required={form.role==="siswa"} placeholder="08xxxxxxxxxx" data-testid="new-account-phone"/>
               <div className="grid grid-cols-2 gap-3">
@@ -182,16 +179,6 @@ function CreateModal({onClose, onCreated}) {
                 <p className="mt-1 text-[10px] text-slate-400">Penetapan wali kelas resmi dilakukan di menu Ruang Kelas.</p>
               </div>
             </>
-          )}
-          {form.role === "orang_tua" && (
-            <div>
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Tautkan ke Siswa</label>
-              <select value={form.student_id} onChange={e=>setForm({...form,student_id:e.target.value})}
-                className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
-                <option value="">-- Pilih siswa --</option>
-                {siswaList.map(s=><option key={s.id} value={s.id}>{s.name} · {s.kelas}</option>)}
-              </select>
-            </div>
           )}
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Foto (opsional)</label>

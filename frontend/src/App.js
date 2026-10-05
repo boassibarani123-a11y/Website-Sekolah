@@ -26,7 +26,6 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import PrintCards from "@/pages/PrintCards";
 import Reports from "@/pages/Reports";
-import Chats from "@/pages/Chats";
 import Calendar from "@/pages/Calendar";
 import PpdbPublic from "@/pages/PpdbPublic";
 import AdminPpdb from "@/pages/AdminPpdb";
@@ -85,7 +84,6 @@ function AppInner() {
           <Route path="announcements" element={<Announcements/>}/>
           <Route path="feedback" element={<Feedback/>}/>
           <Route path="reports" element={<Reports/>}/>
-          <Route path="chats" element={<Chats/>}/>
           <Route path="calendar" element={<Calendar/>}/>
           <Route path="admin-ppdb" element={<AdminPpdb/>}/>
           <Route path="settings" element={<SettingsPage/>}/>

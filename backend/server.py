@@ -51,41 +51,53 @@ EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 APP_NAME = "sekolahku"
 storage_key: Optional[str] = None
 
+import time as _time
+
 def init_storage(force: bool = False):
     global storage_key
     if storage_key and not force:
         return storage_key
-    try:
-        r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-        r.raise_for_status()
-        storage_key = r.json()["storage_key"]
-        return storage_key
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
-        return None
+    last = None
+    for attempt in range(3):
+        try:
+            r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+            r.raise_for_status()
+            storage_key = r.json()["storage_key"]
+            return storage_key
+        except Exception as e:
+            last = e
+            logger.error(f"Storage init failed (attempt {attempt+1}): {e}")
+            _time.sleep(1.5 * (attempt + 1))
+    return None
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
     key = init_storage()
-    if not key: raise HTTPException(500, "Storage tidak tersedia")
-    r = requests.put(f"{STORAGE_URL}/objects/{path}",
-                     headers={"X-Storage-Key": key, "Content-Type": content_type},
-                     data=data, timeout=120)
-    if r.status_code == 404:
-        key = init_storage(force=True)
+    if not key:
+        raise HTTPException(503, "Penyimpanan sedang sibuk, coba lagi sebentar")
+    # Transient upstream errors (404 stale key, 500/503/429) -> refresh key and retry.
+    for attempt in range(4):
         r = requests.put(f"{STORAGE_URL}/objects/{path}",
                          headers={"X-Storage-Key": key, "Content-Type": content_type},
                          data=data, timeout=120)
-    r.raise_for_status()
-    return r.json()
+        if r.status_code in (404, 500, 502, 503, 429):
+            key = init_storage(force=True) or key
+            _time.sleep(1.0 * (attempt + 1))
+            continue
+        r.raise_for_status()
+        return r.json()
+    raise HTTPException(503, "Gagal mengunggah ke penyimpanan, coba lagi")
 
 def get_object(path: str):
     key = init_storage()
-    r = requests.get(f"{STORAGE_URL}/objects/{path}",
-                     headers={"X-Storage-Key": key}, timeout=60)
-    if r.status_code == 404:
-        key = init_storage(force=True)
+    for attempt in range(3):
         r = requests.get(f"{STORAGE_URL}/objects/{path}",
                          headers={"X-Storage-Key": key}, timeout=60)
+        if r.status_code in (404, 500, 502, 503, 429):
+            key = init_storage(force=True) or key
+            _time.sleep(0.8 * (attempt + 1))
+            continue
+        r.raise_for_status()
+        return r.content, r.headers.get("Content-Type", "application/octet-stream")
     r.raise_for_status()
     return r.content, r.headers.get("Content-Type", "application/octet-stream")
 
@@ -402,7 +414,7 @@ app.add_middleware(
 )
 
 # ---------------- ROLES ----------------
-ROLES = ["super_admin", "kepsek", "staff_tu", "guru", "siswa", "ketua_osis", "ketua_kelas", "orang_tua", "admin_perpus"]
+ROLES = ["super_admin", "kepsek", "staff_tu", "guru", "siswa", "ketua_osis", "ketua_kelas", "admin_perpus"]
 
 # ---------------- UTIL ----------------
 def now_iso():
@@ -2605,6 +2617,8 @@ async def list_candidates(user=Depends(get_current_user)):
 
 @api.post("/candidates")
 async def add_candidate(body: CandidateIn, user=Depends(require_roles("super_admin", "ketua_osis"))):
+    if body.position not in ("ketua", "wakil"):
+        raise HTTPException(400, "Posisi kandidat hanya Ketua atau Wakil. Anggota tidak dapat menjadi kandidat.")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
     dstamp(doc, user)
     await db.candidates.insert_one(doc); doc.pop("_id", None)
@@ -2649,6 +2663,13 @@ async def add_feedback(body: FeedbackIn, user=Depends(get_current_user)):
 @api.get("/feedback")
 async def list_feedback(user=Depends(require_roles("super_admin", "kepsek"))):
     return await db.feedback.find(dscope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api.delete("/feedback/{fid}")
+async def delete_feedback(fid: str, user=Depends(require_roles("super_admin", "kepsek"))):
+    res = await db.feedback.delete_one({"id": fid, **dscope(user)})
+    if not res.deleted_count:
+        raise HTTPException(404, "Masukan tidak ditemukan")
+    return {"ok": True}
 
 # ---------------- ACHIEVEMENTS ----------------
 @api.get("/achievements")

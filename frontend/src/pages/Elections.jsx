@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Vote, Plus, X, Trash2, Award } from "lucide-react";
 
-const POS = [{v:"ketua",l:"Ketua"},{v:"wakil",l:"Wakil"},{v:"anggota",l:"Anggota"}];
+const POS = [{v:"ketua",l:"Ketua"},{v:"wakil",l:"Wakil"}];
 
 export default function Elections() {
   const { user } = useAuth();

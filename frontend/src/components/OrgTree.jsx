@@ -50,7 +50,7 @@ function OrgCard({ node, depth, actions }) {
       className={`group relative w-52 bg-white border rounded-2xl px-3 pt-4 pb-3 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-[box-shadow,transform,border-color] ${over ? "border-sky-500 ring-2 ring-sky-200" : "border-slate-200"} ${actions ? "cursor-move" : ""}`}>
       <span className={`absolute top-0 left-4 right-4 h-1.5 rounded-b-full ${c.bar}`} />
       <div className={`mx-auto w-14 h-14 rounded-full overflow-hidden bg-white border border-slate-200 ring-2 ${c.ring} ring-offset-2 flex items-center justify-center`}>
-        {node.photo ? <img src={node.photo} alt={node.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+        {node.photo ? <img src={node.photo} alt={node.name} className="w-full h-full object-cover" />
           : <User className="w-6 h-6 text-slate-300" />}
       </div>
       <p className="mt-2 font-heading font-bold text-sm text-slate-900 leading-tight break-words">{node.name}</p>

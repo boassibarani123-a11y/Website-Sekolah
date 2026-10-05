@@ -38,7 +38,10 @@ export default function SocialFund() {
       <h3 className="font-heading font-bold mb-3">Catat Transaksi</h3>
       <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <input placeholder="Kelas/Sumber" value={f.kelas} onChange={e=>setF({...f,kelas:e.target.value})} className="px-3 py-2 border-2 rounded-lg"/>
-        <input type="number" placeholder="Jumlah" value={f.amount||""} onChange={e=>setF({...f,amount:+e.target.value})} className="px-3 py-2 border-2 rounded-lg"/>
+        <input inputMode="numeric" data-testid="sf-amount-input" placeholder="Jumlah (Rp)"
+          value={f.amount ? f.amount.toLocaleString("id-ID") : ""}
+          onChange={e=>{const n=parseInt(e.target.value.replace(/\D/g,""),10);setF({...f,amount:Number.isNaN(n)?0:n});}}
+          className="px-3 py-2 border-2 rounded-lg"/>
         <select value={f.type} onChange={e=>setF({...f,type:e.target.value})} className="px-3 py-2 border-2 rounded-lg">
           <option value="masuk">Masuk</option><option value="keluar">Keluar</option></select>
         <input placeholder="Keterangan" value={f.note} onChange={e=>setF({...f,note:e.target.value})} className="px-3 py-2 border-2 rounded-lg lg:col-span-1"/>

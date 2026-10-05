@@ -1,10 +1,9 @@
-import { QRCodeSVG } from "qrcode.react";
 import Barcode from "react-barcode";
 import { GraduationCap, Shield } from "lucide-react";
 
 const DEFAULT_RULES = [
   "Kartu ini wajib dibawa selama berada di lingkungan sekolah.",
-  "Digunakan untuk presensi QR & peminjaman inventaris.",
+  "Digunakan untuk presensi barcode & peminjaman inventaris.",
   "Apabila hilang/rusak, segera lapor ke Tata Usaha.",
 ];
 
@@ -54,29 +53,22 @@ export function IdCardFront({ student, schoolName, validUntil, logoUrl }) {
               <p className="text-[7px] uppercase tracking-widest text-sky-200/80">Kelas</p>
               <p className="text-[9px] font-semibold">{student.kelas || "—"}</p>
             </div>
-            <div>
-              <p className="text-[7px] uppercase tracking-widest text-sky-200/80">Jurusan</p>
-              <p className="text-[9px] font-semibold">{student.jurusan || "Umum"}</p>
-            </div>
-            <div>
+            <div className="col-span-2">
               <p className="text-[7px] uppercase tracking-widest text-sky-200/80">Berlaku</p>
-              <p className="text-[9px] font-semibold font-mono-alt">{validUntil}</p>
+              <p className="text-[9px] font-semibold">{validUntil}</p>
             </div>
           </div>
         </div>
-        <div className="w-[72px] h-[72px] rounded-md bg-white p-1 shrink-0 self-start shadow-md">
-          <QRCodeSVG value={student.qr_code || student.id || "KARTU"} size={64} level="H" className="w-full h-full"/>
-        </div>
       </div>
 
-      {/* Footer: wide NISN barcode spanning the bottom, VERIFIED tag on the left */}
+      {/* Footer: NISN barcode spanning the bottom, VERIFIED tag on the left */}
       <div className="relative mt-2 flex items-center gap-2 border-t border-white/10 pt-1.5">
         <span className="flex items-center gap-1 text-[7px] text-sky-200/80 font-mono-alt shrink-0 leading-tight">
           <Shield className="w-2.5 h-2.5"/>VERIFIED
         </span>
         <div className="flex-1 bg-white rounded px-1.5 py-1 flex items-center justify-center overflow-hidden" data-testid="id-card-barcode">
           {student.nisn
-            ? <NisnBarcode value={student.nisn} height={38} barWidth={2.3}/>
+            ? <NisnBarcode value={student.nisn} height={28} barWidth={1.4}/>
             : <span className="text-[7px] text-slate-400 px-2">NISN belum diisi</span>}
         </div>
       </div>
@@ -121,7 +113,7 @@ export function IdCardBack({ student, schoolName, logoUrl, rules }) {
 }
 
 export default function StudentIdCard({ student, school, validYears, logoUrl, rules, side = "front" }) {
-  const validUntil = validYears || "2025 - 2028";
+  const validUntil = "Sampai Lulus SMA";
   const schoolName = school || "SMA NEGERI 1 LAGUBOTI";
   return (
     <div className="printable-id-card inline-block">

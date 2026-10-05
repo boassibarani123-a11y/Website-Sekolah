@@ -93,7 +93,10 @@ export default function OrgStructureEditor() {
     if (!chartRef.current) return;
     setExporting(true);
     try {
-      const canvas = await html2canvas(chartRef.current, { backgroundColor: "#ffffff", scale: 2 });
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: "#ffffff", scale: 2, useCORS: true, allowTaint: true, logging: false,
+        windowWidth: chartRef.current.scrollWidth, windowHeight: chartRef.current.scrollHeight,
+      });
       if (asPdf) {
         const img = canvas.toDataURL("image/png");
         const pdf = new jsPDF({ orientation: canvas.width >= canvas.height ? "landscape" : "portrait", unit: "px", format: [canvas.width, canvas.height] });

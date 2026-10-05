@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { MessageSquareWarning, Send } from "lucide-react";
+import { MessageSquareWarning, Send, Trash2 } from "lucide-react";
 
 export default function Feedback() {
   const { user } = useAuth();
@@ -15,6 +15,11 @@ export default function Feedback() {
     if (!f.content.trim()) return toast.error("Isi kritik/saran");
     await api.post("/feedback", f); toast.success("Terkirim! Terima kasih."); setF({category:"saran",content:"",anonymous:false});
     if (isReviewer) load();
+  };
+  const remove = async (l) => {
+    if (!window.confirm("Hapus masukan ini?")) return;
+    try { await api.delete(`/feedback/${l.id}`); toast.success("Masukan dihapus"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal menghapus"); }
   };
   return <div className="space-y-6 max-w-3xl mx-auto" data-testid="feedback-page">
     <div className="flex items-center gap-3">
@@ -41,10 +46,13 @@ export default function Feedback() {
         <h2 className="font-heading text-xl font-bold mb-3">Laporan Masuk ({list.length})</h2>
         <div className="space-y-3">
           {list.map(l=>(
-            <div key={l.id} className="bg-white border-l-4 border-amber-500 border-y border-r border-slate-200 rounded-xl p-4">
+            <div key={l.id} data-testid={`feedback-row-${l.id}`} className="bg-white border-l-4 border-amber-500 border-y border-r border-slate-200 rounded-xl p-4">
               <div className="flex items-center justify-between">
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-700">{l.category}</span>
-                <span className="text-xs text-slate-400">{new Date(l.created_at).toLocaleDateString("id-ID")}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">{new Date(l.created_at).toLocaleDateString("id-ID")}</span>
+                  <button data-testid={`feedback-delete-${l.id}`} onClick={()=>remove(l)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                </div>
               </div>
               <p className="mt-2 text-sm text-slate-700">{l.content}</p>
               <p className="mt-2 text-xs text-slate-500">— {l.user_name}</p>
