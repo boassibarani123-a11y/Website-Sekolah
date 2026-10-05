@@ -16,7 +16,7 @@ const MENU = [
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, roles: ["super_admin"] },
   { to: "/admin-ppdb", label: "Admin PPDB", icon: UserPlus2, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/analytics", label: "Analitik", icon: BarChart3, roles: ["kepsek","super_admin"] },
-  { to: "/attendance", label: "Presensi QR", icon: QrCode, roles: ["siswa","ketua_kelas","ketua_osis","super_admin"] },
+  { to: "/attendance", label: "Presensi Barcode", icon: QrCode, roles: ["siswa","ketua_kelas","ketua_osis","super_admin"] },
   { to: "/attendance-recap", label: "Rekap Absensi", icon: CalendarCheck, roles: ["super_admin","kepsek","guru","staff_tu"] },
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },
   { to: "/schoolgram", label: "Schoolgram", icon: Camera, roles: "*" },
@@ -34,7 +34,7 @@ const MENU = [
 const ROLE_LABEL = {
   super_admin: "Super Admin", kepsek: "Kepala Sekolah", staff_tu: "Staff TU",
   guru: "Guru / Wali Kelas", siswa: "Siswa", ketua_osis: "Ketua OSIS", ketua_kelas: "Ketua Kelas",
-  orang_tua: "Orang Tua", admin_perpus: "Admin Perpustakaan",
+  admin_perpus: "Admin Perpustakaan",
 };
 
 export default function DashboardLayout() {

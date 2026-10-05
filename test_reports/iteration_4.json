@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 26 bug-fix regression: 12/12 backend pytest cases passed covering upload reliability (10 consecutive uploads 200 OK + /api/files retrievable), schoolgram post with image, announcement with image, candidate create ketua/wakil + reject 'anggota' (400), settings school_logo_url update, feedback create+delete+idempotent 404, barcode attendance method accepted, admin_perpus role creation + orang_tua role rejected (400), AI book summary works (not 'Fitur AI belum aktif'), class + student creation prerequisites. Frontend verified via Playwright: Elections position dropdown shows only Ketua/Wakil; MasterAccounts role dropdown contains admin_perpus and NO orang_tua; Jurusan field removed from student form; Chat Wali-Ortu nav item removed and /chats route returns 'No routes matched'; Attendance page titled 'Presensi Barcode' with only manual NISN input + USB barcode scanner (SIAP SCAN auto-enter active, no QR camera/video element); Export Excel button visible for super_admin; Feedback page shows 'Hapus' buttons for reviewer.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sidebar navigation", "issues": ["Nav item still labeled 'Presensi QR' while the page title is now 'Presensi Barcode'. Update DashboardLayout.jsx sidebar label to 'Presensi Barcode' for consistency."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_bugs.py",
+    "/app/test_reports/pytest/iter26_results.xml"
+  ],
+  "action_items": [
+    "(Minor cosmetic) Rename sidebar nav label 'Presensi QR' -> 'Presensi Barcode' in DashboardLayout.jsx to match page title.",
+    "(Optional cleanup) DashboardLayout.jsx line 37 still has 'orang_tua: Orang Tua' in the ROLE_LABELS map; harmless (no new orang_tua can be created and route-level users won't exist) but can be removed for cleanliness."
+  ],
+  "critical_code_review_comments": [
+    "server.py (~4100 lines) remains monolithic; splitting into routers is still recommended but non-blocking.",
+    "Chat endpoints (/api/chats, /api/chats/{sid}/messages) still exist in backend even though frontend route+nav removed. Consider removing or gating if the feature is truly deprecated.",
+    "put_object retry logic (lines 73-100) looks sound; 10x upload test confirms no 500 'Storage tidak tersedia' intermittents."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_bugs.py"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% of flows checked"},
+  "test_credentials": "boassibarani123@gmail.com / Boas12345io (super_admin, seeded)",
+  "seed_data_creation": "All test data (candidates, feedback, post, announcement, admin_perpus user, test class+siswa, test book) was created and deleted within the same test. No persistent seed data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Settings schema uses 'school_logo_url' (not 'logo_url'). Users POST /api/users requires 'phone' when role=siswa. Classes POST /api/classes accepts {name, subjects}. /api/attendance/scan accepts method in {qr, barcode, manual}. The /chats backend routes still exist though UI route is removed. If the main agent fixes the sidebar label and wants retest, re-run only Attendance.jsx UI check.",
+  "rca of the issue": "N/A — all previously reported bugs are fixed and verified."
+}

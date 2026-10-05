@@ -23,5 +23,18 @@ Import existing project from GitHub (https://github.com/boassibarani123-a11y/Web
 
 ## Backlog (non-blocking, from code review)
 - P2: Split server.py into routers/modules.
-- P2: PPDB form — replace native date picker with locale-aware/shadcn calendar.
-- P2: Gate public `/ppdb` axios calls behind auth state to avoid noisy 401s.
+- P2: Remove now-unused /api/chats backend routes (UI removed).
+
+## Revisions (2026-06) — 19 user-reported fixes
+- Storage upload reliability: put_object/init_storage now retry transient 500/503/404 (root cause of "Storage tidak tersedia" / all upload failures) — fixes Schoolgram, Announcements, Pemilu photo, logo upload, all image uploads.
+- Removed QR attendance (camera) → barcode/manual NISN only; removed QR from student card; barcode resized smaller.
+- Student card: removed Jurusan; "Berlaku" now "Sampai Lulus SMA"; kelas shows.
+- Added Admin Perpustakaan role; removed Orang Tua role + Chat Wali-Ortu feature.
+- Pemilu: "anggota" cannot be candidate (backend 400 + UI dropdown Ketua/Wakil only).
+- Kritik & Saran: reviewer can delete items (DELETE /api/feedback/{id}).
+- Dana Sosial: integer-only amount input with 000.000 thousand separators.
+- Org Structure: vertical indented layout + PNG/PDF export fixed (html2canvas useCORS).
+- Student accounts: Export Excel hidden from siswa on attendance.
+- Barcode attendance: auto-submits on scan (no manual Enter needed).
+- Verified: 12/12 backend regression + frontend flows (iteration_4).
+- Not applicable: loan due-date-before-today (no manual date field in lending UI). AI book summary works from metadata by design.
