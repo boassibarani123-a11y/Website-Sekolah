@@ -1009,7 +1009,7 @@ class ScanIn(BaseModel):
     method: str = "qr"  # qr | barcode | manual
 
 @api.post("/attendance/scan")
-async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "guru", "super_admin"))):
+async def scan(body: ScanIn, user=Depends(require_roles("siswa", "ketua_kelas", "ketua_osis", "staff_tu", "guru", "super_admin"))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
     if body.method not in ("qr", "barcode", "manual"):

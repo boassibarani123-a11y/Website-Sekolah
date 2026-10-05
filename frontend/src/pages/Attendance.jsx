@@ -6,11 +6,11 @@ import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { useAuth } from "@/context/AuthContext";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
-const OPERATOR_ROLES = ["super_admin", "staff_tu", "guru"];
+const ATTENDANCE_ROLES = ["siswa", "ketua_kelas", "ketua_osis", "super_admin"];
 
 export default function Attendance() {
   const { user } = useAuth();
-  const isOperator = user && OPERATOR_ROLES.includes(user.role);
+  const isOperator = user && ATTENDANCE_ROLES.includes(user.role);
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState([]);
   const [manual, setManual] = useState("");
@@ -102,10 +102,10 @@ export default function Attendance() {
           <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
             <ShieldAlert className="w-7 h-7"/>
           </div>
-          <h1 className="font-heading text-2xl font-extrabold text-slate-900 mt-4">Halaman Khusus Petugas Presensi</h1>
+          <h1 className="font-heading text-2xl font-extrabold text-slate-900 mt-4">Akses Presensi Tidak Tersedia</h1>
           <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-            Stasiun scan presensi hanya dapat diakses oleh <b>Staff TU</b>, <b>Guru/Wali Kelas</b>, dan <b>Super Admin</b>.
-            Kehadiranmu dicatat saat petugas memindai Kartu Pelajar, atau lewat konfirmasi email bila belum absen.
+            Fitur presensi QR/Barcode hanya dapat digunakan oleh <b>siswa</b>.
+            Silakan masuk dengan akun siswa untuk melakukan absensi.
           </p>
         </div>
       </div>
