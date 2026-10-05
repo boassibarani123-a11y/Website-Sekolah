@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 27 follow-up: verified (1) /api/chats endpoints removed (GET /api/chats, GET /api/chats/{id}/messages, POST /api/chats/{id}/messages all return 404) while /api/settings, /api/loans, /api/books, and login still work (6/6 pytest cases pass); (2) Library Admin /library Ringkasan tab now renders overdue-panel + active-borrowers-panel at the top with friendly empty states ('Tidak ada buku yang terlambat. Kerja bagus!' / 'Belum ada peminjaman aktif.') and the existing stat cards + Buku Terpopuler + Koleksi per Kategori render below unchanged; (3) /print-cards loads with all required testids (toggle-back-button, bulk-download-pdf-button, bulk-download-jpg-button, bulk-print-button) and the toggle correctly switches label between 'Depan + Belakang' and 'Depan saja'. No console errors or page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/print-cards", "issues": ["With 0 students in DB there are no .card-cut frames to visually verify dashed cut-guide styling; rendering of the cut frames themselves was not visually confirmed. Suggest testing again after at least one siswa exists, or seed-based preview."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_chats_removed.py",
+    "/app/test_reports/pytest/iter27_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Chat endpoints cleanly removed from server.py; CALENDAR section now follows LIBRARY as expected.",
+    "server.py still ~4000+ lines monolithic — splitting into routers remains a non-blocking recommendation.",
+    "PrintCards empty state ('Tidak ada siswa untuk dicetak') shows when ?kelas filter yields no rows — good UX; the .card-cut dashed frame visual could not be verified without seed students."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter27_chats_removed.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% of flows checked"},
+  "test_credentials": "boassibarani123@gmail.com / Boas12345io (super_admin)",
+  "seed_data_creation": "None. No test data created or left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "To visually verify the dashed cut-guide frames on /print-cards, first create at least one Kelas + Siswa (POST /api/classes then POST /api/users with role=siswa and phone). Chat module is fully removed from both backend and frontend; do not reintroduce. Library overview panels compute from GET /api/loans response (fields: overdue, borrower_name, book_title, due_date).",
+  "rca of the issue": "N/A — all three requested features verified working."
+}
