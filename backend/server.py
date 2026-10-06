@@ -26,7 +26,7 @@ from fastapi.responses import StreamingResponse, RedirectResponse
 import re
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
 from email_guard import assert_safe_email, EMAIL_BASE_URL
 
 logging.basicConfig(level=logging.INFO)
@@ -109,6 +109,7 @@ DEFAULT_SETTINGS = {
     "school_full_name": "SMA NEGERI 1 LAGUBOTI",
     "school_address": "Jl. Sekolah No. 3, Pasar Laguboti, Kec. Laguboti, Kab. Toba 22381",
     "school_logo_url": "/school-logo.png",
+    "gallery_images": [],
     "id_card_valid_years": "2025 - 2028",
     "id_card_rules": [
         "Kartu ini wajib dibawa selama berada di lingkungan sekolah.",
@@ -1805,10 +1806,61 @@ async def delete_reschedule(rid: str, user=Depends(require_roles("guru", "super_
     return {"ok": True}
 
 # ---------------- QUIZZES ----------------
+class QuizQuestion(BaseModel):
+    """A single multiple-choice question. `answer` is ALWAYS stored as the
+    integer index of the correct option so scoring can never silently fail."""
+    q: str
+    options: List[str]
+    answer: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize(cls, data):
+        if isinstance(data, dict):
+            opts = [str(o).strip() for o in (data.get("options") or [])]
+            data["options"] = opts
+            ans = data.get("answer", 0)
+            # Accept the correct answer sent either as an index or as the option
+            # text, but always normalize it down to an integer index.
+            if isinstance(ans, str):
+                s = ans.strip()
+                if s.lstrip("-").isdigit():
+                    ans = int(s)
+                elif s in opts:
+                    ans = opts.index(s)
+                else:
+                    ans = 0
+            try:
+                ans = int(ans)
+            except (TypeError, ValueError):
+                ans = 0
+            data["answer"] = ans
+        return data
+
+    @field_validator("q")
+    @classmethod
+    def _q_filled(cls, v):
+        if not str(v).strip():
+            raise ValueError("Pertanyaan soal tidak boleh kosong")
+        return str(v).strip()
+
+    @field_validator("options")
+    @classmethod
+    def _min_opts(cls, v):
+        if len([o for o in v if str(o).strip()]) < 2:
+            raise ValueError("Setiap soal harus memiliki minimal 2 opsi jawaban terisi")
+        return v
+
+    @model_validator(mode="after")
+    def _answer_in_range(self):
+        if self.answer < 0 or self.answer >= len(self.options):
+            raise ValueError(f"Kunci jawaban (index {self.answer}) di luar jangkauan opsi soal")
+        return self
+
 class QuizIn(BaseModel):
     title: str
     kelas: str
-    questions: List[dict]  # [{q, options[], answer}]
+    questions: List[QuizQuestion]  # answer kept as integer option index
     subject: Optional[str] = None
     class_id: Optional[str] = None
     password: Optional[str] = None
@@ -1838,7 +1890,7 @@ class QuizAttemptIn(BaseModel):
 class QuizUpdate(BaseModel):
     title: Optional[str] = None
     subject: Optional[str] = None
-    questions: Optional[List[dict]] = None
+    questions: Optional[List[QuizQuestion]] = None
     password: Optional[str] = None
     remove_password: Optional[bool] = None
     time_limit: Optional[int] = None
@@ -2001,7 +2053,7 @@ async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))
 class ExamIn(BaseModel):
     title: str
     kelas: str
-    questions: List[dict]
+    questions: List[QuizQuestion]
     subject: Optional[str] = None
     class_id: Optional[str] = None
     password: str                       # REQUIRED for exams
@@ -2011,7 +2063,7 @@ class ExamIn(BaseModel):
 class ExamUpdate(BaseModel):
     title: Optional[str] = None
     subject: Optional[str] = None
-    questions: Optional[List[dict]] = None
+    questions: Optional[List[QuizQuestion]] = None
     password: Optional[str] = None
     time_limit: Optional[int] = None
     max_violations: Optional[int] = None
@@ -3686,6 +3738,7 @@ class SettingsIn(BaseModel):
     address_district: Optional[str] = None
     address_regency: Optional[str] = None
     address_postal: Optional[str] = None
+    gallery_images: Optional[List[str]] = None
 
 @api.get("/settings")
 async def api_get_settings():

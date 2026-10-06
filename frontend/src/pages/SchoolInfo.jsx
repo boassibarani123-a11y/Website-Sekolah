@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { School, Save, Pencil, Plus, Trash2, Target, Eye, History as HistoryIcon,
   Phone, Mail, Globe, User, Calendar, Hash, Award, MapPin, FileText, Building2,
-  Leaf, Flag, Crosshair, GraduationCap } from "lucide-react";
+  Leaf, Flag, Crosshair, GraduationCap, Image as ImageIcon, Upload } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -27,7 +27,7 @@ export default function SchoolInfo() {
         "principal_name","principal_education","principal_major","principal_sk_date","principal_training",
         "established_year","nss","npsn","land_area","accreditation","sk_pendirian","sk_instansi",
         "address_street","address_village","address_district","address_regency","address_postal",
-        "contact_phone","contact_email","contact_website","hero_image_url","school_address"];
+        "contact_phone","contact_email","contact_website","hero_image_url","school_address","gallery_images"];
       const payload = {}; keys.forEach(k => { payload[k] = form[k]; });
       await api.patch("/settings", payload);
       await refresh();
@@ -42,47 +42,77 @@ export default function SchoolInfo() {
     try { const r = await api.post("/upload", fd); upd("hero_image_url", `${BACKEND}${r.data.url}`); toast.success("Gambar terunggah"); }
     catch { toast.error("Gagal upload"); }
   };
+  const uploadGallery = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const urls = [];
+      for (const f of files) {
+        const fd = new FormData(); fd.append("file", f);
+        const r = await api.post("/upload", fd);
+        urls.push(`${BACKEND}${r.data.url}`);
+      }
+      upd("gallery_images", [...(form.gallery_images || []), ...urls]);
+      toast.success(`${urls.length} gambar ditambahkan`);
+    } catch { toast.error("Gagal mengunggah gambar"); }
+    finally { setBusy(false); e.target.value = ""; }
+  };
+  const removeGalleryImage = (idx) => upd("gallery_images", (form.gallery_images || []).filter((_, i) => i !== idx));
 
   const s = editing ? form : settings;
+  const gallery = (s.gallery_images || []).filter(Boolean);
 
   return (
     <div className="space-y-6" data-testid="school-info-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="font-heading text-3xl font-extrabold text-slate-900 flex items-center gap-2">
-            <School className="w-7 h-7 text-sky-600"/>Informasi Sekolah
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Profil Lembaga</p>
+          <h1 className="font-heading text-3xl sm:text-4xl font-extrabold text-slate-900 flex items-center gap-2.5 mt-1">
+            <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-sky-500 to-sky-700 text-white flex items-center justify-center shadow-lg shadow-sky-500/30"><School className="w-6 h-6"/></span>
+            Informasi Sekolah
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Profil lengkap {settings.school_full_name}</p>
+          <p className="mt-1.5 text-sm text-slate-500">Profil lengkap {settings.school_full_name}</p>
         </div>
         {isAdmin && (editing ? (
           <div className="flex gap-2">
-            <button onClick={()=>{setForm(settings); setEditing(false);}} className="px-4 py-2.5 border-2 border-slate-200 rounded-xl font-semibold hover:bg-slate-50">Batal</button>
-            <button data-testid="save-school-info-button" disabled={busy} onClick={save} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl font-semibold flex items-center gap-2 hover:bg-slate-800 disabled:opacity-60">
+            <button onClick={()=>{setForm(settings); setEditing(false);}} className="px-4 py-2.5 border-2 border-slate-200 rounded-xl font-semibold hover:bg-slate-50 transition-colors">Batal</button>
+            <button data-testid="save-school-info-button" disabled={busy} onClick={save} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl font-semibold flex items-center gap-2 hover:bg-slate-800 disabled:opacity-60 transition-colors">
               <Save className="w-4 h-4"/>{busy?"Menyimpan...":"Simpan"}
             </button>
           </div>
         ) : (
-          <button data-testid="edit-school-info-button" onClick={()=>setEditing(true)} className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold flex items-center gap-2">
+          <button data-testid="edit-school-info-button" onClick={()=>setEditing(true)} className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold flex items-center gap-2 shadow-lg shadow-sky-600/25 transition-colors">
             <Pencil className="w-4 h-4"/>Edit Informasi
           </button>
         ))}
       </div>
 
       {/* Hero */}
-      <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
-        <div className="h-48 sm:h-64 bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 relative flex items-end">
+      <div className="rounded-3xl overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50 bg-white">
+        <div className="h-56 sm:h-80 bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 relative flex items-end">
           {s.hero_image_url && <img src={s.hero_image_url} alt="" className="absolute inset-0 w-full h-full object-cover"/>}
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/70 to-transparent"/>
-          <div className="relative p-6 text-white">
-            {s.school_logo_url && <img src={s.school_logo_url} alt="" className="w-14 h-14 rounded-xl bg-white/90 p-1 object-contain mb-2"/>}
-            <h2 className="font-heading text-2xl sm:text-3xl font-extrabold">{s.school_full_name}</h2>
-            <p className="text-sm text-sky-100/90">{s.school_address}</p>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.15),transparent_45%)]"/>
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-900/30 to-transparent"/>
+          <div className="absolute top-5 right-5 flex gap-2">
+            {s.accreditation && <span className="px-3 py-1.5 rounded-full bg-amber-400/95 text-amber-950 text-xs font-extrabold tracking-wide shadow-lg backdrop-blur">Akreditasi {s.accreditation}</span>}
+            {s.established_year && <span className="px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-white text-xs font-bold backdrop-blur">Est. {s.established_year}</span>}
+          </div>
+          <div className="relative p-6 sm:p-8 text-white flex items-end gap-4">
+            {s.school_logo_url && <img src={s.school_logo_url} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/95 p-1.5 object-contain shadow-xl ring-1 ring-white/30 shrink-0"/>}
+            <div className="min-w-0">
+              <h2 className="font-heading text-2xl sm:text-4xl font-extrabold leading-tight drop-shadow-sm">{s.school_full_name}</h2>
+              <p className="text-sm sm:text-base text-sky-100/90 flex items-center gap-1.5 mt-1"><MapPin className="w-4 h-4 shrink-0"/>{s.school_address}</p>
+            </div>
           </div>
         </div>
         {editing && (
-          <div className="p-4 border-t border-slate-100 bg-slate-50">
-            <label className="text-xs font-semibold text-slate-600 uppercase">Ganti Foto Sampul</label>
-            <input type="file" accept="image/*" onChange={uploadHero} className="mt-1 w-full text-sm"/>
+          <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center gap-3">
+            <ImageIcon className="w-4 h-4 text-slate-400 shrink-0"/>
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Ganti Foto Sampul</label>
+              <input type="file" accept="image/*" onChange={uploadHero} className="mt-1 w-full text-sm"/>
+            </div>
           </div>
         )}
       </div>
@@ -184,6 +214,33 @@ export default function SchoolInfo() {
         <ListEditor label="sasaran" field="targets" s={s} editing={editing} upd={upd} ordered />
       </Card>
 
+      {/* Galeri Foto */}
+      <Card icon={ImageIcon} title="Galeri Foto Sekolah">
+        {editing && (
+          <div className="mb-4 flex items-center gap-3 flex-wrap">
+            <label data-testid="gallery-upload-label" className="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-semibold text-sm cursor-pointer transition-colors shadow-lg shadow-sky-600/25">
+              <Upload className="w-4 h-4"/> Tambah Gambar
+              <input data-testid="gallery-upload-input" type="file" accept="image/*" multiple onChange={uploadGallery} className="hidden"/>
+            </label>
+            <p className="text-xs text-slate-400">Pilih beberapa gambar sekaligus · maks 10MB per gambar</p>
+          </div>
+        )}
+        {gallery.length ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3" data-testid="gallery-grid">
+            {gallery.map((url,i)=>(
+              <div key={i} className="group relative aspect-[4/3] rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                <img src={url} alt={`Galeri ${i+1}`} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"/>
+                {editing && (
+                  <button data-testid={`gallery-remove-${i}`} onClick={()=>removeGalleryImage(i)} className="absolute top-2 right-2 p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                    <Trash2 className="w-3.5 h-3.5"/>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-sm text-slate-400">Belum ada foto.{isAdmin ? " Klik Edit Informasi lalu Tambah Gambar untuk mengunggah." : ""}</p>}
+      </Card>
+
       {/* Kontak */}
       <Card icon={Phone} title="Kontak">
         <div className="grid sm:grid-cols-3 gap-3 text-sm">
@@ -201,10 +258,13 @@ const inpSm = "w-full px-2 py-1.5 border-2 border-slate-200 rounded-lg text-sm f
 
 function Fact({ icon:Icon, label, k, s, editing, upd }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-slate-400"><Icon className="w-4 h-4"/><span className="text-[11px] font-semibold uppercase tracking-wide">{label}</span></div>
-      {editing ? <input data-testid={`fact-${k}`} value={s[k]||""} onChange={e=>upd(k,e.target.value)} className="mt-1 w-full px-2 py-1.5 border-2 border-slate-200 rounded-lg text-sm focus:border-sky-500 outline-none"/>
-        : <p className="mt-1 font-heading font-bold text-slate-900 text-sm">{s[k] || "—"}</p>}
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-sky-200 transition-all">
+      <div className="flex items-center gap-2 text-slate-400">
+        <span className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center"><Icon className="w-4 h-4"/></span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      {editing ? <input data-testid={`fact-${k}`} value={s[k]||""} onChange={e=>upd(k,e.target.value)} className="mt-2 w-full px-2 py-1.5 border-2 border-slate-200 rounded-lg text-sm focus:border-sky-500 outline-none"/>
+        : <p className="mt-2 font-heading font-bold text-slate-900 text-sm">{s[k] || "—"}</p>}
     </div>
   );
 }
