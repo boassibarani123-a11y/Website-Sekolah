@@ -1824,10 +1824,10 @@ class QuizQuestion(BaseModel):
             # text, but always normalize it down to an integer index.
             if isinstance(ans, str):
                 s = ans.strip()
-                if s.lstrip("-").isdigit():
-                    ans = int(s)
-                elif s in opts:
+                if s in opts:
                     ans = opts.index(s)
+                elif s.lstrip("-").isdigit():
+                    ans = int(s)
                 else:
                     ans = 0
             try:
