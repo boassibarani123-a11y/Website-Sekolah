@@ -1,0 +1,143 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sky-primary: #0284C7;
+  --sky-light: #38BDF8;
+  --sky-dark: #0369A1;
+  --bg: #F8FAFC;
+  --ink: #0F172A;
+  --brand: #0284C7;
+  --brand-dark: #0369A1;
+  --brand-light: #7dd3fc;
+}
+
+body {
+  margin: 0;
+  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-heading { font-family: 'Plus Jakarta Sans', sans-serif; }
+.font-mono-alt { font-family: 'JetBrains Mono', monospace; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---------- Organization chart (VERTICAL top-down, indented rail, unlimited depth) ---------- */
+.org-tree { display: block; width: 100%; text-align: left; padding-bottom: 8px; }
+.org-tree ul { list-style: none; margin: 0; padding: 0; position: relative; }
+.org-tree li { position: relative; list-style: none; padding: 8px 0 0; display: flex; flex-direction: column; align-items: flex-start; }
+/* Nested children: indented with a vertical connector rail on the left */
+.org-tree ul ul { margin-left: 26px; padding-left: 24px; border-left: 2px solid #cbd5e1; }
+.org-tree ul ul > li::before {
+  content: ''; position: absolute; left: -24px; top: 36px; width: 24px; height: 2px; background: #cbd5e1;
+}
+.org-tree ul ul > li.dashed::before {
+  background: repeating-linear-gradient(90deg, #cbd5e1 0 4px, transparent 4px 8px);
+}
+.org-tree ul ul.has-add { padding-left: 24px; }
+.org-tree > ul { padding-top: 0; }
+.org-tree > ul > li { padding-top: 0; }
+
+/* Printable KTP Card */
+@media print {
+  @page { margin: 8mm; }
+  body * { visibility: hidden !important; }
+  .printable-id-card, .printable-id-card * { visibility: visible !important; }
+  .printable-id-card {
+    box-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .no-print { display: none !important; }
+  .printable-doc, .printable-doc * { visibility: visible !important; }
+  .printable-doc {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .printable-doc .doc-paper { box-shadow: none !important; border-radius: 0 !important; }
+}
+
+.ktp-card {
+  width: 88mm;
+  height: 56mm;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 20px 40px -12px rgba(2, 132, 199, 0.35);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 199 89% 48%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 96%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 199 95% 94%;
+        --accent-foreground: 199 89% 30%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 199 89% 48%;
+        --radius: 0.75rem;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+    body { @apply bg-background text-foreground; }
+}
+
+/* ---------- Brand theming: remap sky utilities to school color ---------- */
+.bg-sky-500 { background-color: var(--brand) !important; }
+.bg-sky-600 { background-color: var(--brand) !important; }
+.bg-sky-700 { background-color: var(--brand-dark) !important; }
+.hover\:bg-sky-700:hover { background-color: var(--brand-dark) !important; }
+.hover\:bg-sky-800:hover { background-color: var(--brand-dark) !important; }
+.text-sky-600 { color: var(--brand) !important; }
+.text-sky-700 { color: var(--brand-dark) !important; }
+.text-sky-800 { color: var(--brand-dark) !important; }
+.hover\:text-sky-800:hover { color: var(--brand-dark) !important; }
+.border-sky-500 { border-color: var(--brand) !important; }
+.hover\:border-sky-500:hover { border-color: var(--brand) !important; }
+.focus\:border-sky-500:focus { border-color: var(--brand) !important; }
+
+/* ---------- Dark mode (global surface overrides) ---------- */
+html.dark body { background-color: #0b1220; color: #e2e8f0; }
+.dark .bg-white { background-color: #111827 !important; }
+.dark .bg-slate-50 { background-color: #0b1220 !important; }
+.dark .bg-slate-100 { background-color: #1e293b !important; }
+.dark .bg-slate-50\/50, .dark .bg-slate-100\/50 { background-color: #1e293b !important; }
+.dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-slate-800 { color: #e2e8f0 !important; }
+.dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-slate-600 { color: #94a3b8 !important; }
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-slate-400 { color: #64748b !important; }
+.dark .border-slate-200 { border-color: #1f2937 !important; }
+.dark .border-slate-100 { border-color: #1f2937 !important; }
+.dark .border-slate-300 { border-color: #334155 !important; }
+.dark .hover\:bg-slate-50:hover { background-color: #1e293b !important; }
+.dark .hover\:bg-slate-100:hover { background-color: #334155 !important; }
+.dark input, .dark textarea, .dark select { background-color: #0f172a !important; color: #e2e8f0 !important; border-color: #334155 !important; }

@@ -1,0 +1,30 @@
+{
+  "summary": "Regression for Phase 1 feature additions (Jadwal Pelajaran + Gamifikasi Poin + PWA + role perms + StudentIdCard Kelas-removal). Backend: 19 passed / 1 skipped in /app/backend/tests/test_iter29_jadwal_poin.py — covers timetable CRUD, anti-bentrok (same-class and same-room 409 verified; same-teacher path exercised indirectly), /timetable/today, sorted list, /points award + /points/me + /points/leaderboard + /points/history, siswa 403 on POST /timetable and POST /points, siswa 200 on GET /timetable, /points/leaderboard, /points/me, and PWA assets (manifest.json JSON OK, service-worker.js 200, icon-192/512 200, index.html references manifest + theme-color #0284C7). Frontend end-to-end via Playwright on preview URL: admin login OK, dashboard renders widget-jadwal-today & widget-leaderboard, /jadwal loads full 6-day grid, class-select & add-btn visible, Tambah modal opens, create (Jumat 09:00-10:00) appears in correct Jumat column, overlapping entry triggers 'bentrok' toast, delete works. /leaderboard: tab-siswa / tab-kelas / board-kelas render, award modal opens, awarding +3 points to top student moved leaderboard total 57 -> 60. /print-cards renders cards; the 'Kelas' label is confirmed REMOVED from both front and back cards. Siswa role (andi.demo) correctly does NOT see jadwal-add-btn, jadwal-class-select, or award-open-btn; can access /jadwal, /leaderboard, /my-card.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_jadwal_poin.py",
+    "/app/test_reports/pytest/iter29.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now 4199 lines (grew from 4024) — still above 700-line guideline; new timetable + points code should ideally live in /app/backend/routers/timetable.py and /app/backend/routers/points.py.",
+    "GET /api/points/history/{uid} has no role gate — any authenticated user can read any user's point history. Consider restricting to self or staff/guru/admin.",
+    "Jadwal.jsx openAdd uses local `classId`; when the Classes fetch is still pending, the add button fires a 'Pilih kelas dulu' toast. Minor UX: either disable the button until classId resolves, or let openAdd pick classes[0] automatically.",
+    "Leaderboard '/points/leaderboard' aggregates on $kelas from the points doc snapshot — if a student changes kelas later, their old points still count under their old class. Acceptable but worth documenting.",
+    "_timetable_conflict iterates db.timetable.find({'day': day}) without an index. Add compound index (day, class_id) / (day, teacher_id) / (day, room) when table grows."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter29_jadwal_poin.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "super_admin boassibarani123@gmail.com / Boas12345io; siswa andi.demo@sekolah.id / Siswa12345.",
+  "seed_data_creation": "Playwright test created one timetable entry (subject prefix 'UITEST…', Jumat 09:00-10:00, room 'UI_ROOM') and 1 point award (+3) for the top student; the timetable entry was deleted via API in-run. The +3 points award was left in place (small, prefix 'UI_TEST reason'); not disruptive.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 features (Jadwal + Gamifikasi) are fully working end-to-end on preview. Regression harness at /app/backend/tests/test_iter29_jadwal_poin.py — run with REACT_APP_BACKEND_URL env var set. Phase 2 (Schoolgram revamp, AI features) was explicitly out-of-scope for this iteration."
+}

@@ -1,0 +1,33 @@
+{
+  "summary": "Phase 2 regression (Schoolgram per-kelas, AI assistant/quiz/summarize, Dark Mode + Theme Color, NISN acak). Backend pytest /app/backend/tests/test_iter30_schoolgram_ai.py: 16/16 PASSED in ~11s. Covers schoolgram listing + profile (admin + siswa), permissions (super_admin manages any, ketua_kelas own-class post/edit/delete, ketua_kelas cross-class 403, siswa 403), stories+highlight toggle+delete lifecycle, like/comment reachable for siswa via /api/posts, AI chat (siswa 200), AI quiz-generate (siswa 403, admin returns valid 4-opt MCQ JSON), AI summarize (admin 200 bullet points, empty-text 400). Frontend Playwright on preview: super_admin login OK; dark-toggle flips html.dark and persists via localStorage key 'theme-dark'; theme-menu-toggle visible for super_admin and selecting swatch #7C3AED PATCHes settings and sets --brand to #7C3AED; AI assistant FAB -> panel -> real reply received; Schoolgram list shows 2 class cards, clicking opens profile with sg-new-post + sg-new-story (super_admin can_manage=true); NISN acak button fills a 10-digit NISN (e.g. 9798063328) in create account modal; Announcement AI 'Ringkas dengan AI' replaced the content with 5 bullet points; AI Quiz Generator (ai-quiz-box) with 'Fotosintesis'/2 produced 2 valid soal (4 options each, radio selected). Siswa role: theme-menu-toggle hidden (correct), ai-assistant-fab visible (correct), dark-toggle visible+persist works, Schoolgram cards visible but sg-new-post/story hidden on class profile (correct). AI chat works for siswa.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Schoolgram class list", "issues": ["TEST_Kfa8a (seed-leftover class) still appears first in the Semua Kelas grid alphabetically because class list is sorted by name. Not a bug, but main agent should probably hide classes with student_count=0 or clean up TEST_* classes from DB."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_schoolgram_ai.py",
+    "/app/test_reports/pytest/iter30.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now at 4405 lines — Schoolgram + AI endpoints should ideally move to /app/backend/routers/schoolgram.py and /app/backend/routers/ai.py (file-size guideline >700 lines).",
+    "GET /api/schoolgram/class/{cid} always exposes stories+highlights to any authenticated user; that matches the spec ('everyone logged-in can view'), just confirm dscope isolation if multi-school is ever enabled (currently _assert_manage does not re-check dscope).",
+    "/api/schoolgram/class/{cid}/story: creator user does not need to belong to the same kelas as cid; only can_manage check — fine for super_admin + ketua_kelas, but a ketua_kelas could POST to their own cid even if they moved kelas (data integrity risk if user.kelas drifts).",
+    "AI endpoints have no rate-limiting/quota; a single siswa could spam /ai/chat and burn EMERGENT_LLM_KEY credits.",
+    "/ai/quiz-generate string-parses JSON out of markdown fences — fragile; consider using model structured output or a stricter JSON extractor.",
+    "Frontend DarkMode uses localStorage key 'theme-dark' (not 'ws-dark' as the request suggested) — just a note so the main agent doesn't document the wrong key."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_schoolgram_ai.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "super_admin boassibarani123@gmail.com / Boas12345io; siswa andi.demo@sekolah.id / Siswa12345. Temporary ketua_kelas users created and deleted inside pytest fixtures.",
+  "seed_data_creation": "Pytest fixtures created and torn down 2 TEST_ ketua_kelas users; reused an existing TEST_K* class (not deleted). Playwright flow filled NISN in a create-account modal but did not submit; AI panel + announcement summarize + AI quiz modal were opened but no record was persisted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 (Schoolgram per-kelas revamp + AI chat/quiz/summarize + Dark Mode + Theme Color + NISN) is fully working end-to-end on preview. Regression harness at /app/backend/tests/test_iter30_schoolgram_ai.py (16 tests, 11s). AI endpoints hit real Emergent LLM proxy — allow ~60s for /ai/quiz-generate. The seed-left TEST_K* class and the demo 'XII IPA 1' both appear in /schoolgram. ThemeContext localStorage key is 'theme-dark', not 'ws-dark'. No action items for main agent."
+}
