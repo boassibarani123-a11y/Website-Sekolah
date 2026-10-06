@@ -38,3 +38,13 @@ Import existing project from GitHub (https://github.com/boassibarani123-a11y/Web
 - Barcode attendance: auto-submits on scan (no manual Enter needed).
 - Verified: 12/12 backend regression + frontend flows (iteration_4).
 - Not applicable: loan due-date-before-today (no manual date field in lending UI). AI book summary works from metadata by design.
+
+---
+
+## Import & Setup Log — 2026-06 (branch main9)
+- Cloned `Website-Sekolah` (main9) and synced into /app (preserving .git/.emergent).
+- Backend: installed emergentintegrations==0.2.1 (Emergent extra index) + full requirements.txt on Python 3.11. Running under supervisor on :8001.
+- Frontend: `yarn install` (yarn 1.22.22) OK. Running under supervisor on :3000.
+- Env: local MongoDB (DB_NAME=website_sekolah), JWT_SECRET set, FRONTEND_URL set for CORS, EMERGENT_LLM_KEY set (enables object storage + AI summaries via Emergent proxy). Stripe not wired in code.
+- Super admin seeded automatically (see memory/test_credentials.md).
+- Verified end-to-end by testing agent (iteration_28): backend 100%, frontend 100%. Object storage upload + AI book summary both working.
