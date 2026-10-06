@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
-import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket } from "lucide-react";
+import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket, CalendarRange, Award, Star, MapPin, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas", admin_perpus:"Admin Perpustakaan"};
+const STUDENT_ROLES = ["siswa", "ketua_kelas", "ketua_osis"];
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -127,6 +128,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <DashboardExtras role={user.role}/>
     </div>
   );
 }
@@ -138,4 +141,75 @@ function StatBox({label, value, color}) {
     <p className="text-2xl font-heading font-extrabold">{value ?? 0}</p>
     <p className="text-[10px] font-semibold uppercase tracking-wider mt-0.5">{label}</p>
   </div>;
+}
+
+function DashboardExtras({ role }) {
+  const [today, setToday] = useState(null);
+  const [board, setBoard] = useState([]);
+  const [mine, setMine] = useState(null);
+  const isStudent = STUDENT_ROLES.includes(role);
+  useEffect(()=>{
+    api.get("/timetable/today").then(r=>setToday(r.data)).catch(()=>setToday({day:"",items:[]}));
+    api.get("/points/leaderboard").then(r=>setBoard((r.data.students||[]).slice(0,5))).catch(()=>{});
+    if (isStudent) api.get("/points/me").then(r=>setMine(r.data)).catch(()=>{});
+  },[isStudent]);
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-6">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="widget-jadwal-today">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><CalendarRange className="w-5 h-5 text-sky-600"/>Jadwal Hari Ini {today?.day && <span className="text-xs font-normal text-slate-400">· {today.day}</span>}</h2>
+          <Link to="/jadwal" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+        </div>
+        {!today ? <p className="text-sm text-slate-400">Memuat...</p> :
+          today.items.length === 0 ? <p className="text-sm text-slate-400 italic">Tidak ada jadwal hari ini.</p> : (
+          <div className="space-y-2">
+            {today.items.map(it=>(
+              <div key={it.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border-l-4 border-sky-500">
+                <div className="text-center shrink-0 w-14">
+                  <p className="text-xs font-bold text-sky-700">{it.start_time}</p>
+                  <p className="text-[10px] text-slate-400">{it.end_time}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm text-slate-900 truncate">{it.subject}</p>
+                  <p className="text-[11px] text-slate-500 flex items-center gap-2">
+                    {it.class_name && <span>{it.class_name}</span>}
+                    {it.teacher_name && <span className="flex items-center gap-0.5"><UserIcon className="w-3 h-3"/>{it.teacher_name}</span>}
+                    {it.room && <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3"/>{it.room}</span>}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="widget-leaderboard">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><Award className="w-5 h-5 text-amber-500"/>Papan Peringkat</h2>
+          <Link to="/leaderboard" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+        </div>
+        {isStudent && mine && (
+          <div className="mb-3 flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+            <Star className="w-4 h-4 text-amber-500"/>
+            <span className="text-sm text-amber-900">Poin saya: <b>{mine.total}</b></span>
+          </div>
+        )}
+        {board.length === 0 ? <p className="text-sm text-slate-400 italic">Belum ada poin.</p> : (
+          <div className="space-y-2">
+            {board.map((s,i)=>(
+              <div key={s.user_id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50">
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${i===0?"bg-amber-400 text-white":i===1?"bg-slate-300 text-white":i===2?"bg-orange-400 text-white":"bg-slate-100 text-slate-500"}`}>{i+1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{s.name}</p>
+                  <p className="text-[10px] text-slate-400">{s.kelas || "—"}</p>
+                </div>
+                <span className="font-heading font-bold text-amber-600">{s.total}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

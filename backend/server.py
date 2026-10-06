@@ -4016,6 +4016,181 @@ async def download_presentation_pptx():
         headers=headers)
 
 
+# ==================== JADWAL PELAJARAN (TIMETABLE) ====================
+DAYS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
+
+def _tmin(t: str) -> int:
+    try:
+        h, m = str(t).split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return -1
+
+class TimetableIn(BaseModel):
+    class_id: str
+    day: str
+    start_time: str
+    end_time: str
+    subject: str
+    teacher_id: Optional[str] = None
+    room: Optional[str] = ""
+
+class TimetableUpdate(BaseModel):
+    day: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    subject: Optional[str] = None
+    teacher_id: Optional[str] = None
+    room: Optional[str] = None
+
+async def _timetable_conflict(day, start, end, class_id, teacher_id, room, exclude_id=None):
+    s, e = _tmin(start), _tmin(end)
+    async for it in db.timetable.find({"day": day}):
+        if exclude_id and it.get("id") == exclude_id:
+            continue
+        s2, e2 = _tmin(it.get("start_time")), _tmin(it.get("end_time"))
+        if not (s < e2 and s2 < e):
+            continue
+        if it.get("class_id") == class_id:
+            return f"Bentrok dengan jadwal kelas {it.get('subject')} ({it['start_time']}-{it['end_time']})"
+        if teacher_id and it.get("teacher_id") == teacher_id:
+            return f"Guru sudah mengajar {it.get('subject')} pada {day} {it['start_time']}-{it['end_time']}"
+        if room and it.get("room") == room:
+            return f"Ruangan {room} dipakai untuk {it.get('subject')} ({it['start_time']}-{it['end_time']})"
+    return None
+
+def _sorted_tt(items):
+    order = {d: i for i, d in enumerate(DAYS)}
+    items.sort(key=lambda x: (order.get(x.get("day"), 9), _tmin(x.get("start_time", ""))))
+    return items
+
+@api.get("/timetable")
+async def list_timetable(class_id: Optional[str] = None, user=Depends(get_current_user)):
+    role = user.get("role")
+    q = {}
+    if class_id:
+        q["class_id"] = class_id
+    elif role == "guru":
+        q["teacher_id"] = user["id"]
+    elif role in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
+        c = await db.classes.find_one({"name": user["kelas"]})
+        q["class_id"] = c["id"] if c else "__none__"
+    items = await db.timetable.find(q, {"_id": 0}).to_list(2000)
+    return _sorted_tt(items)
+
+@api.get("/timetable/today")
+async def timetable_today(user=Depends(get_current_user)):
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    idx = now_wib.weekday()
+    if idx > 5:
+        return {"day": "Minggu", "items": []}
+    day = DAYS[idx]
+    role = user.get("role")
+    q = {"day": day}
+    if role == "guru":
+        q["teacher_id"] = user["id"]
+    elif role in ("siswa", "ketua_kelas", "ketua_osis") and user.get("kelas"):
+        c = await db.classes.find_one({"name": user["kelas"]})
+        q["class_id"] = c["id"] if c else "__none__"
+    items = await db.timetable.find(q, {"_id": 0}).to_list(200)
+    items.sort(key=lambda x: _tmin(x.get("start_time", "")))
+    return {"day": day, "items": items}
+
+@api.post("/timetable")
+async def create_timetable(body: TimetableIn, user=Depends(require_roles("super_admin", "guru", "kepsek", "staff_tu"))):
+    if body.day not in DAYS:
+        raise HTTPException(400, "Hari tidak valid")
+    if _tmin(body.start_time) < 0 or _tmin(body.start_time) >= _tmin(body.end_time):
+        raise HTTPException(400, "Waktu mulai/selesai tidak valid")
+    c = await db.classes.find_one({"id": body.class_id})
+    if not c:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    conflict = await _timetable_conflict(body.day, body.start_time, body.end_time, body.class_id, body.teacher_id, body.room)
+    if conflict:
+        raise HTTPException(409, conflict)
+    tname = None
+    if body.teacher_id:
+        t = await db.users.find_one({"id": body.teacher_id})
+        tname = t["name"] if t else None
+    doc = {"id": str(uuid.uuid4()), "class_id": body.class_id, "class_name": c["name"], "day": body.day,
+           "start_time": body.start_time, "end_time": body.end_time, "subject": body.subject,
+           "teacher_id": body.teacher_id, "teacher_name": tname, "room": body.room or "", "created_at": now_iso()}
+    await db.timetable.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.patch("/timetable/{tid}")
+async def update_timetable(tid: str, body: TimetableUpdate, user=Depends(require_roles("super_admin", "guru", "kepsek", "staff_tu"))):
+    cur = await db.timetable.find_one({"id": tid})
+    if not cur:
+        raise HTTPException(404, "Jadwal tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    merged = {**cur, **upd}
+    if merged["day"] not in DAYS:
+        raise HTTPException(400, "Hari tidak valid")
+    if _tmin(merged["start_time"]) < 0 or _tmin(merged["start_time"]) >= _tmin(merged["end_time"]):
+        raise HTTPException(400, "Waktu mulai/selesai tidak valid")
+    conflict = await _timetable_conflict(merged["day"], merged["start_time"], merged["end_time"],
+                                         merged["class_id"], merged.get("teacher_id"), merged.get("room"), exclude_id=tid)
+    if conflict:
+        raise HTTPException(409, conflict)
+    if "teacher_id" in upd:
+        t = await db.users.find_one({"id": upd["teacher_id"]}) if upd["teacher_id"] else None
+        upd["teacher_name"] = t["name"] if t else None
+    await db.timetable.update_one({"id": tid}, {"$set": upd})
+    doc = await db.timetable.find_one({"id": tid}, {"_id": 0})
+    return doc
+
+@api.delete("/timetable/{tid}")
+async def delete_timetable(tid: str, user=Depends(require_roles("super_admin", "guru", "kepsek", "staff_tu"))):
+    await db.timetable.delete_one({"id": tid})
+    return {"ok": True}
+
+# ==================== GAMIFIKASI POIN SISWA ====================
+POINT_CATS = ["prestasi", "kedisiplinan", "akademik", "lainnya"]
+
+class PointIn(BaseModel):
+    user_id: str
+    points: int
+    reason: str
+    category: str = "prestasi"
+
+@api.post("/points")
+async def award_points(body: PointIn, user=Depends(require_roles("super_admin", "guru", "kepsek", "ketua_osis", "staff_tu"))):
+    target = await db.users.find_one({"id": body.user_id})
+    if not target:
+        raise HTTPException(404, "Siswa tidak ditemukan")
+    if not str(body.reason).strip():
+        raise HTTPException(400, "Alasan wajib diisi")
+    doc = {"id": str(uuid.uuid4()), "user_id": body.user_id, "user_name": target.get("name"),
+           "kelas": target.get("kelas", ""), "points": int(body.points), "reason": body.reason,
+           "category": body.category if body.category in POINT_CATS else "lainnya",
+           "awarded_by": user["name"], "created_at": now_iso()}
+    await db.points.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.get("/points/me")
+async def my_points(user=Depends(get_current_user)):
+    rows = await db.points.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"total": sum(r["points"] for r in rows), "history": rows}
+
+@api.get("/points/leaderboard")
+async def points_leaderboard(user=Depends(get_current_user)):
+    spipe = [{"$group": {"_id": "$user_id", "name": {"$last": "$user_name"}, "kelas": {"$last": "$kelas"}, "total": {"$sum": "$points"}}},
+             {"$sort": {"total": -1}}, {"$limit": 50}]
+    students = [{"user_id": r["_id"], "name": r.get("name"), "kelas": r.get("kelas", ""), "total": r["total"]}
+                async for r in db.points.aggregate(spipe)]
+    cpipe = [{"$group": {"_id": "$kelas", "total": {"$sum": "$points"}}}, {"$sort": {"total": -1}}, {"$limit": 30}]
+    classes = [{"kelas": (r["_id"] or "—"), "total": r["total"]} async for r in db.points.aggregate(cpipe)]
+    return {"students": students, "classes": classes}
+
+@api.get("/points/history/{uid}")
+async def points_history(uid: str, user=Depends(get_current_user)):
+    rows = await db.points.find({"user_id": uid}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"total": sum(r["points"] for r in rows), "history": rows}
+
+
 app.include_router(api)
 
 @app.on_event("shutdown")

@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -19,6 +19,8 @@ const MENU = [
   { to: "/attendance", label: "Presensi Barcode", icon: QrCode, roles: ["siswa","ketua_kelas","ketua_osis","super_admin"] },
   { to: "/attendance-recap", label: "Rekap Absensi", icon: CalendarCheck, roles: ["super_admin","kepsek","guru","staff_tu"] },
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },
+  { to: "/jadwal", label: "Jadwal Pelajaran", icon: CalendarRange, roles: "*" },
+  { to: "/leaderboard", label: "Papan Peringkat", icon: Award, roles: "*" },
   { to: "/schoolgram", label: "Schoolgram", icon: Camera, roles: "*" },
   { to: "/inventory", label: "Inventaris", icon: Boxes, roles: "*" },
   { to: "/library", label: "Perpustakaan", icon: BookOpen, roles: "*" },
@@ -54,8 +56,8 @@ export default function DashboardLayout() {
             {settings.school_logo_url ? <img src={settings.school_logo_url} alt="" className="w-full h-full object-contain"/> : <GraduationCap className="w-6 h-6"/>}
           </div>
           <div className="min-w-0">
-            <h1 className="font-heading text-lg font-extrabold tracking-tight truncate">{settings.school_name}</h1>
-            <p className="text-[10px] text-slate-400 font-mono-alt tracking-wider truncate">{settings.footer_text || "MANAJEMEN SEKOLAH"}</p>
+            <h1 title={settings.school_name} className="font-heading text-base font-extrabold tracking-tight truncate leading-tight">{settings.school_name}</h1>
+            <p title={settings.footer_text || "MANAJEMEN SEKOLAH"} className="text-[10px] text-slate-400 font-mono-alt tracking-wider truncate">{settings.footer_text || "MANAJEMEN SEKOLAH"}</p>
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
