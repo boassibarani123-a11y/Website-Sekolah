@@ -108,7 +108,7 @@ DEFAULT_SETTINGS = {
     "school_name": "SMA NEGERI 1 LAGUBOTI",
     "school_full_name": "SMA NEGERI 1 LAGUBOTI",
     "school_address": "Jl. Sekolah No. 3, Pasar Laguboti, Kec. Laguboti, Kab. Toba 22381",
-    "school_logo_url": "",
+    "school_logo_url": "/school-logo.png",
     "id_card_valid_years": "2025 - 2028",
     "id_card_rules": [
         "Kartu ini wajib dibawa selama berada di lingkungan sekolah.",
