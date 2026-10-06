@@ -4187,6 +4187,8 @@ async def points_leaderboard(user=Depends(get_current_user)):
 
 @api.get("/points/history/{uid}")
 async def points_history(uid: str, user=Depends(get_current_user)):
+    if uid != user["id"] and user.get("role") not in ("super_admin", "guru", "kepsek", "ketua_osis", "staff_tu"):
+        raise HTTPException(403, "Forbidden")
     rows = await db.points.find({"user_id": uid}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"total": sum(r["points"] for r in rows), "history": rows}
 

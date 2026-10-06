@@ -48,3 +48,17 @@ Import existing project from GitHub (https://github.com/boassibarani123-a11y/Web
 - Env: local MongoDB (DB_NAME=website_sekolah), JWT_SECRET set, FRONTEND_URL set for CORS, EMERGENT_LLM_KEY set (enables object storage + AI summaries via Emergent proxy). Stripe not wired in code.
 - Super admin seeded automatically (see memory/test_credentials.md).
 - Verified end-to-end by testing agent (iteration_28): backend 100%, frontend 100%. Object storage upload + AI book summary both working.
+
+## Phase 1 Feature Additions — 2026-06
+- Jadwal Pelajaran (timetable): per-kelas weekly schedule, anti-bentrok (class/teacher/room), /jadwal page + "Jadwal Hari Ini" dashboard widget. Backend: /api/timetable (CRUD + /today).
+- Gamifikasi Poin: award points (prestasi/kedisiplinan/akademik), /leaderboard page (per siswa & per kelas) + dashboard widget. Backend: /api/points (award/me/leaderboard/history, history gated).
+- PWA: manifest.json + service-worker.js (network-first, offline fallback) + icons (192/512) + SW registration. Installable on HP.
+- Student ID card: removed "Kelas" field, compact white barcode box with full-fill barcode, proportional text.
+- Sidebar: long school name now truncates with tooltip (title attr).
+- Tested: iteration_29.json backend 100% / frontend 100%.
+- Demo data created during dev: class "XII IPA 1", student Andi Pratama, sample timetable + points.
+
+## Phase 2 — REMAINING (next session)
+- P0: Schoolgram per-kelas ala Instagram (profil per kelas auto, story, sorotan/reels, post CRUD, hanya ketua_kelas yg bisa kelola schoolgram kelasnya).
+- P0: Seluruh fitur AI (Asisten AI chatbot, AI generator soal quiz, AI ringkas pengumuman/notulen) — pakai EMERGENT_LLM_KEY.
+- P1: Dark Mode & Tema warna sekolah.
