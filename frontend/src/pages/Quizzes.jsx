@@ -50,6 +50,14 @@ function NewQuizModal({onClose,onDone}) {
   const [password, setPassword] = useState("");
   const [timeLimit, setTimeLimit] = useState("");
   const add = () => setQs([...qs, {q:"",options:["","","",""],answer:0}]);
+  const [aiTopic, setAiTopic] = useState(""); const [aiCount, setAiCount] = useState(5); const [aiBusy, setAiBusy] = useState(false);
+  const genAI = async () => {
+    if (!aiTopic.trim()) { toast.error("Isi topik dulu"); return; }
+    setAiBusy(true);
+    try { const r = await api.post("/ai/quiz-generate", { topic: aiTopic, count: +aiCount||5, kelas }); setQs(r.data.questions); toast.success(`${r.data.questions.length} soal dibuat AI`); }
+    catch (e) { toast.error(e.response?.data?.detail || "AI gagal membuat soal"); }
+    finally { setAiBusy(false); }
+  };
   const submit = async () => {
     try { await api.post("/quizzes", { title, kelas, questions: qs, time_limit: +timeLimit || 0, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); onDone(); }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal membuat quiz"); }
@@ -61,6 +69,14 @@ function NewQuizModal({onClose,onDone}) {
       <div className="p-5 space-y-3">
         <input placeholder="Judul quiz" value={title} onChange={e=>setTitle(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
         <input placeholder="Kelas (XI IPA 1)" value={kelas} onChange={e=>setKelas(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
+        <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2" data-testid="ai-quiz-box">
+          <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1">✨ Buat soal otomatis dengan AI</p>
+          <div className="flex gap-2">
+            <input data-testid="ai-quiz-topic" placeholder="Topik, mis. Fotosintesis" value={aiTopic} onChange={e=>setAiTopic(e.target.value)} className="flex-1 px-3 py-2 border rounded-lg text-sm"/>
+            <input data-testid="ai-quiz-count" type="number" min="1" max="15" value={aiCount} onChange={e=>setAiCount(e.target.value)} className="w-16 px-2 py-2 border rounded-lg text-sm"/>
+            <button type="button" data-testid="ai-quiz-generate" disabled={aiBusy} onClick={genAI} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">{aiBusy?"...":"Buat"}</button>
+          </div>
+        </div>
         <QuizTimeField value={timeLimit} onChange={setTimeLimit}/>
         <QuizPasswordField hasPassword={false} value={password} onChange={setPassword} remove={false} onRemove={()=>{}}/>
         {qs.map((q,qi)=>(

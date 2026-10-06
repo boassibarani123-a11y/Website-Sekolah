@@ -4193,6 +4193,210 @@ async def points_history(uid: str, user=Depends(get_current_user)):
     return {"total": sum(r["points"] for r in rows), "history": rows}
 
 
+# ==================== SCHOOLGRAM PER-KELAS (Instagram-style) ====================
+def can_manage_schoolgram(user: dict, klass: dict) -> bool:
+    if user.get("role") == "super_admin":
+        return True
+    if user.get("role") == "ketua_kelas" and user.get("kelas") == klass.get("name"):
+        return True
+    return False
+
+async def _story_cleanup():
+    await db.stories.delete_many({"highlighted": {"$ne": True}, "expires_at": {"$lt": now_iso()}})
+
+@api.get("/schoolgram/classes")
+async def schoolgram_classes(user=Depends(get_current_user)):
+    await _story_cleanup()
+    classes = await db.classes.find(dscope(user), {"_id": 0}).to_list(500)
+    now = now_iso()
+    out = []
+    for c in classes:
+        latest = await db.posts.find({"class_id": c["id"]}, {"_id": 0, "image": 1}).sort("created_at", -1).to_list(1)
+        out.append({
+            "id": c["id"], "name": c["name"],
+            "post_count": await db.posts.count_documents({"class_id": c["id"]}),
+            "student_count": await db.users.count_documents({"role": {"$in": ["siswa", "ketua_kelas"]}, "kelas": c["name"], **dscope(user)}),
+            "cover": (latest[0]["image"] if latest else None),
+            "has_story": (await db.stories.count_documents({"class_id": c["id"], "$or": [{"highlighted": True}, {"expires_at": {"$gte": now}}]})) > 0,
+            "can_manage": can_manage_schoolgram(user, c),
+        })
+    out.sort(key=lambda x: x["name"])
+    return out
+
+@api.get("/schoolgram/class/{cid}")
+async def schoolgram_class(cid: str, user=Depends(get_current_user)):
+    await _story_cleanup()
+    c = await db.classes.find_one({"id": cid}, {"_id": 0})
+    if not c:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    posts = await db.posts.find({"class_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    for p in posts:
+        p["like_count"] = len(p.get("likes", []))
+        p["liked"] = user["id"] in p.get("likes", [])
+    now = now_iso()
+    return {
+        "class": {"id": c["id"], "name": c["name"], "description": c.get("description", "")},
+        "posts": posts,
+        "stories": await db.stories.find({"class_id": cid, "expires_at": {"$gte": now}}, {"_id": 0}).sort("created_at", -1).to_list(100),
+        "highlights": await db.stories.find({"class_id": cid, "highlighted": True}, {"_id": 0}).sort("created_at", -1).to_list(100),
+        "can_manage": can_manage_schoolgram(user, c),
+        "student_count": await db.users.count_documents({"role": {"$in": ["siswa", "ketua_kelas"]}, "kelas": c["name"], **dscope(user)}),
+    }
+
+async def _assert_manage(cid, user):
+    c = await db.classes.find_one({"id": cid})
+    if not c:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    if not can_manage_schoolgram(user, c):
+        raise HTTPException(403, "Hanya Ketua Kelas (atau Super Admin) yang dapat mengelola Schoolgram kelas ini")
+    return c
+
+class SgPostIn(BaseModel):
+    image: str
+    caption: Optional[str] = ""
+
+@api.post("/schoolgram/class/{cid}/post")
+async def sg_create_post(cid: str, body: SgPostIn, user=Depends(get_current_user)):
+    c = await _assert_manage(cid, user)
+    doc = {"id": str(uuid.uuid4()), "image": body.image, "caption": body.caption or "",
+           "author_id": user["id"], "author_name": user["name"], "author_role": user["role"],
+           "class_id": cid, "kelas": c["name"], "likes": [], "comments": [], "created_at": now_iso(),
+           "is_demo": bool(user.get("is_demo"))}
+    await db.posts.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+class SgPostUpdate(BaseModel):
+    caption: str
+
+@api.patch("/schoolgram/post/{pid}")
+async def sg_edit_post(pid: str, body: SgPostUpdate, user=Depends(get_current_user)):
+    p = await db.posts.find_one({"id": pid})
+    if not p:
+        raise HTTPException(404, "Post tidak ditemukan")
+    await _assert_manage(p.get("class_id"), user)
+    await db.posts.update_one({"id": pid}, {"$set": {"caption": body.caption}})
+    return {"ok": True}
+
+@api.delete("/schoolgram/post/{pid}")
+async def sg_delete_post(pid: str, user=Depends(get_current_user)):
+    p = await db.posts.find_one({"id": pid})
+    if not p:
+        raise HTTPException(404, "Post tidak ditemukan")
+    await _assert_manage(p.get("class_id"), user)
+    await db.posts.delete_one({"id": pid})
+    return {"ok": True}
+
+class SgStoryIn(BaseModel):
+    image: str
+    caption: Optional[str] = ""
+
+@api.post("/schoolgram/class/{cid}/story")
+async def sg_create_story(cid: str, body: SgStoryIn, user=Depends(get_current_user)):
+    c = await _assert_manage(cid, user)
+    created = datetime.now(timezone.utc)
+    doc = {"id": str(uuid.uuid4()), "class_id": cid, "class_name": c["name"], "image": body.image,
+           "caption": body.caption or "", "author_id": user["id"], "author_name": user["name"],
+           "highlighted": False, "highlight_title": "", "created_at": created.isoformat(),
+           "expires_at": (created + timedelta(hours=24)).isoformat()}
+    await db.stories.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+class HighlightIn(BaseModel):
+    highlighted: bool
+    title: Optional[str] = ""
+
+@api.post("/schoolgram/story/{sid}/highlight")
+async def sg_highlight(sid: str, body: HighlightIn, user=Depends(get_current_user)):
+    s = await db.stories.find_one({"id": sid})
+    if not s:
+        raise HTTPException(404, "Story tidak ditemukan")
+    await _assert_manage(s.get("class_id"), user)
+    await db.stories.update_one({"id": sid}, {"$set": {"highlighted": body.highlighted, "highlight_title": body.title or "Sorotan"}})
+    return {"ok": True}
+
+@api.delete("/schoolgram/story/{sid}")
+async def sg_delete_story(sid: str, user=Depends(get_current_user)):
+    s = await db.stories.find_one({"id": sid})
+    if not s:
+        raise HTTPException(404, "Story tidak ditemukan")
+    await _assert_manage(s.get("class_id"), user)
+    await db.stories.delete_one({"id": sid})
+    return {"ok": True}
+
+# ==================== ASISTEN AI ====================
+import json as _json
+
+class AiChatIn(BaseModel):
+    message: str
+    history: Optional[List[dict]] = None
+
+@api.post("/ai/chat")
+async def ai_chat(body: AiChatIn, user=Depends(get_current_user)):
+    s = await get_settings()
+    system = (f"Anda adalah Asisten AI untuk {s.get('school_name', 'sekolah')}. "
+              "Bantu warga sekolah (siswa, guru, staf) dengan ramah dalam Bahasa Indonesia. "
+              "Jawab ringkas, jelas, dan sopan.")
+    ctx = ""
+    for h in (body.history or [])[-6:]:
+        who = "Pengguna" if h.get("role") == "user" else "Asisten"
+        ctx += f"{who}: {h.get('content', '')}\n"
+    reply = await _ai_text(system, f"{ctx}Pengguna: {body.message}\nAsisten:", f"aichat-{user['id']}")
+    return {"reply": reply}
+
+class AiQuizIn(BaseModel):
+    topic: str
+    count: int = 5
+    kelas: Optional[str] = ""
+
+@api.post("/ai/quiz-generate")
+async def ai_quiz_generate(body: AiQuizIn, user=Depends(require_roles("guru", "super_admin", "kepsek"))):
+    n = max(1, min(int(body.count or 5), 15))
+    system = "Anda pembuat soal pilihan ganda untuk siswa SMA Indonesia. Keluarkan HANYA JSON valid tanpa teks lain."
+    prompt = (f"Buat {n} soal pilihan ganda tentang '{body.topic}'"
+              + (f" untuk kelas {body.kelas}" if body.kelas else "") + ". "
+              'Format JSON: array objek {"q": string, "options": [4 string], "answer": index_benar_0_sampai_3}. '
+              "Tepat 4 opsi dan 'answer' integer 0-3. Hanya JSON.")
+    raw = (await _ai_text(system, prompt, f"aiquiz-{user['id']}")).strip()
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.lower().startswith("json"):
+            raw = raw[4:]
+    a, b = raw.find("["), raw.rfind("]")
+    if a != -1 and b != -1:
+        raw = raw[a:b + 1]
+    try:
+        qs = _json.loads(raw)
+    except Exception:
+        raise HTTPException(502, "AI gagal menghasilkan soal yang valid, coba lagi")
+    clean = []
+    for q in qs:
+        opts = q.get("options") or []
+        if not q.get("q") or len(opts) < 2:
+            continue
+        opts = ([str(o) for o in opts] + ["", "", "", ""])[:4]
+        try:
+            ans = int(q.get("answer", 0))
+        except Exception:
+            ans = 0
+        clean.append({"q": str(q["q"]), "options": opts, "answer": max(0, min(ans, 3))})
+    if not clean:
+        raise HTTPException(502, "AI tidak menghasilkan soal, coba lagi")
+    return {"questions": clean}
+
+class AiSummarizeIn(BaseModel):
+    text: str
+
+@api.post("/ai/summarize")
+async def ai_summarize(body: AiSummarizeIn, user=Depends(require_roles("guru", "super_admin", "kepsek", "staff_tu", "ketua_osis"))):
+    if not body.text.strip():
+        raise HTTPException(400, "Teks kosong")
+    system = "Anda meringkas teks sekolah menjadi poin-poin penting dalam Bahasa Indonesia yang jelas dan singkat."
+    summary = await _ai_text(system, f"Ringkas teks berikut menjadi 3-5 poin (gunakan '- '):\n\n{body.text}", f"aisum-{user['id']}")
+    return {"summary": summary}
+
+
 app.include_router(api)
 
 @app.on_event("shutdown")

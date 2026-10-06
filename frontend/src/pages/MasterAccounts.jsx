@@ -147,6 +147,10 @@ function CreateModal({onClose, onCreated}) {
                   {classList.length===0 && <p className="mt-1 text-[10px] text-amber-600">Belum ada kelas. Buat kelas dulu di menu Ruang Kelas.</p>}
                 </div>
               </div>
+              <div className="-mt-1">
+                <button type="button" data-testid="nisn-generate" onClick={()=>setForm({...form,nisn:String(Math.floor(1000000000+Math.random()*9000000000))})}
+                  className="text-xs font-semibold text-sky-600 hover:text-sky-800">Buat NISN acak otomatis</button>
+              </div>
               <Input label={form.role==="siswa" ? "Nomor WhatsApp Aktif (wajib)" : "Nomor WhatsApp"} v={form.phone} on={v=>setForm({...form,phone:v})} required={form.role==="siswa"} placeholder="08xxxxxxxxxx" data-testid="new-account-phone"/>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Nama Ortu" v={form.parent_name} on={v=>setForm({...form,parent_name:v})}/>

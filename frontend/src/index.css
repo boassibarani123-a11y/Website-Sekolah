@@ -10,6 +10,9 @@
   --sky-dark: #0369A1;
   --bg: #F8FAFC;
   --ink: #0F172A;
+  --brand: #0284C7;
+  --brand-dark: #0369A1;
+  --brand-light: #7dd3fc;
 }
 
 body {
@@ -105,3 +108,36 @@ body {
     * { @apply border-border; }
     body { @apply bg-background text-foreground; }
 }
+
+/* ---------- Brand theming: remap sky utilities to school color ---------- */
+.bg-sky-500 { background-color: var(--brand) !important; }
+.bg-sky-600 { background-color: var(--brand) !important; }
+.bg-sky-700 { background-color: var(--brand-dark) !important; }
+.hover\:bg-sky-700:hover { background-color: var(--brand-dark) !important; }
+.hover\:bg-sky-800:hover { background-color: var(--brand-dark) !important; }
+.text-sky-600 { color: var(--brand) !important; }
+.text-sky-700 { color: var(--brand-dark) !important; }
+.text-sky-800 { color: var(--brand-dark) !important; }
+.hover\:text-sky-800:hover { color: var(--brand-dark) !important; }
+.border-sky-500 { border-color: var(--brand) !important; }
+.hover\:border-sky-500:hover { border-color: var(--brand) !important; }
+.focus\:border-sky-500:focus { border-color: var(--brand) !important; }
+
+/* ---------- Dark mode (global surface overrides) ---------- */
+html.dark body { background-color: #0b1220; color: #e2e8f0; }
+.dark .bg-white { background-color: #111827 !important; }
+.dark .bg-slate-50 { background-color: #0b1220 !important; }
+.dark .bg-slate-100 { background-color: #1e293b !important; }
+.dark .bg-slate-50\/50, .dark .bg-slate-100\/50 { background-color: #1e293b !important; }
+.dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-slate-800 { color: #e2e8f0 !important; }
+.dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-slate-600 { color: #94a3b8 !important; }
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-slate-400 { color: #64748b !important; }
+.dark .border-slate-200 { border-color: #1f2937 !important; }
+.dark .border-slate-100 { border-color: #1f2937 !important; }
+.dark .border-slate-300 { border-color: #334155 !important; }
+.dark .hover\:bg-slate-50:hover { background-color: #1e293b !important; }
+.dark .hover\:bg-slate-100:hover { background-color: #334155 !important; }
+.dark input, .dark textarea, .dark select { background-color: #0f172a !important; color: #e2e8f0 !important; border-color: #334155 !important; }

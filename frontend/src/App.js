@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { SettingsProvider } from "@/context/SettingsContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 import Login from "@/pages/Login";
 import DashboardLayout from "@/pages/DashboardLayout";
 import Dashboard from "@/pages/Dashboard";
@@ -102,5 +103,5 @@ function AppInner() {
 }
 
 export default function App() {
-  return <AuthProvider><SettingsProvider><AppInner/></SettingsProvider></AuthProvider>;
+  return <AuthProvider><SettingsProvider><ThemeProvider><AppInner/></ThemeProvider></SettingsProvider></AuthProvider>;
 }

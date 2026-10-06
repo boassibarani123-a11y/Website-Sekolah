@@ -148,6 +148,9 @@ function AnnouncementModal({ isAdmin, canLoginBanner, initial, onClose, onDone }
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Isi / Deskripsi *</label>
             <textarea data-testid="announcement-content-input" rows={5} value={f.content} onChange={e=>upd("content", e.target.value)} placeholder="Tulis isi pengumuman yang menarik..."
               className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
+            <button type="button" data-testid="announcement-ai-summarize"
+              onClick={async()=>{ if(!f.content.trim()) return toast.error("Isi dulu teksnya"); try{ const r=await api.post("/ai/summarize",{text:f.content}); upd("content", r.data.summary); toast.success("Diringkas dengan AI"); }catch(e){ toast.error(e.response?.data?.detail||"AI gagal meringkas"); } }}
+              className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors w-fit">✨ Ringkas dengan AI</button>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

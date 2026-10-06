@@ -3,9 +3,12 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
+import AiAssistant from "@/components/AiAssistant";
+import { useTheme } from "@/context/ThemeContext";
+import api from "@/lib/apiClient";
 
 const MENU = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, roles: "*" },
@@ -41,9 +44,13 @@ const ROLE_LABEL = {
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
-  const { settings } = useSettings();
+  const { settings, refresh } = useSettings();
+  const { dark, toggle } = useTheme();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
+  const [themeMenu, setThemeMenu] = useState(false);
+  const PRESETS = ["#0284C7", "#7C3AED", "#059669", "#DC2626", "#EA580C", "#0F766E", "#DB2777", "#1D4ED8"];
+  const setBrand = async (c) => { try { await api.patch("/settings", { primary_color: c }); refresh(); setThemeMenu(false); } catch {} };
   if (!user) return null;
 
   const visible = MENU.filter(m => m.roles === "*" || m.roles.includes(user.role));
@@ -89,6 +96,27 @@ export default function DashboardLayout() {
             <h1 className="font-heading font-bold text-slate-900">{settings.school_name}</h1>
           </div>
           <div className="flex items-center gap-2">
+            <button data-testid="dark-toggle" onClick={toggle} title="Mode Gelap" className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">
+              {dark ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
+            </button>
+            {user.role === "super_admin" && (
+              <div className="relative">
+                <button data-testid="theme-menu-toggle" onClick={()=>setThemeMenu(m=>!m)} title="Tema Warna" className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">
+                  <Palette className="w-5 h-5"/>
+                </button>
+                {themeMenu && (
+                  <div data-testid="theme-menu" className="absolute right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-200 z-50 w-48">
+                    <p className="text-xs font-semibold text-slate-500 mb-2">Warna Tema Sekolah</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {PRESETS.map(c=>(
+                        <button key={c} data-testid={`theme-color-${c.replace('#','')}`} onClick={()=>setBrand(c)} style={{backgroundColor:c}} className="w-8 h-8 rounded-lg hover:scale-110 transition-transform"/>
+                      ))}
+                    </div>
+                    <input type="color" aria-label="Pilih warna" defaultValue={settings.primary_color||'#0284C7'} onChange={e=>setBrand(e.target.value)} className="mt-3 w-full h-8 rounded cursor-pointer"/>
+                  </div>
+                )}
+              </div>
+            )}
             <NotificationBell/>
             <button data-testid="menu-toggle" onClick={()=>setOpen(!open)} className="lg:hidden p-2 rounded-lg bg-slate-100">
               <ChevronDown className={`w-5 h-5 transition-transform ${open?"rotate-180":""}`}/>
@@ -110,6 +138,7 @@ export default function DashboardLayout() {
         )}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8"><Outlet/></main>
       </div>
+      <AiAssistant/>
     </div>
   );
 }
