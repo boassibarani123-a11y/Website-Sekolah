@@ -62,3 +62,13 @@ Import existing project from GitHub (https://github.com/boassibarani123-a11y/Web
 - P0: Schoolgram per-kelas ala Instagram (profil per kelas auto, story, sorotan/reels, post CRUD, hanya ketua_kelas yg bisa kelola schoolgram kelasnya).
 - P0: Seluruh fitur AI (Asisten AI chatbot, AI generator soal quiz, AI ringkas pengumuman/notulen) — pakai EMERGENT_LLM_KEY.
 - P1: Dark Mode & Tema warna sekolah.
+
+## Phase 2 Feature Additions — 2026-06 (tested: iteration_30, backend 100% / frontend 100%)
+- Schoolgram per-kelas (Instagram-style): profil tiap kelas (avatar, counts, deskripsi), story 24 jam, sorotan (highlight persist), post grid + like/comment, CRUD caption. Hak kelola: super_admin (semua kelas) & ketua_kelas (hanya kelasnya) — cross-class & siswa biasa ditolak 403. Backend: /api/schoolgram/* ; stories collection. Frontend: Schoolgram.jsx rewrite.
+- Asisten AI (reuse _ai_text / EMERGENT_LLM_KEY): chatbot mengambang di semua halaman (AiAssistant.jsx, /api/ai/chat), generator soal quiz di modal Quiz (/api/ai/quiz-generate, guru/admin), peringkas pengumuman (/api/ai/summarize).
+- Dark Mode & Tema: ThemeContext (localStorage 'theme-dark'), toggle di header; tema warna sekolah via --brand (remap util sky) + menu swatch untuk super_admin (PATCH settings.primary_color). Dark overrides global di index.css.
+- NISN: form Kelola Akun + tombol 'Buat NISN acak otomatis' (nisn-generate). Backend sudah mendukung nisn.
+
+## Backlog / Catatan
+- server.py ~4400 baris; pertimbangkan pecah ke routers/ (schoolgram, ai, timetable, points).
+- AI endpoints belum ada rate-limit/kuota.
