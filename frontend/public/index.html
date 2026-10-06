@@ -27,7 +27,7 @@
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
         <title>Emergent | Fullstack App</title>
-        <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
+        <script>window.addEventListener("error",function(e){try{var fn=(e&&e.filename)||"";var msg=(e&&e.message)||"";if((e.error instanceof DOMException&&e.error.name==="DataCloneError"&&msg.indexOf("PerformanceServerTiming")!==-1)||(fn.indexOf("ap.emergent.sh/static")!==-1)||(msg.indexOf("ap.emergent.sh/static")!==-1)){e.stopImmediatePropagation();e.preventDefault();return false}}catch(_){}} ,true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
     <body>
@@ -110,6 +110,9 @@
                 person_profiles: "identified_only", // or 'always' to create profiles for anonymous users as well,
                 disable_session_recording: true,
                 autocapture: false,
+                capture_dead_clicks: false,
+                capture_performance: false,
+                disable_surveys: true,
             });
         </script>
     </body>
