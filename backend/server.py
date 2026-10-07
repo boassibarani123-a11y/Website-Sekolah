@@ -44,64 +44,42 @@ db = client[DB_NAME]
 app = FastAPI(title="SMA NEGERI 1 LAGUBOTI API")
 api = APIRouter(prefix="/api")
 
-# ---------------- OBJECT STORAGE ----------------
-STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip().rstrip("/") or "https://integrations.emergentagent.com"
-STORAGE_URL = STORAGE_BASE + "/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-APP_NAME = "sekolahku"
-storage_key: Optional[str] = None
-
-import time as _time
-
-def init_storage(force: bool = False):
-    global storage_key
-    if storage_key and not force:
-        return storage_key
-    last = None
-    for attempt in range(3):
-        try:
-            r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-            r.raise_for_status()
-            storage_key = r.json()["storage_key"]
-            return storage_key
-        except Exception as e:
-            last = e
-            logger.error(f"Storage init failed (attempt {attempt+1}): {e}")
-            _time.sleep(1.5 * (attempt + 1))
-    return None
-
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    if not key:
-        raise HTTPException(503, "Penyimpanan sedang sibuk, coba lagi sebentar")
-    # Transient upstream errors (404 stale key, 500/503/429) -> refresh key and retry.
-    for attempt in range(4):
-        r = requests.put(f"{STORAGE_URL}/objects/{path}",
-                         headers={"X-Storage-Key": key, "Content-Type": content_type},
-                         data=data, timeout=120)
-        if r.status_code in (404, 500, 502, 503, 429):
-            key = init_storage(force=True) or key
-            _time.sleep(1.0 * (attempt + 1))
-            continue
-        r.raise_for_status()
-        return r.json()
-    raise HTTPException(503, "Gagal mengunggah ke penyimpanan, coba lagi")
-
-def get_object(path: str):
-    key = init_storage()
-    for attempt in range(3):
-        r = requests.get(f"{STORAGE_URL}/objects/{path}",
-                         headers={"X-Storage-Key": key}, timeout=60)
-        if r.status_code in (404, 500, 502, 503, 429):
-            key = init_storage(force=True) or key
-            _time.sleep(0.8 * (attempt + 1))
-            continue
-        r.raise_for_status()
-        return r.content, r.headers.get("Content-Type", "application/octet-stream")
-    r.raise_for_status()
-    return r.content, r.headers.get("Content-Type", "application/octet-stream")
+# ---------------- FILE STORAGE (local disk) ----------------
+# File disimpan di DISK LOKAL server sehingga aplikasi berjalan di mana saja
+# (termasuk VPS) TANPA layanan object-storage eksternal/terkelola apa pun.
+# Set env UPLOAD_DIR ke folder persisten (mis. /var/www/uploads) saat di VPS.
+UPLOAD_DIR = os.path.abspath(
+    os.environ.get("UPLOAD_DIR") or os.path.join(os.path.dirname(__file__), "uploads")
+)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 MIME = {"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","gif":"image/gif","webp":"image/webp","pdf":"application/pdf"}
+
+def _safe_fs_path(path: str) -> str:
+    """Resolve a storage path under UPLOAD_DIR, blocking path traversal."""
+    full = os.path.abspath(os.path.join(UPLOAD_DIR, path))
+    if full != UPLOAD_DIR and not full.startswith(UPLOAD_DIR + os.sep):
+        raise HTTPException(400, "Path file tidak valid")
+    return full
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    full = _safe_fs_path(path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(data)
+    return {"path": path, "size": len(data)}
+
+def get_object(path: str):
+    full = _safe_fs_path(path)
+    if not os.path.exists(full):
+        raise HTTPException(404, "File tidak ditemukan")
+    ext = full.rsplit(".", 1)[-1].lower() if "." in full else ""
+    ct = MIME.get(ext, "application/octet-stream")
+    with open(full, "rb") as f:
+        return f.read(), ct
+
+APP_NAME = "sekolahku"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
 # ---------------- SCHOOL SETTINGS ----------------
 DEFAULT_SETTINGS = {
@@ -3674,7 +3652,6 @@ async def ai_recommendations(user=Depends(get_current_user)):
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():
-    init_storage()
     async for tx in db.uang_kas.find({"class_id": {"$exists": False}}, {"_id": 0, "id": 1, "kelas": 1, "is_demo": 1}):
         c = await db.classes.find_one({"name": tx.get("kelas"), "is_demo": True if tx.get("is_demo") else {"$ne": True}}, {"id": 1})
         if c:
