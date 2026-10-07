@@ -6,6 +6,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { School, Save, Pencil, Plus, Trash2, Target, Eye, History as HistoryIcon,
   Phone, Mail, Globe, User, Calendar, Hash, Award, MapPin, FileText, Building2,
   Leaf, Flag, Crosshair, GraduationCap, Image as ImageIcon, Upload } from "lucide-react";
+import ImageCropDialog from "@/components/ImageCropDialog";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -36,11 +37,13 @@ export default function SchoolInfo() {
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal menyimpan"); }
     finally { setBusy(false); }
   };
-  const uploadHero = async (e) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const fd = new FormData(); fd.append("file", f);
-    try { const r = await api.post("/upload", fd); upd("hero_image_url", `${BACKEND}${r.data.url}`); toast.success("Gambar terunggah"); }
+  const [heroCropFile, setHeroCropFile] = useState(null);
+  const pickHero = (e) => { const f = e.target.files?.[0]; if (f) setHeroCropFile(f); e.target.value = ""; };
+  const uploadCroppedHero = async (out) => {
+    const fd = new FormData(); fd.append("file", out);
+    try { const r = await api.post("/upload", fd); upd("hero_image_url", `${BACKEND}${r.data.url}`); toast.success("Foto sampul diperbarui"); }
     catch { toast.error("Gagal upload"); }
+    setHeroCropFile(null);
   };
   const uploadGallery = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -111,7 +114,8 @@ export default function SchoolInfo() {
             <ImageIcon className="w-4 h-4 text-slate-400 shrink-0"/>
             <div className="flex-1">
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Ganti Foto Sampul</label>
-              <input type="file" accept="image/*" onChange={uploadHero} className="mt-1 w-full text-sm"/>
+              <input type="file" accept="image/*" onChange={pickHero} className="mt-1 w-full text-sm"/>
+              <p className="text-[11px] text-slate-400 mt-1">Gambar bisa dipangkas & diatur sebelum disimpan.</p>
             </div>
           </div>
         )}
@@ -213,6 +217,11 @@ export default function SchoolInfo() {
       <Card icon={Target} title="Sasaran Sekolah">
         <ListEditor label="sasaran" field="targets" s={s} editing={editing} upd={upd} ordered />
       </Card>
+
+      {heroCropFile && (
+        <ImageCropDialog file={heroCropFile} aspect={16/7} title="Pangkas Foto Sampul"
+          onCancel={() => setHeroCropFile(null)} onCropped={uploadCroppedHero}/>
+      )}
 
       {/* Galeri Foto */}
       <Card icon={ImageIcon} title="Galeri Foto Sekolah">

@@ -5,6 +5,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import io
+import asyncio
 import uuid
 import base64
 import logging
@@ -27,7 +28,7 @@ import re
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
-from email_guard import assert_safe_email, EMAIL_BASE_URL
+from email_guard import assert_safe_email
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,7 +80,19 @@ def get_object(path: str):
         return f.read(), ct
 
 APP_NAME = "sekolahku"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+
+# ---------------- AI (official OpenAI SDK; optional) ----------------
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+_openai_client = None
+def _get_openai():
+    global _openai_client
+    if not OPENAI_API_KEY:
+        return None
+    if _openai_client is None:
+        from openai import AsyncOpenAI
+        _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
 
 # ---------------- SCHOOL SETTINGS ----------------
 DEFAULT_SETTINGS = {
@@ -2828,11 +2841,7 @@ class ResetIn(BaseModel):
 async def send_reset_email(to_email: str, token: str):
     base = os.environ.get("FRONTEND_URL", "").rstrip("/")
     link = f"{base}/reset-password?token={token}"
-    key = os.environ.get("EMERGENT_EMAIL_KEY", "")
     from_name = os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU")
-    if not key or key.startswith("{") or not base.startswith("https://"):
-        logger.warning("Reset email not sent: email key or https FRONTEND_URL missing")
-        return False
     brand = escape(from_name)
     html = (f'<div style="font-family:Arial;padding:24px;max-width:560px;margin:auto">'
             f'<h2 style="color:#0284C7">Reset Password {brand}</h2>'
@@ -2841,20 +2850,7 @@ async def send_reset_email(to_email: str, token: str):
             f'<p style="color:#64748B;font-size:12px">Link berlaku 1 jam dan hanya bisa dipakai sekali. '
             f'Abaikan email ini jika Anda tidak meminta reset — password Anda tetap aman.</p>'
             f'<p style="color:#94A3B8;font-size:11px;margin-top:24px">— Tim {brand}. Kami tidak pernah meminta password lewat email.</p></div>')
-    subject = f"Reset password {from_name}"
-    try:
-        assert_safe_email(subject, html)
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
-                             headers={"X-Email-Key": key},
-                             json={"to": [to_email], "subject": subject,
-                                   "html": html, "from_name": from_name})
-        r.raise_for_status()
-        logger.info("Reset email sent to %s", to_email)
-        return True
-    except Exception as e:
-        logger.error(f"Reset email failed: {e}")
-        return False
+    return await send_email(to_email, f"Reset password {from_name}", html)
 
 @api.post("/auth/forgot-password")
 async def forgot(body: ForgotIn, bg: BackgroundTasks):
@@ -2930,21 +2926,57 @@ async def get_report(student_id: str, user=Depends(get_current_user)):
         raise HTTPException(403, "Forbidden")
     return await build_report(student_id)
 
-async def send_email(to_email: str, subject: str, html: str) -> bool:
-    key = os.environ.get("EMERGENT_EMAIL_KEY", "")
-    from_name = os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU")
-    if not key or key.startswith("{"):
-        logger.warning("Email not configured; would send to %s: %s", to_email, subject)
+def _smtp_send_sync(to_email: str, subject: str, html: str) -> bool:
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    host = os.environ.get("SMTP_HOST", "").strip()
+    if not host:
         return False
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER", "").strip()
+    pwd = os.environ.get("SMTP_PASSWORD", "")
+    from_name = os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU")
+    from_email = (os.environ.get("SMTP_FROM", "").strip() or user)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{from_name} <{from_email}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(html, "html", "utf-8"))
+    use_ssl = os.environ.get("SMTP_SSL", "").lower() in ("1", "true", "yes")
+    if use_ssl:
+        with smtplib.SMTP_SSL(host, port, timeout=30) as srv:
+            if user:
+                srv.login(user, pwd)
+            srv.sendmail(from_email, [to_email], msg.as_string())
+    else:
+        with smtplib.SMTP(host, port, timeout=30) as srv:
+            srv.starttls()
+            if user:
+                srv.login(user, pwd)
+            srv.sendmail(from_email, [to_email], msg.as_string())
+    return True
+
+async def send_email(to_email: str, subject: str, html: str) -> bool:
+    """Send email via standard SMTP (set SMTP_HOST/PORT/USER/PASSWORD/SMTP_FROM).
+    Returns False (logs a warning) when SMTP is not configured, so core
+    features keep working without email."""
     try:
         assert_safe_email(subject, html)
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
-                             headers={"X-Email-Key": key},
-                             json={"to": [to_email], "subject": subject, "html": html, "from_name": from_name})
-        r.raise_for_status(); return True
     except Exception as e:
-        logger.error(f"send_email failed: {e}"); return False
+        logger.error(f"email guard blocked: {e}")
+        return False
+    if not os.environ.get("SMTP_HOST", "").strip():
+        logger.warning("SMTP not configured; would send to %s: %s", to_email, subject)
+        return False
+    try:
+        ok = await asyncio.to_thread(_smtp_send_sync, to_email, subject, html)
+        if ok:
+            logger.info("Email sent to %s", to_email)
+        return ok
+    except Exception as e:
+        logger.error(f"send_email failed: {e}")
+        return False
 
 @api.post("/reports/{student_id}/email")
 async def email_report(student_id: str, bg: BackgroundTasks, user=Depends(require_roles("guru", "kepsek", "super_admin"))):
@@ -3609,12 +3641,19 @@ async def add_review(bid: str, body: ReviewIn, user=Depends(get_current_user)):
 
 # ---- AI (Perpustakaan Pintar) ----
 async def _ai_text(system: str, prompt: str, session: str) -> str:
-    if not EMERGENT_KEY:
-        raise HTTPException(400, "Fitur AI belum aktif: EMERGENT_LLM_KEY belum diset")
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    chat = LlmChat(api_key=EMERGENT_KEY, session_id=session, system_message=system).with_model("openai", "gpt-5.4")
-    resp = await chat.send_message(UserMessage(text=prompt))
-    return resp if isinstance(resp, str) else getattr(resp, "text", str(resp))
+    client = _get_openai()
+    if client is None:
+        raise HTTPException(400, "Fitur AI belum aktif: OPENAI_API_KEY belum diset")
+    try:
+        resp = await client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": prompt}],
+            temperature=0.4, max_tokens=1200)
+        return resp.choices[0].message.content or ""
+    except Exception as e:
+        logger.error(f"OpenAI error: {e}")
+        raise HTTPException(502, "Layanan AI gagal merespons, coba lagi")
 
 @api.post("/books/{bid}/ai-summary")
 async def ai_book_summary(bid: str, user=Depends(get_current_user)):
@@ -4425,6 +4464,111 @@ async def ai_summarize(body: AiSummarizeIn, user=Depends(require_roles("guru", "
     system = "Anda meringkas teks sekolah menjadi poin-poin penting dalam Bahasa Indonesia yang jelas dan singkat."
     summary = await _ai_text(system, f"Ringkas teks berikut menjadi 3-5 poin (gunakan '- '):\n\n{body.text}", f"aisum-{user['id']}")
     return {"summary": summary}
+
+
+# ---------------- QUIZ BULK IMPORT (Excel/CSV) ----------------
+def _resolve_answer(raw: str, opts: list) -> int:
+    s = (raw or "").strip()
+    if not s:
+        return 0
+    if s in opts:
+        return opts.index(s)
+    low = s.lower()
+    for i, o in enumerate(opts):
+        if o.strip().lower() == low:
+            return i
+    if len(s) == 1 and s.upper() in "ABCDEFGH":
+        idx = ord(s.upper()) - ord("A")
+        if 0 <= idx < len(opts):
+            return idx
+    if s.lstrip("-").isdigit():
+        n = int(s)
+        if 1 <= n <= len(opts):
+            return n - 1          # 1-based (A=1)
+        if 0 <= n < len(opts):
+            return n              # 0-based fallback
+    return 0
+
+def _rows_to_questions(rows: list) -> list:
+    rows = [r for r in rows if any((str(c) if c is not None else "").strip() for c in r)]
+    if not rows:
+        return []
+    header = [(str(c) if c is not None else "").strip().lower() for c in rows[0]]
+    q_words = ("pertanyaan", "soal", "question", "q")
+    ans_words = ("jawaban", "kunci", "kunci jawaban", "answer", "jawaban benar", "correct")
+    has_header = any(h in q_words for h in header) or any(h in ans_words for h in header)
+    body = rows[1:] if has_header else rows
+    ans_idx = None
+    if has_header:
+        for i, h in enumerate(header):
+            if h in ans_words:
+                ans_idx = i
+                break
+    out = []
+    for r in body:
+        cells = [(str(c) if c is not None else "").strip() for c in r]
+        if not cells or not cells[0]:
+            continue
+        q = cells[0]
+        if ans_idx is not None and ans_idx != 0:
+            raw_ans = cells[ans_idx] if ans_idx < len(cells) else ""
+            opts = [c for i, c in enumerate(cells) if i not in (0, ans_idx)]
+        else:
+            raw_ans = cells[-1] if len(cells) >= 3 else ""
+            opts = cells[1:-1]
+        opts = [o for o in opts if o != ""]
+        if len(opts) < 2:
+            continue
+        out.append({"q": q, "options": opts, "answer": _resolve_answer(raw_ans, opts)})
+    return out
+
+@api.post("/quizzes/parse-file")
+async def quiz_parse_file(file: UploadFile = File(...),
+                          user=Depends(require_roles("guru", "super_admin", "kepsek"))):
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File maksimal 5MB")
+    name = (file.filename or "").lower()
+    rows = []
+    try:
+        if name.endswith(".csv"):
+            import csv
+            text = raw.decode("utf-8-sig", errors="replace")
+            rows = list(csv.reader(io.StringIO(text)))
+        elif name.endswith(".xlsx") or name.endswith(".xlsm"):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            ws = wb.active
+            rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        else:
+            raise HTTPException(400, "Format tidak didukung. Gunakan file .csv atau .xlsx")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"quiz parse error: {e}")
+        raise HTTPException(400, "Gagal membaca file. Pastikan formatnya benar.")
+    questions = _rows_to_questions(rows)
+    if not questions:
+        raise HTTPException(400, "Tidak ada soal valid. Kolom: Pertanyaan, Opsi A-D, lalu Jawaban (A/B/C/D atau teks).")
+    return {"questions": questions, "count": len(questions)}
+
+# ---------------- PUBLIC SCHOOL GALLERY (foto sekolah) ----------------
+@api.get("/public/gallery-file/{path:path}")
+async def public_gallery_file(path: str):
+    """Serve school gallery/hero images publicly (only those referenced in settings)."""
+    s = await db.settings.find_one({"_id": "singleton"}) or {}
+    allowed = set()
+    for u in (s.get("gallery_images") or []):
+        if u:
+            allowed.add(u.split("/api/files/")[-1])
+    hero = s.get("hero_image_url") or ""
+    if hero:
+        allowed.add(hero.split("/api/files/")[-1])
+    if path not in allowed:
+        raise HTTPException(404, "File tidak ditemukan")
+    data, ct = get_object(path)
+    return Response(content=data, media_type=ct,
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 app.include_router(api)

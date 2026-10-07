@@ -71,14 +71,19 @@ ADMIN_PASSWORD="Boas12345io"
 WEBHOOK_CRON_SECRET="GANTI_DENGAN_STRING_ACAK_LAIN"
 UPLOAD_DIR="/var/www/sekolah/uploads"
 EMAIL_FROM_NAME="SMA NEGERI 1 LAGUBOTI"
-EMERGENT_LLM_KEY=""
-EMERGENT_EMAIL_KEY=""
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-4o-mini"
+SMTP_HOST=""
+SMTP_PORT="587"
+SMTP_USER=""
+SMTP_PASSWORD=""
+SMTP_FROM=""
 ENV
 # Generate secret acak (jalankan 2x, tempel ke JWT_SECRET & WEBHOOK_CRON_SECRET):
 openssl rand -hex 32
 ```
 > Catatan: `UPLOAD_DIR` membuat semua upload gambar tersimpan di disk VPS — **tanpa layanan Emergent**.
-> `EMERGENT_LLM_KEY` opsional: isi hanya jika mau fitur AI perpustakaan & email. Fitur inti tidak butuh ini.
+> `OPENAI_API_KEY` opsional (fitur AI perpustakaan/kuis). Email opsional via SMTP (`SMTP_HOST` dst). Fitur inti tidak butuh keduanya.
 
 Install dependensi Python:
 ```bash
@@ -86,10 +91,10 @@ cd /var/www/sekolah/backend
 python3.11 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+pip install -r requirements.txt
 deactivate
 ```
-> `--extra-index-url` wajib karena paket `emergentintegrations` tidak ada di PyPI publik.
+> Semua dependensi ada di PyPI publik (tidak perlu index khusus lagi).
 
 ## Tahap 5 — Build FRONTEND
 
@@ -230,7 +235,7 @@ Checklist uji di browser `https://sekolah.contoh.com`:
 cd /var/www/sekolah
 git pull origin main10
 # backend
-source backend/venv/bin/activate && pip install -r backend/requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && deactivate
+source backend/venv/bin/activate && pip install -r backend/requirements.txt && deactivate
 sudo systemctl restart sekolah-backend
 # frontend
 cd frontend && yarn install && yarn build && sudo systemctl reload nginx
@@ -245,4 +250,4 @@ Folder `/var/www/sekolah/uploads` tidak tersentuh saat redeploy → gambar aman.
 - **Gambar 401** → cookie tidak terkirim; cek HTTPS & domain sama.
 - **502 Bad Gateway** → `sudo systemctl status sekolah-backend`, cek `journalctl -u sekolah-backend -n 50`.
 - **CORS error** → pastikan `CORS_ORIGINS` di backend/.env = domain HTTPS kamu.
-- **Fitur AI error 400** → isi `EMERGENT_LLM_KEY` (opsional); fitur inti tetap jalan tanpanya.
+- **Fitur AI error 400** → isi `OPENAI_API_KEY` (opsional); fitur inti tetap jalan tanpanya.

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { BrainCircuit, Plus, X, Trash2, Lock } from "lucide-react";
+import { BrainCircuit, Plus, X, Trash2, Lock, Upload } from "lucide-react";
 import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
 import { QuizTakeModal, QuizTimeField } from "@/components/QuizTake";
 
@@ -58,6 +58,18 @@ function NewQuizModal({onClose,onDone}) {
     catch (e) { toast.error(e.response?.data?.detail || "AI gagal membuat soal"); }
     finally { setAiBusy(false); }
   };
+  const [importBusy, setImportBusy] = useState(false);
+  const importFile = async (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    setImportBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const r = await api.post("/quizzes/parse-file", fd);
+      setQs(r.data.questions);
+      toast.success(`${r.data.count} soal diimpor dari file`);
+    } catch (err) { toast.error(err.response?.data?.detail || "Gagal mengimpor file"); }
+    finally { setImportBusy(false); e.target.value = ""; }
+  };
   const submit = async () => {
     try { await api.post("/quizzes", { title, kelas, questions: qs, time_limit: +timeLimit || 0, ...quizPasswordBody(password, false) }); toast.success("Quiz dibuat"); onDone(); }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal membuat quiz"); }
@@ -76,6 +88,13 @@ function NewQuizModal({onClose,onDone}) {
             <input data-testid="ai-quiz-count" type="number" min="1" max="15" value={aiCount} onChange={e=>setAiCount(e.target.value)} className="w-16 px-2 py-2 border rounded-lg text-sm"/>
             <button type="button" data-testid="ai-quiz-generate" disabled={aiBusy} onClick={genAI} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60">{aiBusy?"...":"Buat"}</button>
           </div>
+        </div>
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200" data-testid="quiz-import-box">
+          <label data-testid="quiz-import-label" className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer transition-colors shrink-0">
+            <Upload className="w-4 h-4"/>{importBusy ? "Mengimpor..." : "Impor Excel/CSV"}
+            <input data-testid="quiz-import-input" type="file" accept=".csv,.xlsx,.xlsm" onChange={importFile} className="hidden" disabled={importBusy}/>
+          </label>
+          <p className="text-[11px] text-emerald-700 leading-tight">Kolom: Pertanyaan, Opsi A–D, lalu Jawaban (huruf A/B/C/D, angka, atau teks opsi).</p>
         </div>
         <QuizTimeField value={timeLimit} onChange={setTimeLimit}/>
         <QuizPasswordField hasPassword={false} value={password} onChange={setPassword} remove={false} onRemove={()=>{}}/>

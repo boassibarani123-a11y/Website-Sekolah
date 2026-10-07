@@ -44,14 +44,14 @@ HAL-HAL YANG PERLU DISIAPKAN & JEBAKAN PENTING (pastikan kamu memandu ini):
      WEBHOOK_CRON_SECRET=(string acak lain)
      UPLOAD_DIR="/var/www/sekolah/uploads"
      EMAIL_FROM_NAME="SMA NEGERI 1 LAGUBOTI"
-     EMERGENT_LLM_KEY=""   EMERGENT_EMAIL_KEY=""   (opsional, untuk AI/email)
+     OPENAI_API_KEY=""   OPENAI_MODEL="gpt-4o-mini"   (opsional, fitur AI)
+     SMTP_HOST=""  SMTP_PORT="587"  SMTP_USER=""  SMTP_PASSWORD=""  SMTP_FROM=""   (opsional, email reset password)
 4) frontend/.env WAJIB saat build:
      REACT_APP_BACKEND_URL=https://DOMAIN-SAYA
      WDS_SOCKET_PORT=443
-5) Install Python deps: "pip install -r backend/requirements.txt". PENTING: requirements.txt memuat paket
-   "emergentintegrations" yang tidak ada di PyPI publik, jadi tambahkan:
-     --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
-   (Paket ini hanya dipakai fitur AI/email opsional; fitur inti tetap jalan tanpanya.)
+5) Install Python deps: "pip install -r backend/requirements.txt". Semua dependensi ada di PyPI publik,
+   jadi TIDAK perlu index tambahan apa pun. (Fitur AI perpustakaan/kuis memakai SDK resmi OpenAI dan
+   bersifat opsional; email reset password memakai SMTP standar dan juga opsional. Fitur inti jalan tanpa keduanya.)
 6) HTTPS WAJIB: endpoint login menyetel cookie dengan atribut Secure + SameSite=None, sehingga cookie HANYA
    tersimpan jika situs diakses via HTTPS. Pandu setup domain + sertifikat Let's Encrypt (Certbot) di Nginx.
    Backend & frontend HARUS satu domain yang sama agar cookie & gambar (GET /api/files, auth via cookie) jalan.

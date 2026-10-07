@@ -15,6 +15,8 @@ export default function PublicGallery() {
   }, []);
 
   const shown = filter === "Semua" ? items : items.filter(i => i.category === filter);
+  const schoolPhotos = (settings.gallery_images || []).filter(Boolean)
+    .map(u => u.replace("/api/files/", "/api/public/gallery-file/"));
 
   return (
     <div className="min-h-screen bg-slate-50" data-testid="public-gallery-page">
@@ -62,6 +64,22 @@ export default function PublicGallery() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {shown.map(it => <GalleryCard key={it.id} item={it} />)}
           </div>
+        )}
+        {schoolPhotos.length > 0 && (
+          <section className="mt-16" data-testid="public-school-gallery">
+            <div className="flex items-center gap-2 mb-2">
+              <Camera className="w-7 h-7 text-sky-500" />
+              <h2 className="font-heading text-3xl font-extrabold text-slate-900">Galeri Sekolah</h2>
+            </div>
+            <p className="text-sm text-slate-500 mb-6">Suasana dan fasilitas {settings.school_full_name}.</p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {schoolPhotos.map((u, i) => (
+                <div key={i} className="aspect-[4/3] rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
+                  <img src={u} alt={`Foto sekolah ${i + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+                </div>
+              ))}
+            </div>
+          </section>
         )}
       </main>
     </div>

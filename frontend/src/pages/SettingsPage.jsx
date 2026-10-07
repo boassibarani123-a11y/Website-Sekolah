@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useSettings } from "@/context/SettingsContext";
 import { Settings as SettingsIcon, Save, Upload, Plus, Trash2, RotateCcw } from "lucide-react";
 import StudentIdCard from "@/components/StudentIdCard";
+import ImageCropDialog from "@/components/ImageCropDialog";
 
 export default function SettingsPage() {
   const { settings, refresh } = useSettings();
@@ -23,15 +24,17 @@ export default function SettingsPage() {
     } finally { setBusy(false); }
   };
 
-  const uploadLogo = async (e) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const fd = new FormData(); fd.append("file", f);
+  const [logoCropFile, setLogoCropFile] = useState(null);
+  const pickLogo = (e) => { const f = e.target.files?.[0]; if (f) setLogoCropFile(f); e.target.value = ""; };
+  const uploadCroppedLogo = async (out) => {
+    const fd = new FormData(); fd.append("file", out);
     try {
       const r = await api.post("/upload", fd);
       const url = `${process.env.REACT_APP_BACKEND_URL}${r.data.url}`;
       setForm({...form, school_logo_url: url});
       toast.success("Logo terunggah, klik Simpan untuk menerapkan");
     } catch { toast.error("Gagal upload"); }
+    setLogoCropFile(null);
   };
 
   const upd = (k, v) => setForm({...form, [k]: v});
@@ -102,8 +105,8 @@ export default function SettingsPage() {
           </Section>
 
           <Section title="B. Logo Sekolah" icon="🎨">
-            <Field label="Upload Logo (opsional)" hint="Recommended: 200×200px PNG/JPG">
-              <input type="file" accept="image/*" onChange={uploadLogo} className="w-full text-sm"/>
+            <Field label="Upload Logo (opsional)" hint="Bisa dipangkas (1:1) sebelum disimpan. Ideal 200×200px">
+              <input type="file" accept="image/*" onChange={pickLogo} className="w-full text-sm"/>
               {form.school_logo_url && (
                 <div className="mt-3 flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
                   <img src={form.school_logo_url} alt="Logo" className="w-16 h-16 object-contain rounded-lg bg-white border"/>
@@ -111,6 +114,10 @@ export default function SettingsPage() {
                 </div>
               )}
             </Field>
+            {logoCropFile && (
+              <ImageCropDialog file={logoCropFile} aspect={1} round title="Pangkas Logo Sekolah"
+                onCancel={() => setLogoCropFile(null)} onCropped={uploadCroppedLogo}/>
+            )}
           </Section>
 
           <Section title="C. Kartu Pelajar (KTP-S)" icon="🎫">
