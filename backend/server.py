@@ -285,7 +285,15 @@ SKY_100 = "E0F2FE"
 SLATE_900 = "0F172A"
 SLATE_50 = "F8FAFC"
 
-def _border(color="CBD5E1"):
+# Clean minimal report palette (restrained color, not monotone)
+HEAD_BG = "1E293B"  # slate-800 header band
+ACCENT = "0284C7"   # sky-600 thin accent line
+ZEBRA = "F8FAFC"    # very light gray alternate row
+GRID = "E2E8F0"     # light cell border
+INK = "0F172A"      # near-black text
+MUTE = "64748B"     # muted gray text
+
+def _border(color="E2E8F0"):
     s = Side(style="thin", color=color)
     return Border(left=s, right=s, top=s, bottom=s)
 
@@ -311,18 +319,18 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
     tr = 2
     ws.merge_cells(f"{first_col}{tr}:{last_col}{tr}")
     c = ws.cell(row=tr, column=CO, value=f"{brand}  -  {title}")
-    c.font = Font(name="Calibri", size=16, bold=True, color="FFFFFF")
-    c.fill = PatternFill("solid", fgColor=SKY_600)
-    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[tr].height = 34
+    c.font = Font(name="Calibri", size=15, bold=True, color=INK)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[tr].height = 28
 
-    # Subtitle row (row 3)
+    # Subtitle row (row 3) — muted text + thin accent underline
     ws.merge_cells(f"{first_col}{tr+1}:{last_col}{tr+1}")
     c2 = ws.cell(row=tr + 1, column=CO, value=subtitle)
-    c2.font = Font(name="Calibri", size=10, italic=True, color="FFFFFF")
-    c2.fill = PatternFill("solid", fgColor=SLATE_900)
-    c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[tr + 1].height = 22
+    c2.font = Font(name="Calibri", size=9.5, italic=True, color=MUTE)
+    c2.alignment = Alignment(horizontal="left", vertical="center")
+    for _ci in range(n_cols):
+        ws.cell(row=tr + 1, column=CO + _ci).border = Border(bottom=Side(style="medium", color=ACCENT))
+    ws.row_dimensions[tr + 1].height = 20
 
     # Spacer (row 4)
     ws.row_dimensions[tr + 2].height = 8
@@ -331,10 +339,10 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
     hdr_row = tr + 3
     for i in range(n_cols):
         cell = ws.cell(row=hdr_row, column=CO + i, value=columns[i])
-        cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor=SKY_600)
+        cell.font = Font(name="Calibri", size=10.5, bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=HEAD_BG)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = _border("FFFFFF")
+        cell.border = _border(HEAD_BG)
     ws.row_dimensions[hdr_row].height = 30
 
     # Data rows (or placeholder when empty)
@@ -349,12 +357,12 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
         ws.row_dimensions[r].height = 24
     for ri, row in enumerate(rows):
         r = hdr_row + 1 + ri
-        fill = PatternFill("solid", fgColor=SLATE_50) if ri % 2 == 0 else None
+        fill = PatternFill("solid", fgColor=ZEBRA) if ri % 2 == 1 else None
         for ci in range(n_cols):
             key = columns[ci]
             val = row.get(key) if isinstance(row, dict) else row[ci]
             cell = ws.cell(row=r, column=CO + ci, value=val if val is not None else "-")
-            cell.font = Font(name="Calibri", size=10, color=SLATE_900)
+            cell.font = Font(name="Calibri", size=10, color=INK)
             cell.alignment = Alignment(horizontal="left" if ci == 0 else "center", vertical="center", wrap_text=True)
             cell.border = _border()
             if fill: cell.fill = fill
@@ -365,29 +373,27 @@ def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
         gap = hdr_row + max(len(rows), 1) + 2
         ws.merge_cells(start_row=gap, start_column=CO, end_row=gap, end_column=CO + n_cols - 1)
         s = ws.cell(row=gap, column=CO, value="RINGKASAN")
-        s.font = Font(bold=True, color="FFFFFF", size=11)
-        s.fill = PatternFill("solid", fgColor=SLATE_900)
-        s.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[gap].height = 24
+        s.font = Font(bold=True, color=INK, size=10.5)
+        s.alignment = Alignment(horizontal="left", vertical="center")
+        for ci in range(n_cols):
+            ws.cell(row=gap, column=CO + ci).border = Border(bottom=Side(style="thin", color=ACCENT))
+        ws.row_dimensions[gap].height = 20
         split = max(1, n_cols // 2)
         for i, (k, v) in enumerate(summary.items()):
             r = gap + 1 + i
-            band = PatternFill("solid", fgColor=SKY_100)
             for ci in range(n_cols):
-                cell = ws.cell(row=r, column=CO + ci)
-                cell.fill = band
-                cell.border = _border()
+                ws.cell(row=r, column=CO + ci).border = _border()
             if split >= 2:
                 ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + split - 1)
             kc = ws.cell(row=r, column=CO, value=k)
-            kc.font = Font(bold=True, color=SLATE_900, size=10)
+            kc.font = Font(color=MUTE, size=10)
             kc.alignment = Alignment(horizontal="left", indent=1, vertical="center")
             if split + 1 <= n_cols:
                 ws.merge_cells(start_row=r, start_column=CO + split, end_row=r, end_column=CO + n_cols - 1)
             vc = ws.cell(row=r, column=CO + min(split, n_cols - 1), value=v)
-            vc.font = Font(bold=True, color=SKY_600, size=11)
+            vc.font = Font(bold=True, color=INK, size=10.5)
             vc.alignment = Alignment(horizontal="right", indent=1, vertical="center")
-            ws.row_dimensions[r].height = 22
+            ws.row_dimensions[r].height = 20
         last_content = gap + len(summary)
     else:
         last_content = hdr_row + max(len(rows), 1)
@@ -427,7 +433,7 @@ app.add_middleware(
 )
 
 # ---------------- ROLES ----------------
-ROLES = ["super_admin", "kepsek", "staff_tu", "guru", "siswa", "ketua_osis", "ketua_kelas", "admin_perpus"]
+ROLES = ["super_admin", "kepsek", "staff_tu", "guru", "siswa", "ketua_osis", "ketua_kelas", "admin_perpus", "admin_absensi"]
 
 # ---------------- UTIL ----------------
 def now_iso():
@@ -509,6 +515,7 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None  # nomor WhatsApp (wajib untuk siswa)
     student_id: Optional[str] = None  # for orang_tua linking
     subjects: Optional[List[str]] = None  # mapel yang diampu (guru)
+    nip: Optional[str] = None  # NIP guru/staff
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -524,6 +531,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     student_id: Optional[str] = None
     subjects: Optional[List[str]] = None
+    nip: Optional[str] = None
 
 # ---------------- AUTH ----------------
 @api.post("/auth/login")
@@ -576,6 +584,7 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
         "phone": (body.phone or "").strip() or None,
         "student_id": body.student_id,
         "subjects": body.subjects or [],
+        "nip": body.nip,
         "created_at": now_iso(),
     }
     dstamp(doc, user)
@@ -597,6 +606,26 @@ async def update_user(uid: str, body: UserUpdate, user=Depends(require_roles("su
 async def delete_user(uid: str, user=Depends(require_roles("super_admin"))):
     await db.users.delete_one({"id": uid})
     return {"ok": True}
+
+STAFF_ROLES = ["guru", "staff_tu", "kepsek", "admin_perpus", "admin_absensi"]
+STAFF_LABELS = {"guru": "Guru", "staff_tu": "Staff TU", "kepsek": "Kepala Sekolah",
+                "admin_perpus": "Admin Perpustakaan", "admin_absensi": "Admin Absensi"}
+
+@api.get("/users/staff/export/xlsx")
+async def staff_export(user=Depends(require_roles("super_admin", "kepsek", "staff_tu"))):
+    docs = await db.users.find({"role": {"$in": STAFF_ROLES}, **dscope(user)},
+                               {"password_hash": 0, "_id": 0}).to_list(2000)
+    columns = ["Nama Lengkap", "NIP", "Divisi", "Username", "Mata Pelajaran"]
+    rows = [{"Nama Lengkap": d.get("name"), "NIP": d.get("nip") or "-",
+             "Divisi": STAFF_LABELS.get(d.get("role"), d.get("role")),
+             "Username": d.get("email"), "Mata Pelajaran": ", ".join(d.get("subjects") or []) or "-"} for d in docs]
+    from collections import Counter
+    c = Counter(d.get("role") for d in docs)
+    summary = {"Total Guru & Staff": len(docs), **{STAFF_LABELS.get(k, k): v for k, v in c.items()}}
+    data = pretty_excel("Daftar Guru & Staff",
+                        f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T', ' ')}",
+                        columns, rows, summary, "Guru & Staff")
+    return xlsx_response(data, "Daftar_Guru_Staff.xlsx")
 
 # ---------------- CLASSES (Kelas) ----------------
 class ClassIn(BaseModel):
@@ -1034,7 +1063,7 @@ class ScanIn(BaseModel):
     method: str = "qr"  # qr | barcode | manual
 
 @api.post("/attendance/scan")
-async def scan(body: ScanIn, user=Depends(require_roles("siswa", "ketua_kelas", "ketua_osis", "staff_tu", "guru", "super_admin"))):
+async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "super_admin", "kepsek", "admin_absensi"))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
     if body.method not in ("qr", "barcode", "manual"):
@@ -1162,7 +1191,7 @@ def weekly_attendance_excel(label, subtitle, days, students, daily, totals):
     DAY_C = CO + 3   # first day column
     TOT_C = CO + 10  # first H/I/S/A total column
     ws.merge_cells(f"{first}2:{last}2"); c = ws.cell(2, CO, f"SMA NEGERI 1 LAGUBOTI  -  {label}")
-    c.font = Font(size=15, bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor=SKY_600)
+    c.font = Font(size=15, bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor=HEAD_BG)
     c.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[2].height = 30
     ws.merge_cells(f"{first}3:{last}3"); c2 = ws.cell(3, CO, subtitle)
     c2.font = Font(size=10, italic=True, color="FFFFFF"); c2.fill = PatternFill("solid", fgColor=SLATE_900)
@@ -1171,7 +1200,7 @@ def weekly_attendance_excel(label, subtitle, days, students, daily, totals):
     hr = 5
     for i, col in enumerate(columns):
         cell = ws.cell(hr, CO + i, col); cell.font = Font(bold=True, color="FFFFFF", size=10)
-        cell.fill = PatternFill("solid", fgColor=SKY_600); cell.border = _border("FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=HEAD_BG); cell.border = _border("FFFFFF")
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[hr].height = 32
     for ri, s in enumerate(students):
@@ -1582,11 +1611,19 @@ async def update_borrow(bid: str, status: str, user=Depends(require_roles("staff
 # ---------------- ASSIGNMENTS ----------------
 class AssignmentIn(BaseModel):
     title: str
-    description: str
-    kelas: str
-    due_date: str
+    description: str = ""
+    kelas: str = ""
+    kelas_kelompok: Optional[str] = None
+    due_date: str = ""
     subject: Optional[str] = None
+    guru_id: Optional[str] = None
+    guru_name: Optional[str] = None
     class_id: Optional[str] = None
+    link: Optional[str] = None
+    semester: Optional[str] = "genap"
+    active: bool = True
+    file_url: Optional[str] = None
+    video_url: Optional[str] = None
     attachments: Optional[List[dict]] = None  # [{url, name, type}]
 
 class SubmissionIn(BaseModel):
@@ -1597,8 +1634,17 @@ class SubmissionIn(BaseModel):
 class AssignmentUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
+    kelas: Optional[str] = None
+    kelas_kelompok: Optional[str] = None
     subject: Optional[str] = None
+    guru_id: Optional[str] = None
+    guru_name: Optional[str] = None
     due_date: Optional[str] = None
+    link: Optional[str] = None
+    semester: Optional[str] = None
+    active: Optional[bool] = None
+    file_url: Optional[str] = None
+    video_url: Optional[str] = None
     attachments: Optional[List[dict]] = None
 
 @api.get("/assignments")
@@ -2773,8 +2819,8 @@ async def upload_file(file: UploadFile = File(...), user=Depends(get_current_use
     ct = file.content_type or MIME.get(ext, "application/octet-stream")
     path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
     data = await file.read()
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(400, "File maksimal 10MB")
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(400, "File maksimal 20MB")
     result = put_object(path, data, ct)
     fid = str(uuid.uuid4())
     await db.files.insert_one({"id": fid, "storage_path": result["path"], "content_type": ct,
@@ -3304,6 +3350,23 @@ async def update_ppdb(pid: str, status: Optional[str] = None, notes: Optional[st
     if score is not None: upd["score"] = score
     upd["updated_at"] = now_iso()
     await db.ppdb.update_one({"id": pid}, {"$set": upd})
+    return {"ok": True}
+
+@api.put("/ppdb/{pid}")
+async def edit_ppdb_full(pid: str, body: dict, user=Depends(require_roles("super_admin"))):
+    doc = await db.ppdb.find_one({"id": pid})
+    if not doc:
+        raise HTTPException(404, "Pendaftar tidak ditemukan")
+    body.pop("id", None); body.pop("_id", None); body.pop("created_at", None)
+    body["updated_at"] = now_iso()
+    await db.ppdb.update_one({"id": pid}, {"$set": body})
+    return {"ok": True}
+
+@api.delete("/ppdb/{pid}")
+async def delete_ppdb(pid: str, user=Depends(require_roles("super_admin"))):
+    res = await db.ppdb.delete_one({"id": pid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Pendaftar tidak ditemukan")
     return {"ok": True}
 
 @api.post("/ppdb/auto-select")
@@ -4281,6 +4344,49 @@ async def points_history(uid: str, user=Depends(get_current_user)):
         raise HTTPException(403, "Forbidden")
     rows = await db.points.find({"user_id": uid}, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"total": sum(r["points"] for r in rows), "history": rows}
+
+
+POINT_MANAGE_ROLES = ("super_admin", "guru", "kepsek", "ketua_osis", "staff_tu")
+
+class PointEdit(BaseModel):
+    points: Optional[int] = None
+    category: Optional[str] = None
+    reason: Optional[str] = None
+
+@api.get("/points/manage")
+async def points_manage(q: Optional[str] = None, user=Depends(require_roles(*POINT_MANAGE_ROLES))):
+    rows = await db.points.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    if q:
+        ql = q.strip().lower()
+        rows = [r for r in rows if ql in (r.get("user_name") or "").lower()
+                or ql in (r.get("kelas") or "").lower() or ql in (r.get("reason") or "").lower()]
+    return rows
+
+@api.patch("/points/{pid}")
+async def edit_point(pid: str, body: PointEdit, user=Depends(require_roles(*POINT_MANAGE_ROLES))):
+    doc = await db.points.find_one({"id": pid})
+    if not doc:
+        raise HTTPException(404, "Poin tidak ditemukan")
+    upd = {}
+    if body.points is not None:
+        upd["points"] = int(body.points)
+    if body.category is not None:
+        upd["category"] = body.category if body.category in POINT_CATS else "lainnya"
+    if body.reason is not None:
+        if not body.reason.strip():
+            raise HTTPException(400, "Alasan wajib diisi")
+        upd["reason"] = body.reason.strip()
+    if upd:
+        upd["updated_at"] = now_iso()
+        await db.points.update_one({"id": pid}, {"$set": upd})
+    return {"ok": True}
+
+@api.delete("/points/{pid}")
+async def delete_point(pid: str, user=Depends(require_roles(*POINT_MANAGE_ROLES))):
+    res = await db.points.delete_one({"id": pid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Poin tidak ditemukan")
+    return {"ok": True}
 
 
 # ==================== SCHOOLGRAM PER-KELAS (Instagram-style) ====================

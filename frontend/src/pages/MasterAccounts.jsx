@@ -6,7 +6,8 @@ import StudentIdCard from "@/components/StudentIdCard";
 const ROLES = [
   {v:"siswa", l:"Siswa"}, {v:"guru", l:"Guru / Wali Kelas"}, {v:"kepsek", l:"Kepala Sekolah"},
   {v:"staff_tu", l:"Staff TU"}, {v:"ketua_osis", l:"Ketua OSIS"},
-  {v:"ketua_kelas", l:"Ketua Kelas"}, {v:"admin_perpus", l:"Admin Perpustakaan"}, {v:"super_admin", l:"Super Admin"},
+  {v:"ketua_kelas", l:"Ketua Kelas"}, {v:"admin_perpus", l:"Admin Perpustakaan"},
+  {v:"admin_absensi", l:"Admin Absensi"}, {v:"super_admin", l:"Super Admin"},
 ];
 
 export default function MasterAccounts() {

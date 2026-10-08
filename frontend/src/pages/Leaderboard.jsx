@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Award, Trophy, Medal, Star, Plus, Users, GraduationCap, X } from "lucide-react";
+import { Award, Trophy, Medal, Star, Plus, Users, GraduationCap, X, Pencil, Trash2, Search } from "lucide-react";
 
 const AWARD_ROLES = ["super_admin", "guru", "kepsek", "ketua_osis", "staff_tu"];
 const STUDENT_ROLES = ["siswa", "ketua_kelas", "ketua_osis"];
@@ -25,6 +25,23 @@ export default function Leaderboard() {
   const [students, setStudents] = useState([]);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ user_id: "", points: 10, category: "prestasi", reason: "" });
+  const [manageRows, setManageRows] = useState([]);
+  const [mq, setMq] = useState("");
+  const [editItem, setEditItem] = useState(null);
+
+  const loadManage = () => api.get("/points/manage", { params: mq ? { q: mq } : {} }).then((r) => setManageRows(r.data)).catch(() => {});
+  const saveEdit = async () => {
+    if (!String(editItem.reason || "").trim()) { toast.error("Alasan wajib diisi"); return; }
+    try {
+      await api.patch(`/points/${editItem.id}`, { points: Number(editItem.points), category: editItem.category, reason: editItem.reason });
+      toast.success("Poin diperbarui"); setEditItem(null); loadManage(); load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Gagal memperbarui"); }
+  };
+  const delPoint = async (id) => {
+    if (!window.confirm("Hapus entri poin ini? Tindakan tidak bisa dibatalkan.")) return;
+    try { await api.delete(`/points/${id}`); toast.success("Poin dihapus"); loadManage(); load(); }
+    catch (e) { toast.error("Gagal menghapus"); }
+  };
 
   const load = () => api.get("/points/leaderboard").then((r) => setBoard(r.data)).catch(() => {});
   useEffect(() => {
@@ -77,9 +94,38 @@ export default function Leaderboard() {
       <div className="flex gap-2">
         <TabBtn active={tab === "siswa"} onClick={() => setTab("siswa")} icon={Users} label="Per Siswa" testid="tab-siswa" />
         <TabBtn active={tab === "kelas"} onClick={() => setTab("kelas")} icon={GraduationCap} label="Per Kelas" testid="tab-kelas" />
+        {canAward && <TabBtn active={tab === "kelola"} onClick={() => { setTab("kelola"); loadManage(); }} icon={Pencil} label="Kelola Poin" testid="tab-kelola" />}
       </div>
 
-      {tab === "siswa" ? (
+      {tab === "kelola" && canAward && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm" data-testid="board-kelola">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input data-testid="manage-search" value={mq} onChange={(e) => setMq(e.target.value)} onKeyDown={(e) => e.key === "Enter" && loadManage()}
+                placeholder="Cari nama siswa / kelas / alasan..." className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-sm" />
+            </div>
+            <button data-testid="manage-search-btn" onClick={loadManage} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold">Cari</button>
+          </div>
+          {manageRows.length === 0 ? <p className="text-sm text-slate-400 italic py-6 text-center">Belum ada entri poin.</p> : (
+            <div className="space-y-2">
+              {manageRows.map((p) => (
+                <div key={p.id} data-testid={`manage-row-${p.id}`} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">{p.user_name} <span className="text-xs text-slate-400 font-normal">· {p.kelas || "—"}</span></p>
+                    <p className="text-xs text-slate-500 truncate">{p.reason} <span className="text-slate-300">·</span> <span className="capitalize">{p.category}</span> <span className="text-slate-300">·</span> {(p.created_at || "").slice(0, 10)}</p>
+                  </div>
+                  <span className={`font-heading font-extrabold text-lg ${p.points < 0 ? "text-rose-600" : "text-amber-600"}`}>{p.points > 0 ? `+${p.points}` : p.points}</span>
+                  <button data-testid={`manage-edit-${p.id}`} onClick={() => setEditItem({ ...p })} className="p-2 rounded-lg bg-sky-100 text-sky-700 hover:bg-sky-200"><Pencil className="w-4 h-4" /></button>
+                  <button data-testid={`manage-del-${p.id}`} onClick={() => delPoint(p.id)} className="p-2 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "siswa" && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm" data-testid="board-siswa">
           {board.students.length === 0 ? <Empty /> : (
             <div className="space-y-2">
@@ -96,7 +142,8 @@ export default function Leaderboard() {
             </div>
           )}
         </div>
-      ) : (
+      )}
+      {tab === "kelas" && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm" data-testid="board-kelas">
           {board.classes.length === 0 ? <Empty /> : (
             <div className="space-y-2">
@@ -109,6 +156,33 @@ export default function Leaderboard() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {editItem && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onClick={() => setEditItem(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="edit-point-modal">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-heading font-bold text-lg text-slate-900">Ubah Poin — {editItem.user_name}</h3>
+              <button onClick={() => setEditItem(null)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <L label="Poin (boleh minus)">
+                  <input type="number" data-testid="edit-points" value={editItem.points} onChange={(e) => setEditItem({ ...editItem, points: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+                </L>
+                <L label="Kategori">
+                  <select data-testid="edit-category" value={editItem.category} onChange={(e) => setEditItem({ ...editItem, category: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                    {CATS.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
+                  </select>
+                </L>
+              </div>
+              <L label="Alasan">
+                <input data-testid="edit-reason" value={editItem.reason} onChange={(e) => setEditItem({ ...editItem, reason: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+              </L>
+            </div>
+            <button data-testid="edit-save" onClick={saveEdit} className="mt-5 w-full py-2.5 rounded-xl bg-sky-600 text-white font-semibold hover:bg-sky-700 transition-colors">Simpan Perubahan</button>
+          </div>
         </div>
       )}
 

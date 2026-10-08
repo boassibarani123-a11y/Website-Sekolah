@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 import AiAssistant from "@/components/AiAssistant";
@@ -16,11 +16,14 @@ const MENU = [
   { to: "/org-structure", label: "Struktur Organisasi", icon: Network, roles: "*" },
   { to: "/my-card", label: "Kartu Saya", icon: IdCard, roles: ["siswa","ketua_kelas","ketua_osis"] },
   { to: "/accounts", label: "Kelola Akun", icon: UsersRound, roles: ["super_admin"] },
+  { to: "/guru-staff", label: "Guru & Staff", icon: GraduationCap, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, roles: ["super_admin"] },
+  { to: "/presentasi", label: "Presentasi", icon: PresentationIcon, roles: ["super_admin"] },
+  { to: "/dokumentasi", label: "Dokumentasi", icon: FileText, roles: ["super_admin"] },
   { to: "/admin-ppdb", label: "Admin PPDB", icon: UserPlus2, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/analytics", label: "Analitik", icon: BarChart3, roles: ["kepsek","super_admin"] },
-  { to: "/attendance", label: "Presensi Barcode", icon: QrCode, roles: ["siswa","ketua_kelas","ketua_osis","super_admin"] },
-  { to: "/attendance-recap", label: "Rekap Absensi", icon: CalendarCheck, roles: ["super_admin","kepsek","guru","staff_tu"] },
+  { to: "/attendance", label: "Presensi Barcode", icon: QrCode, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/attendance-recap", label: "Rekap Absensi", icon: CalendarCheck, roles: ["super_admin","kepsek","guru","staff_tu","admin_absensi"] },
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },
   { to: "/jadwal", label: "Jadwal Pelajaran", icon: CalendarRange, roles: "*" },
   { to: "/leaderboard", label: "Papan Peringkat", icon: Award, roles: "*" },
@@ -39,7 +42,7 @@ const MENU = [
 const ROLE_LABEL = {
   super_admin: "Super Admin", kepsek: "Kepala Sekolah", staff_tu: "Staff TU",
   guru: "Guru / Wali Kelas", siswa: "Siswa", ketua_osis: "Ketua OSIS", ketua_kelas: "Ketua Kelas",
-  admin_perpus: "Admin Perpustakaan",
+  admin_perpus: "Admin Perpustakaan", admin_absensi: "Admin Absensi",
 };
 
 export default function DashboardLayout() {
@@ -53,7 +56,10 @@ export default function DashboardLayout() {
   const setBrand = async (c) => { try { await api.patch("/settings", { primary_color: c }); refresh(); setThemeMenu(false); } catch {} };
   if (!user) return null;
 
-  const visible = MENU.filter(m => m.roles === "*" || m.roles.includes(user.role));
+  const ADMIN_ABSENSI_PATHS = ["/", "/attendance", "/attendance-recap"];
+  const visible = MENU
+    .filter(m => m.roles === "*" || m.roles.includes(user.role))
+    .filter(m => user.role !== "admin_absensi" || ADMIN_ABSENSI_PATHS.includes(m.to));
 
   return (
     <div className="min-h-screen flex bg-slate-50">

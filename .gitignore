@@ -100,3 +100,4 @@ credentials.json
 # Uploaded files (local disk storage) - do not commit
 backend/uploads/
 frontend/node_modules/.cache/default-development/3.pack
+frontend/node_modules/.cache/default-development/4.pack

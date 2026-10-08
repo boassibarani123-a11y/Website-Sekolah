@@ -42,6 +42,7 @@ import AttendanceRecap from "@/pages/AttendanceRecap";
 import AttendanceConfirmed from "@/pages/AttendanceConfirmed";
 import Jadwal from "@/pages/Jadwal";
 import Leaderboard from "@/pages/Leaderboard";
+import GuruStaff from "@/pages/GuruStaff";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -95,6 +96,7 @@ function AppInner() {
           <Route path="attendance-recap" element={<AttendanceRecap/>}/>
           <Route path="jadwal" element={<Jadwal/>}/>
           <Route path="leaderboard" element={<Leaderboard/>}/>
+          <Route path="guru-staff" element={<GuruStaff/>}/>
         </Route>
         <Route path="/print-cards" element={<Protected><PrintCards/></Protected>}/>
       </Routes>

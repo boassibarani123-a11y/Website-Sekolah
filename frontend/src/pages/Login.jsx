@@ -130,18 +130,8 @@ export default function Login() {
             </div>
           </form>
 
-          <a href="/presentasi" data-testid="presentation-link"
-            className="mt-6 flex items-center justify-between gap-3 p-4 bg-gradient-to-br from-sky-600 to-indigo-700 text-white rounded-2xl transition-transform hover:scale-[1.01] shadow-lg shadow-sky-500/20 group">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center"><PresentationIcon className="w-5 h-5"/></div>
-              <div><p className="text-sm font-heading font-bold">Lihat Presentasi</p>
-                <p className="text-xs text-sky-100/90">Deck interaktif fitur sekolah — bisa dicetak PDF</p></div>
-            </div>
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform"/>
-          </a>
-
           <a href="/struktur-organisasi" data-testid="public-org-link"
-            className="mt-3 flex items-center justify-between gap-3 p-4 bg-white border-2 border-slate-200 hover:border-indigo-400 rounded-2xl transition-colors group">
+            className="mt-6 flex items-center justify-between gap-3 p-4 bg-white border-2 border-slate-200 hover:border-indigo-400 rounded-2xl transition-colors group">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><Network className="w-5 h-5"/></div>
               <div><p className="text-sm font-heading font-bold text-slate-900">Struktur Organisasi Sekolah</p>
@@ -150,15 +140,14 @@ export default function Login() {
             <ArrowRight className="w-4 h-4 text-indigo-500 group-hover:translate-x-1 transition-transform"/>
           </a>
 
-          <a href="/dokumentasi" data-testid="documentation-link"
-            className="mt-3 flex items-center justify-between gap-3 p-4 bg-white border-2 border-slate-200 hover:border-emerald-400 rounded-2xl transition-colors group">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center"><FileText className="w-5 h-5"/></div>
-              <div><p className="text-sm font-heading font-bold text-slate-900">Dokumentasi Sistem</p>
-                <p className="text-xs text-slate-500">TOR, PRD & diagram BPMN — bisa dicetak / diunduh PDF</p></div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-emerald-500 group-hover:translate-x-1 transition-transform"/>
-          </a>
+          <div className="mt-3 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
+            <p className="text-sm font-heading font-bold text-slate-900">📥 Calon Siswa Baru?</p>
+            <p className="text-xs text-slate-600 mt-1">Daftar online tanpa perlu akun, upload berkas, dan pantau status kelulusan.</p>
+            <a href="/ppdb" data-testid="ppdb-cta-link"
+              className="mt-2 inline-block px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg">
+              Buka Formulir PPDB →
+            </a>
+          </div>
 
           <a href="/galeri" data-testid="gallery-link"
             className="mt-3 flex items-center justify-between gap-3 p-4 bg-white border-2 border-slate-200 hover:border-amber-400 rounded-2xl transition-colors group">
@@ -169,15 +158,6 @@ export default function Login() {
             </div>
             <ArrowRight className="w-4 h-4 text-amber-500 group-hover:translate-x-1 transition-transform"/>
           </a>
-
-          <div className="mt-4 p-4 bg-gradient-to-br from-sky-50 to-white border-2 border-sky-200 rounded-2xl">
-            <p className="text-sm font-heading font-bold text-slate-900">📥 Calon Siswa Baru?</p>
-            <p className="text-xs text-slate-600 mt-1">Daftar online tanpa perlu akun, upload berkas, dan pantau status kelulusan.</p>
-            <a href="/ppdb" data-testid="ppdb-cta-link"
-              className="mt-2 inline-block px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg">
-              Buka Formulir PPDB →
-            </a>
-          </div>
         </div>
       </div>
     </div>

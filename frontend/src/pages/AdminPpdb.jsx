@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Download, Wand2, CheckCircle2, XCircle, Eye, X } from "lucide-react";
+import { Download, Wand2, CheckCircle2, XCircle, Eye, X, Pencil, Trash2 } from "lucide-react";
 
 const STATUS_STYLE = {
   pending: "bg-slate-100 text-slate-700 border-slate-200",
@@ -11,10 +12,13 @@ const STATUS_STYLE = {
 };
 
 export default function AdminPpdb() {
+  const { user } = useAuth();
+  const isSuper = user?.role === "super_admin";
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState("");
   const [statusF, setStatusF] = useState("all");
   const [detail, setDetail] = useState(null);
+  const [edit, setEdit] = useState(null);
   const [selectOpen, setSelectOpen] = useState(false);
   const [threshold, setThreshold] = useState(75);
   const [capacity, setCapacity] = useState(100);
@@ -49,6 +53,18 @@ export default function AdminPpdb() {
     const r = await api.get("/ppdb/export/xlsx", {responseType:"blob"});
     const url = URL.createObjectURL(r.data);
     const a = document.createElement("a"); a.href = url; a.download = "PPDB_Rekap.xlsx"; a.click();
+  };
+  const delItem = async (id) => {
+    if (!window.confirm("Hapus pendaftar ini secara permanen?")) return;
+    try { await api.delete(`/ppdb/${id}`); toast.success("Pendaftar dihapus"); setDetail(null); load(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Gagal menghapus"); }
+  };
+  const saveEdit = async () => {
+    try {
+      const { id, ...payload } = edit;
+      await api.put(`/ppdb/${id}`, payload);
+      toast.success("Data pendaftar diperbarui"); setEdit(null); load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Gagal menyimpan"); }
   };
 
   return (
@@ -122,6 +138,8 @@ export default function AdminPpdb() {
                     <button onClick={()=>setDetail(p)} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><Eye className="w-3.5 h-3.5"/></button>
                     <button onClick={()=>updateStatus(p.id,"lolos")} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200"><CheckCircle2 className="w-3.5 h-3.5"/></button>
                     <button onClick={()=>updateStatus(p.id,"tidak_lolos")} className="p-1.5 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200"><XCircle className="w-3.5 h-3.5"/></button>
+                    {isSuper && <button data-testid={`ppdb-edit-${p.id}`} onClick={()=>setEdit({...p})} className="p-1.5 bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200"><Pencil className="w-3.5 h-3.5"/></button>}
+                    {isSuper && <button data-testid={`ppdb-del-${p.id}`} onClick={()=>delItem(p.id)} className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700"><Trash2 className="w-3.5 h-3.5"/></button>}
                   </td>
                 </tr>
               ))}
@@ -176,8 +194,45 @@ export default function AdminPpdb() {
           </div>
         </div>
       )}
+      {edit && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4" onClick={()=>setEdit(null)}>
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e=>e.stopPropagation()} data-testid="ppdb-edit-modal">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-heading font-bold text-lg">Ubah Data Pendaftar</h3>
+              <button onClick={()=>setEdit(null)}><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 grid grid-cols-2 gap-3">
+              <EF label="Nama Lengkap" v={edit.full_name} on={v=>setEdit({...edit,full_name:v})} span/>
+              <EF label="NISN" v={edit.nisn} on={v=>setEdit({...edit,nisn:v})}/>
+              <EF label="Asal Sekolah" v={edit.prev_school} on={v=>setEdit({...edit,prev_school:v})}/>
+              <EF label="NEM" type="number" v={edit.nem_avg} on={v=>setEdit({...edit,nem_avg:Number(v)})}/>
+              <div><label className="text-[11px] font-semibold uppercase text-slate-500">Jurusan</label>
+                <select value={edit.jurusan_pilihan||"IPA"} onChange={e=>setEdit({...edit,jurusan_pilihan:e.target.value})} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"><option>IPA</option><option>IPS</option></select></div>
+              <EF label="HP Siswa" v={edit.phone} on={v=>setEdit({...edit,phone:v})}/>
+              <EF label="Nama Ortu" v={edit.parent_name} on={v=>setEdit({...edit,parent_name:v})}/>
+              <EF label="HP Ortu" v={edit.parent_phone} on={v=>setEdit({...edit,parent_phone:v})}/>
+              <EF label="Email Ortu" v={edit.parent_email} on={v=>setEdit({...edit,parent_email:v})} span/>
+              <EF label="Alamat" v={edit.address} on={v=>setEdit({...edit,address:v})} span/>
+              <div className="col-span-2"><label className="text-[11px] font-semibold uppercase text-slate-500">Status</label>
+                <select value={edit.status||"pending"} onChange={e=>setEdit({...edit,status:e.target.value})} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                  <option value="pending">Pending</option><option value="review">Review</option><option value="lolos">Lolos</option><option value="tidak_lolos">Tidak Lolos</option></select></div>
+            </div>
+            <div className="p-5 border-t flex gap-2">
+              <button onClick={()=>setEdit(null)} className="flex-1 py-2.5 border-2 border-slate-200 rounded-xl font-semibold">Batal</button>
+              <button data-testid="ppdb-edit-save" onClick={saveEdit} className="flex-1 py-2.5 bg-sky-600 text-white rounded-xl font-semibold">Simpan</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function EF({label, v, on, type="text", span}) {
+  return <div className={span?"col-span-2":""}>
+    <label className="text-[11px] font-semibold uppercase text-slate-500">{label}</label>
+    <input type={type} value={v??""} onChange={e=>on(e.target.value)} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"/>
+  </div>;
 }
 
 function Row({k,v}) { return <div className="grid grid-cols-3 gap-2 text-sm border-b border-slate-100 pb-1.5">
