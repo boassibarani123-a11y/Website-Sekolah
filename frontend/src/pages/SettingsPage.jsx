@@ -43,7 +43,7 @@ export default function SettingsPage() {
   const delRule = (i) => upd("id_card_rules", form.id_card_rules.filter((_,idx)=>idx!==i));
 
   const previewStudent = {
-    name: "Contoh Siswa", nisn: "0051234567", kelas: "XI IPA 1", jurusan: "IPA",
+    name: "Contoh Siswa", nisn: "0051234567", kelas: "XI.1",
     qr_code: "SEKOLAHKU-PREVIEW-XXXX", id: "preview"
   };
 

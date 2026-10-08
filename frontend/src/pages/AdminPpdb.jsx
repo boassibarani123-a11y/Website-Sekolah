@@ -118,7 +118,7 @@ export default function AdminPpdb() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 <th className="px-4 py-3">Nama</th><th className="px-4 py-3">Asal</th><th className="px-4 py-3">NEM</th>
-                <th className="px-4 py-3">Jurusan</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Aksi</th>
+                <th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -130,7 +130,6 @@ export default function AdminPpdb() {
                   </td>
                   <td className="px-4 py-3 text-slate-700">{p.prev_school}</td>
                   <td className="px-4 py-3 font-mono-alt font-bold text-slate-900">{p.nem_avg}</td>
-                  <td className="px-4 py-3">{p.jurusan_pilihan}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full border ${STATUS_STYLE[p.status] || STATUS_STYLE.pending}`}>{p.status.replace("_"," ")}</span>
                   </td>
@@ -179,7 +178,7 @@ export default function AdminPpdb() {
               {detail.photo_url && <img src={detail.photo_url} alt="" className="w-24 h-28 object-cover rounded-xl border-2"/>}
               <Row k="NISN" v={detail.nisn}/><Row k="Tempat/Tgl Lahir" v={`${detail.birth_place||"-"} / ${detail.birth_date||"-"}`}/>
               <Row k="Alamat" v={detail.address}/><Row k="HP" v={detail.phone}/>
-              <Row k="Asal Sekolah" v={detail.prev_school}/><Row k="NEM" v={detail.nem_avg}/><Row k="Jurusan" v={detail.jurusan_pilihan}/>
+              <Row k="Asal Sekolah" v={detail.prev_school}/><Row k="NEM" v={detail.nem_avg}/>
               <Row k="Ortu" v={`${detail.parent_name} (${detail.parent_phone})`}/>
               <Row k="Email Ortu" v={detail.parent_email}/>
               {detail.berkas_urls?.length > 0 && (
@@ -206,8 +205,6 @@ export default function AdminPpdb() {
               <EF label="NISN" v={edit.nisn} on={v=>setEdit({...edit,nisn:v})}/>
               <EF label="Asal Sekolah" v={edit.prev_school} on={v=>setEdit({...edit,prev_school:v})}/>
               <EF label="NEM" type="number" v={edit.nem_avg} on={v=>setEdit({...edit,nem_avg:Number(v)})}/>
-              <div><label className="text-[11px] font-semibold uppercase text-slate-500">Jurusan</label>
-                <select value={edit.jurusan_pilihan||"IPA"} onChange={e=>setEdit({...edit,jurusan_pilihan:e.target.value})} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"><option>IPA</option><option>IPS</option></select></div>
               <EF label="HP Siswa" v={edit.phone} on={v=>setEdit({...edit,phone:v})}/>
               <EF label="Nama Ortu" v={edit.parent_name} on={v=>setEdit({...edit,parent_name:v})}/>
               <EF label="HP Ortu" v={edit.parent_phone} on={v=>setEdit({...edit,parent_phone:v})}/>

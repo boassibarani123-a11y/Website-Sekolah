@@ -10,7 +10,7 @@ export default function PpdbPublic() {
   const [form, setForm] = useState({
     full_name:"", nisn:"", birth_place:"", birth_date:"", gender:"L",
     address:"", phone:"", parent_name:"", parent_phone:"", parent_email:"",
-    prev_school:"", nem_avg:80, jurusan_pilihan:"IPA",
+    prev_school:"", nem_avg:80,
     berkas_urls:[], photo_url:""
   });
   const [busy, setBusy] = useState(false);
@@ -104,13 +104,11 @@ export default function PpdbPublic() {
             </Grid>
           </Card>
 
-          <Card title="C. Akademik & Pilihan Jurusan">
+          <Card title="C. Akademik">
             <Grid>
               <Input label="Asal Sekolah *" v={form.prev_school} on={v=>setForm({...form,prev_school:v})} required/>
               <Input label="Nilai Rata-rata (0-100) *" type="number" step="0.1" min="0" max="100"
                 v={form.nem_avg} on={v=>setForm({...form,nem_avg:v})} required/>
-              <Select label="Jurusan Pilihan *" v={form.jurusan_pilihan} on={v=>setForm({...form,jurusan_pilihan:v})}
-                opts={[["IPA","IPA"],["IPS","IPS"],["Bahasa","Bahasa"]]}/>
             </Grid>
           </Card>
 

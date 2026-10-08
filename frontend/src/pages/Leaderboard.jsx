@@ -28,6 +28,8 @@ export default function Leaderboard() {
   const [manageRows, setManageRows] = useState([]);
   const [mq, setMq] = useState("");
   const [editItem, setEditItem] = useState(null);
+  const [category, setCategory] = useState("");
+  const [period, setPeriod] = useState("");
 
   const loadManage = () => api.get("/points/manage", { params: mq ? { q: mq } : {} }).then((r) => setManageRows(r.data)).catch(() => {});
   const saveEdit = async () => {
@@ -43,12 +45,13 @@ export default function Leaderboard() {
     catch (e) { toast.error("Gagal menghapus"); }
   };
 
-  const load = () => api.get("/points/leaderboard").then((r) => setBoard(r.data)).catch(() => {});
+  const load = () => api.get("/points/leaderboard", { params: { category: category || undefined, period: period || undefined } }).then((r) => setBoard(r.data)).catch(() => {});
   useEffect(() => {
     load();
     if (isStudent) api.get("/points/me").then((r) => setMine(r.data)).catch(() => {});
     if (canAward) api.get("/users?role=siswa").then((r) => setStudents(r.data)).catch(() => {});
   }, []); // eslint-disable-line
+  useEffect(() => { load(); }, [category, period]); // eslint-disable-line
 
   const submit = async () => {
     if (!form.user_id) { toast.error("Pilih siswa"); return; }
@@ -97,6 +100,20 @@ export default function Leaderboard() {
         {canAward && <TabBtn active={tab === "kelola"} onClick={() => { setTab("kelola"); loadManage(); }} icon={Pencil} label="Kelola Poin" testid="tab-kelola" />}
       </div>
 
+      {tab !== "kelola" && (
+        <div className="flex flex-wrap gap-2" data-testid="leaderboard-filters">
+          <select data-testid="lb-category" value={category} onChange={e=>setCategory(e.target.value)} className="px-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:border-amber-500 outline-none">
+            <option value="">Semua Kategori</option>
+            {CATS.map(c=><option key={c.v} value={c.v}>{c.l}</option>)}
+          </select>
+          <select data-testid="lb-period" value={period} onChange={e=>setPeriod(e.target.value)} className="px-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:border-amber-500 outline-none">
+            <option value="">Semua Waktu</option>
+            <option value="bulan">Bulan Ini</option>
+            <option value="semester">Semester Ini</option>
+          </select>
+        </div>
+      )}
+
       {tab === "kelola" && canAward && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm" data-testid="board-kelola">
           <div className="flex items-center gap-2 mb-4">
@@ -128,18 +145,21 @@ export default function Leaderboard() {
       {tab === "siswa" && (
         <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm" data-testid="board-siswa">
           {board.students.length === 0 ? <Empty /> : (
-            <div className="space-y-2">
-              {board.students.map((s, i) => (
-                <div key={s.user_id} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors">
-                  <RankBadge rank={i} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-900 truncate">{s.name}</p>
-                    <p className="text-xs text-slate-400">{s.kelas || "—"}</p>
+            <>
+              <Podium students={board.students} />
+              <div className="space-y-2">
+                {board.students.map((s, i) => (
+                  <div key={s.user_id} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 transition-colors">
+                    <RankBadge rank={i} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{s.name}</p>
+                      <p className="text-xs text-slate-400">{s.kelas || "—"}</p>
+                    </div>
+                    <span className="font-heading font-extrabold text-lg text-amber-600">{s.total}<span className="text-xs text-slate-400 ml-1">poin</span></span>
                   </div>
-                  <span className="font-heading font-extrabold text-lg text-amber-600">{s.total}<span className="text-xs text-slate-400 ml-1">poin</span></span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -240,6 +260,40 @@ function RankBadge({ rank }) {
     );
   }
   return <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-heading font-bold text-slate-500 shrink-0">{rank + 1}</div>;
+}
+
+function Podium({ students }) {
+  const top = (students || []).slice(0, 3);
+  if (top.length === 0) return null;
+  const order = [1, 0, 2]; // left=2nd, center=1st, right=3rd
+  const meta = {
+    0: { h: "h-28", ring: "from-amber-300 to-amber-500", badge: "bg-amber-400", icon: Trophy, label: "Juara 1" },
+    1: { h: "h-20", ring: "from-slate-200 to-slate-400", badge: "bg-slate-400", icon: Medal, label: "Juara 2" },
+    2: { h: "h-16", ring: "from-orange-300 to-orange-500", badge: "bg-orange-400", icon: Medal, label: "Juara 3" },
+  };
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:gap-4 items-end mb-6" data-testid="leaderboard-podium">
+      {order.map((idx) => {
+        const s = top[idx];
+        if (!s) return <div key={idx} />;
+        const m = meta[idx];
+        const Icon = m.icon;
+        return (
+          <div key={s.user_id} className="flex flex-col items-center" data-testid={`podium-rank-${idx + 1}`}>
+            <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${m.ring} p-0.5 shadow-lg`}>
+              <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center font-heading font-extrabold text-slate-700 text-lg">{(s.name || "?").charAt(0)}</div>
+            </div>
+            <span className={`-mt-2 z-10 px-2 py-0.5 rounded-full text-[9px] font-bold text-white ${m.badge} flex items-center gap-1`}><Icon className="w-3 h-3" />{m.label}</span>
+            <p className="mt-2 text-sm font-bold text-slate-900 text-center truncate w-full px-1">{s.name}</p>
+            <p className="text-[10px] text-slate-400">{s.kelas || "—"}</p>
+            <div className={`mt-2 w-full ${m.h} rounded-t-xl bg-gradient-to-t ${m.ring} flex items-start justify-center pt-2`}>
+              <span className="font-heading font-extrabold text-white text-lg drop-shadow">{s.total}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Empty() {

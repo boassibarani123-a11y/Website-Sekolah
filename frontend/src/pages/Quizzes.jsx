@@ -80,7 +80,7 @@ function NewQuizModal({onClose,onDone}) {
         <button onClick={onClose} className="p-1.5"><X className="w-5 h-5"/></button></div>
       <div className="p-5 space-y-3">
         <input placeholder="Judul quiz" value={title} onChange={e=>setTitle(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
-        <input placeholder="Kelas (XI IPA 1)" value={kelas} onChange={e=>setKelas(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
+        <input placeholder="Kelas (XI.1)" value={kelas} onChange={e=>setKelas(e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg"/>
         <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2" data-testid="ai-quiz-box">
           <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1">✨ Buat soal otomatis dengan AI</p>
           <div className="flex gap-2">

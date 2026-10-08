@@ -3145,7 +3145,7 @@ def build_pdf(report: dict) -> bytes:
     pdf.cell(180, 8, s["name"], ln=1)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_x(15)
-    pdf.cell(180, 6, f"NISN: {s.get('nisn') or '-'}    Kelas: {s.get('kelas') or '-'}    Jurusan: {s.get('jurusan') or '-'}", ln=1)
+    pdf.cell(180, 6, f"NISN: {s.get('nisn') or '-'}    Kelas: {s.get('kelas') or '-'}", ln=1)
     # Section: Tugas
     y = 70
     def section(title, rows):
@@ -3294,7 +3294,7 @@ class PpdbIn(BaseModel):
     parent_email: EmailStr
     prev_school: str
     nem_avg: float = Field(ge=0, le=100)
-    jurusan_pilihan: str = "IPA"
+    jurusan_pilihan: Optional[str] = ""
     berkas_urls: List[str] = []
     photo_url: Optional[str] = None
 
@@ -3392,10 +3392,10 @@ async def ppdb_auto_select(threshold: float = 75.0, capacity: int = 100,
 @api.get("/ppdb/export/xlsx")
 async def ppdb_export(user=Depends(require_roles("super_admin","kepsek","staff_tu"))):
     docs = await db.ppdb.find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
-    columns = ["Nama", "NISN", "Asal Sekolah", "NEM", "Jurusan", "Ortu", "HP Ortu", "Email Ortu", "Status", "Daftar"]
+    columns = ["Nama", "NISN", "Asal Sekolah", "NEM", "Ortu", "HP Ortu", "Email Ortu", "Status", "Daftar"]
     rows = [{"Nama": d.get("full_name"), "NISN": d.get("nisn") or "-",
              "Asal Sekolah": d.get("prev_school"), "NEM": d.get("nem_avg"),
-             "Jurusan": d.get("jurusan_pilihan"), "Ortu": d.get("parent_name"),
+             "Ortu": d.get("parent_name"),
              "HP Ortu": d.get("parent_phone"), "Email Ortu": d.get("parent_email"),
              "Status": (d.get("status") or "").upper(), "Daftar": d.get("created_at","")[:10]} for d in docs]
     from collections import Counter
@@ -4333,12 +4333,24 @@ async def my_points(user=Depends(get_current_user)):
     return {"total": sum(r["points"] for r in rows), "history": rows}
 
 @api.get("/points/leaderboard")
-async def points_leaderboard(user=Depends(get_current_user)):
-    spipe = [{"$group": {"_id": "$user_id", "name": {"$last": "$user_name"}, "kelas": {"$last": "$kelas"}, "total": {"$sum": "$points"}}},
+async def points_leaderboard(category: Optional[str] = None, period: Optional[str] = None, user=Depends(get_current_user)):
+    match = {}
+    if category and category in POINT_CATS:
+        match["category"] = category
+    if period in ("bulan", "semester"):
+        now = datetime.now(timezone.utc)
+        if period == "bulan":
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            start_month = 1 if now.month <= 6 else 7
+            start = now.replace(month=start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        match["created_at"] = {"$gte": start.isoformat()}
+    pre = [{"$match": match}] if match else []
+    spipe = pre + [{"$group": {"_id": "$user_id", "name": {"$last": "$user_name"}, "kelas": {"$last": "$kelas"}, "total": {"$sum": "$points"}}},
              {"$sort": {"total": -1}}, {"$limit": 50}]
     students = [{"user_id": r["_id"], "name": r.get("name"), "kelas": r.get("kelas", ""), "total": r["total"]}
                 async for r in db.points.aggregate(spipe)]
-    cpipe = [{"$group": {"_id": "$kelas", "total": {"$sum": "$points"}}}, {"$sort": {"total": -1}}, {"$limit": 30}]
+    cpipe = pre + [{"$group": {"_id": "$kelas", "total": {"$sum": "$points"}}}, {"$sort": {"total": -1}}, {"$limit": 30}]
     classes = [{"kelas": (r["_id"] or "—"), "total": r["total"]} async for r in db.points.aggregate(cpipe)]
     return {"students": students, "classes": classes}
 

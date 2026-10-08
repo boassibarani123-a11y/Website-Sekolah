@@ -166,7 +166,7 @@ function ClassModal({ klass, teachers, classes = [], onClose, onDone }) {
         <div className="p-5 space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Nama Kelas *</label>
-            <input data-testid="class-name-input" value={name} onChange={e=>setName(e.target.value)} placeholder="XI IPA 1"
+            <input data-testid="class-name-input" value={name} onChange={e=>setName(e.target.value)} placeholder="X.1"
               className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
             <p className="mt-1 text-[10px] text-slate-400">Siswa dengan kelas yang sama persis otomatis menjadi anggota kelas ini.</p>
           </div>

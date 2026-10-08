@@ -281,7 +281,7 @@ const FLOW_GALERI = [
 const QUICK_GUIDE = [
   { title: "Masuk sebagai Super Admin", menu: "Halaman Login", desc: "Buka halaman login dan masuk dengan email & password Super Admin yang telah diberikan. Hanya akun ini yang ada saat sistem baru dipasang." },
   { title: "Lengkapi Pengaturan Sekolah", menu: "Pengaturan", desc: "Unggah logo sekolah, lengkapi nama, alamat, kontak, tahun akademik, dan teks halaman login. Logo otomatis tampil di login, sidebar, dan kartu pelajar." },
-  { title: "Buat Kelas & Mata Pelajaran", menu: "Ruang Kelas", desc: "Buat setiap kelas (mis. X IPA 1, XI IPA 1), tambahkan mata pelajaran, dan tetapkan wali kelas. Kelas dibutuhkan sebelum membuat akun siswa." },
+  { title: "Buat Kelas & Mata Pelajaran", menu: "Ruang Kelas", desc: "Buat setiap kelas (mis. X.1, XI.1), tambahkan mata pelajaran, dan tetapkan wali kelas. Kelas dibutuhkan sebelum membuat akun siswa." },
   { title: "Buat Akun Guru & Staff", menu: "Kelola Akun", desc: "Buat akun Guru/Wali Kelas, Staff TU, Kepala Sekolah, Admin Perpustakaan, dan Ketua OSIS. Nomor WhatsApp untuk peran ini opsional." },
   { title: "Buat Akun Siswa", menu: "Kelola Akun", desc: "Buat akun tiap siswa: wajib mengisi NISN, kelas, dan Nomor WhatsApp aktif. Setiap akun siswa otomatis mendapat QR permanen & Kartu Pelajar digital." },
   { title: "Cetak & Bagikan Kartu Pelajar", menu: "Kelola Akun → Cetak Kartu Massal", desc: "Cetak kartu pelajar seluruh siswa (ukuran KTP standar) dan bagikan. Kartu ini dipakai untuk absensi QR/barcode harian." },

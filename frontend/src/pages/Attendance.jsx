@@ -18,14 +18,29 @@ export default function Attendance() {
   const [lastScan, setLastScan] = useState(null);
   const [status, setStatus] = useState("hadir");
   const [scanning, setScanning] = useState(false);
+  const [newId, setNewId] = useState(null);
   const scannerRef = useRef(null);
   const lockRef = useRef(false);
+  const topRef = useRef(null);
 
   const load = () => {
     api.get("/attendance/stats").then(r=>setStats(r.data)).catch(()=>{});
-    api.get("/attendance").then(r=>setRows(r.data)).catch(()=>{});
+    api.get("/attendance").then(r=>{
+      setRows(r.data);
+      const top = r.data[0]?.id;
+      if (top && topRef.current && top !== topRef.current) {
+        setNewId(top);
+        setTimeout(()=>setNewId(null), 2500);
+      }
+      topRef.current = top;
+    }).catch(()=>{});
   };
-  useEffect(() => { if (isOperator) load(); }, [isOperator]);
+  useEffect(() => {
+    if (!isOperator) return;
+    load();
+    const t = setInterval(load, 5000); // live auto-refresh
+    return () => clearInterval(t);
+  }, [isOperator]);
 
   const submit = async (payload) => {
     try {
@@ -180,36 +195,51 @@ export default function Attendance() {
         </div>
         <BarcodeScanner onScan={(code)=>submit({ nisn: code, method: "barcode" })}/>
         </div>
+      </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <h2 className="font-heading text-lg font-bold mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-sky-600"/>Log Presensi Hari Ini</h2>
-          <div className="max-h-[400px] overflow-y-auto -mx-2 px-2">
-            {rows.length===0 && <p className="text-sm text-slate-400 italic">Belum ada absensi.</p>}
-            <div className="space-y-2">
-              {rows.slice(0, 30).map(r=>(
-                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {r.photo && (
-                      <a href={r.photo} target="_blank" rel="noreferrer" data-testid={`attendance-photo-${r.id}`} title="Foto bukti scan">
-                        <img src={r.photo} alt="bukti" className="w-9 h-9 rounded-lg object-cover border border-slate-200"/>
-                      </a>
-                    )}
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm text-slate-900 truncate">{r.student_name}</p>
-                      <p className="text-[11px] text-slate-500">{r.kelas} · {new Date(r.scanned_at).toLocaleTimeString("id-ID")}
-                        <span data-testid={`attendance-method-${r.id}`} className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${r.method==="barcode"?"bg-violet-100 text-violet-700":r.method==="manual"?"bg-slate-200 text-slate-600":"bg-sky-100 text-sky-700"}`}>{r.method==="barcode"?"Barcode":r.method==="manual"?"Manual":"QR"}</span></p>
-                    </div>
-                  </div>
-                  <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${
-                    r.status==="hadir"?"bg-emerald-100 text-emerald-700":
-                    r.status==="izin"?"bg-sky-100 text-sky-700":
-                    r.status==="sakit"?"bg-amber-100 text-amber-700":"bg-rose-100 text-rose-700"
-                  }`}>{r.status}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      <LiveLog rows={rows} newId={newId}/>
+    </div>
+  );
+}
+
+function LiveLog({ rows, newId }) {
+  const methodBadge = (m)=> m==="barcode"?{t:"Barcode",c:"bg-violet-100 text-violet-700"}:m==="manual"?{t:"Manual",c:"bg-slate-200 text-slate-600"}:{t:"QR",c:"bg-sky-100 text-sky-700"};
+  const statusBadge = (s)=> ({hadir:"bg-emerald-100 text-emerald-700",izin:"bg-sky-100 text-sky-700",sakit:"bg-amber-100 text-amber-700",alpa:"bg-rose-100 text-rose-700"}[s]||"bg-slate-100 text-slate-600");
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden" data-testid="attendance-live-log">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <h2 className="font-heading text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-sky-600"/>Log Presensi Real-time <span className="text-xs font-normal text-slate-400">({rows.length})</span></h2>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-rose-50 text-rose-600" data-testid="live-indicator">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"/>Live
+        </span>
+      </div>
+      <div className="max-h-[460px] overflow-y-auto">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              <th className="px-4 py-3">No</th><th className="px-4 py-3">Nama</th><th className="px-4 py-3">Kelas</th>
+              <th className="px-4 py-3">Waktu Scan</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Metode</th><th className="px-4 py-3">Bukti</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.length===0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400 italic" data-testid="attendance-log-empty">Belum ada absensi hari ini. Scan barcode NISN untuk mulai.</td></tr>}
+            {rows.map((r,i)=>{
+              const mb = methodBadge(r.method);
+              return (
+                <tr key={r.id} data-testid={`attendance-log-row-${r.id}`}
+                  className={`transition-colors ${r.id===newId ? "bg-emerald-50 animate-in fade-in slide-in-from-top-1" : "hover:bg-slate-50"}`}>
+                  <td className="px-4 py-3 text-slate-400">{i+1}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-900">{r.student_name}</td>
+                  <td className="px-4 py-3 text-slate-600">{r.kelas || "—"}</td>
+                  <td className="px-4 py-3 font-mono-alt text-slate-600">{new Date(r.scanned_at).toLocaleTimeString("id-ID")}</td>
+                  <td className="px-4 py-3"><span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${statusBadge(r.status)}`}>{r.status}</span></td>
+                  <td className="px-4 py-3"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${mb.c}`}>{mb.t}</span></td>
+                  <td className="px-4 py-3">{r.photo ? <a href={r.photo} target="_blank" rel="noreferrer" data-testid={`attendance-photo-${r.id}`}><img src={r.photo} alt="bukti" className="w-9 h-9 rounded-lg object-cover border border-slate-200"/></a> : <span className="text-slate-300">—</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
