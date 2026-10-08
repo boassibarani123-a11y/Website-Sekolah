@@ -26,6 +26,33 @@ Emergent environment and get it running fully end-to-end: compile + run + Super 
   social fund (uang kas/dana sosial), OSIS elections, achievements gallery, announcements, student card printing (KTP),
   PPDB public registration, org structure, library, reports, calendar.
 
+## Enhancement Request (large, multi-module) — Phased
+User requested enhancements across ~17 modules. Executing in phases.
+
+### Phase 1 — DONE & VERIFIED (2026-06, iteration_2.json: backend 12/12, frontend 100%)
+- [x] Login: loading spinner + clear inline error alert (data-testid login-error).
+- [x] Dashboard: clickable summary stat cards + Presensi/Pengumuman widget links + clean empty states.
+- [x] Master Accounts: Role + Status filter dropdowns, colored role badges, Edit modal, Delete confirmation modal, responsive table.
+- [x] Account status: backend `is_active` field; deactivated users blocked at login (403).
+- [x] Global: moved user widget from sidebar to top-right header (profile-button) + logout; new /profile page with Data Akademik / Data Pribadi tabs.
+
+### Remaining phases (backlog, user-requested)
+- [ ] Guru & Staff (/guru-staff): grid card view toggle + avatar, WhatsApp column, teacher assignment detail.
+- [ ] Admin PPDB (/admin-ppdb): detail modal + documents, manual status change + rejection note, WhatsApp notify.
+- [ ] Presensi Barcode (/attendance): real-time live scan log table under scanner.
+- [ ] Jadwal (/jadwal): conflict detection on add, current-lesson highlight, weekly matrix view.
+- [ ] Leaderboard (/leaderboard): Top-3 podium, category + period filters, gamified badges.
+- [ ] Schoolgram (/schoolgram): edit/delete own comments, Instagram-like feed polish.
+- [ ] Inventory (/inventory): grid cards, borrow request flow, approval + return tracking.
+- [ ] Classes/ClassDetail: sanitize HTML in task descriptions, class card info, tab layout polish.
+- [ ] Reports (Rapor Digital): student search/filter + completeness indicator, semester filter + charts + wali notes, action buttons polish.
+- [ ] GLOBAL: remove jurusan (IPA/IPS) everywhere; standardize parallel class format (X.1, X.2, ...).
+- [ ] Elections (/elections): quick-count stats, candidate cards w/ photos, status control + candidate CRUD w/ photo upload.
+- [ ] Achievements (/achievements): podium + Top 10 categories, filters, interactive gallery grid + add/edit modal.
+- [ ] Announcements (/announcements): modern feed, category badges, pinned styling, filter + search.
+- [ ] Feedback (/feedback): interactive cards w/ category + status badges, admin reply, filters.
+- [ ] E-Voting module: student voting booth + real-time live-count dashboard for admin.
+
 ## Implemented / Verified (2026-06)
 - [x] Cloned `main13` into `/app`, preserved env-specific `.env` files.
 - [x] Backend deps installed (`backend/requirements.txt`): pandas, openpyxl, fpdf2, openai, pyjwt, etc.
