@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
-import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket, CalendarRange, Award, Star, MapPin, User as UserIcon } from "lucide-react";
+import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket, CalendarRange, Award, Star, MapPin, Megaphone, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas", admin_perpus:"Admin Perpustakaan"};
@@ -22,12 +22,12 @@ export default function Dashboard() {
   },[showHighlights]);
 
   const cards = [
-    { label: "Total Siswa", value: stats?.siswa ?? "—", icon: GraduationCap, color: "sky" },
-    { label: "Total Guru", value: stats?.guru ?? "—", icon: Users, color: "emerald" },
-    { label: "Inventaris", value: stats?.inventory ?? "—", icon: Boxes, color: "amber" },
-    { label: "Tugas Aktif", value: stats?.assignments ?? "—", icon: ClipboardList, color: "indigo" },
-    { label: "Mini-Quiz", value: stats?.quizzes ?? "—", icon: BrainCircuit, color: "rose" },
-    { label: "Post Schoolgram", value: stats?.posts ?? "—", icon: Camera, color: "purple" },
+    { label: "Total Siswa", value: stats?.siswa ?? "—", icon: GraduationCap, color: "sky", to: "/accounts" },
+    { label: "Total Guru", value: stats?.guru ?? "—", icon: Users, color: "emerald", to: "/guru-staff" },
+    { label: "Inventaris", value: stats?.inventory ?? "—", icon: Boxes, color: "amber", to: "/inventory" },
+    { label: "Tugas Aktif", value: stats?.assignments ?? "—", icon: ClipboardList, color: "indigo", to: "/classes" },
+    { label: "Mini-Quiz", value: stats?.quizzes ?? "—", icon: BrainCircuit, color: "rose", to: "/classes" },
+    { label: "Post Schoolgram", value: stats?.posts ?? "—", icon: Camera, color: "purple", to: "/schoolgram" },
   ];
   const colors = {
     sky: "from-sky-500 to-sky-600 shadow-sky-500/30",
@@ -66,11 +66,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {cards.map(c=>(
-          <div key={c.label} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+          <Link key={c.label} to={c.to} data-testid={`stat-card-${c.label.toLowerCase().replace(/\s/g,'-')}`}
+            className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-sky-300 transition-all">
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors[c.color]} shadow-lg flex items-center justify-center text-white`}><c.icon className="w-5 h-5"/></div>
             <p className="mt-3 text-2xl font-heading font-extrabold text-slate-900">{c.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{c.label}</p>
-          </div>
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">{c.label}<ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all"/></p>
+          </Link>
         ))}
       </div>
 
@@ -101,7 +102,10 @@ export default function Dashboard() {
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-sky-600"/>Presensi Hari Ini</h2>
-            <span className="text-xs font-mono-alt text-slate-500">{att?.date}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono-alt text-slate-500">{att?.date}</span>
+              <Link to="/attendance-recap" data-testid="widget-presensi-link" className="text-xs text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Rekap <ArrowRight className="w-3 h-3"/></Link>
+            </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatBox label="Hadir" value={att?.hadir} color="emerald"/>
@@ -115,8 +119,16 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <h2 className="font-heading text-lg font-bold text-slate-900 mb-4">📢 Pengumuman Terbaru</h2>
-          {ann.length===0 && <p className="text-sm text-slate-400 italic">Belum ada pengumuman.</p>}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-bold text-slate-900">📢 Pengumuman Terbaru</h2>
+            <Link to="/announcements" data-testid="widget-pengumuman-link" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+          </div>
+          {ann.length===0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center" data-testid="pengumuman-empty">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-2"><Megaphone className="w-6 h-6 text-slate-300"/></div>
+              <p className="text-sm text-slate-400">Belum ada pengumuman.</p>
+            </div>
+          )}
           <div className="space-y-3">
             {ann.map(a=>(
               <div key={a.id} className="p-3 bg-slate-50 rounded-xl border-l-4 border-sky-500">

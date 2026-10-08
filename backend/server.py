@@ -532,6 +532,7 @@ class UserUpdate(BaseModel):
     student_id: Optional[str] = None
     subjects: Optional[List[str]] = None
     nip: Optional[str] = None
+    is_active: Optional[bool] = None
 
 # ---------------- AUTH ----------------
 @api.post("/auth/login")
@@ -540,6 +541,8 @@ async def login(body: LoginIn, response: Response):
     user = await db.users.find_one({"email": email})
     if not user or not verify_pw(body.password, user["password_hash"]):
         raise HTTPException(401, "Email atau password salah")
+    if user.get("is_active") is False:
+        raise HTTPException(403, "Akun Anda dinonaktifkan. Hubungi administrator sekolah.")
     token = create_token(user["id"], user["email"], user["role"])
     response.set_cookie("access_token", token, httponly=True, secure=True,
                         samesite="none", max_age=60*60*24*7, path="/")
@@ -585,6 +588,7 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
         "student_id": body.student_id,
         "subjects": body.subjects or [],
         "nip": body.nip,
+        "is_active": True,
         "created_at": now_iso(),
     }
     dstamp(doc, user)

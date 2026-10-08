@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LogIn, Eye, EyeOff, Network, ArrowRight, FileText,
-  Presentation as PresentationIcon, MapPin, Phone, Mail, Calendar, Hash, Award, Trophy, Info } from "lucide-react";
+  Presentation as PresentationIcon, MapPin, Phone, Mail, Calendar, Hash, Award, Trophy, Info, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { LoginAnnouncementBanner } from "@/components/LoginAnnouncementBanner";
 
@@ -15,16 +15,22 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError("");
     try {
       await login(email, password);
       toast.success("Selamat datang kembali!");
       nav("/");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Login gagal");
+      const msg = err.response?.data?.detail
+        || (err.response?.status === 401 ? "Email atau password salah." : null)
+        || (!err.response ? "Tidak dapat terhubung ke server. Periksa koneksi Anda." : "Login gagal. Coba lagi.");
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -106,24 +112,29 @@ export default function Login() {
           <p className="mt-2 text-slate-500 text-sm">{settings.login_welcome_subtitle}</p>
 
           <form onSubmit={submit} className="mt-8 space-y-5">
+            {error && (
+              <div data-testid="login-error" role="alert" className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm animate-in fade-in slide-in-from-top-1">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0"/><span>{error}</span>
+              </div>
+            )}
             <div>
               <label className="text-xs font-semibold text-slate-600 tracking-wide uppercase">Email</label>
-              <input data-testid="login-email-input" type="email" required value={email} onChange={e=>setEmail(e.target.value)}
-                className="mt-1.5 w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-sky-500 focus:ring-0 outline-none transition-colors" placeholder="nama@sekolah.id"/>
+              <input data-testid="login-email-input" type="email" required value={email} disabled={loading} onChange={e=>setEmail(e.target.value)}
+                className="mt-1.5 w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-sky-500 focus:ring-0 outline-none transition-colors disabled:bg-slate-50 disabled:opacity-60" placeholder="nama@sekolah.id"/>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-600 tracking-wide uppercase">Password</label>
               <div className="relative">
-                <input data-testid="login-password-input" type={show?"text":"password"} required value={password} onChange={e=>setPassword(e.target.value)}
-                  className="mt-1.5 w-full px-4 py-3 pr-12 border-2 border-slate-200 rounded-xl focus:border-sky-500 focus:ring-0 outline-none transition-colors" placeholder="••••••••"/>
+                <input data-testid="login-password-input" type={show?"text":"password"} required value={password} disabled={loading} onChange={e=>setPassword(e.target.value)}
+                  className="mt-1.5 w-full px-4 py-3 pr-12 border-2 border-slate-200 rounded-xl focus:border-sky-500 focus:ring-0 outline-none transition-colors disabled:bg-slate-50 disabled:opacity-60" placeholder="••••••••"/>
                 <button type="button" onClick={()=>setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 mt-1 text-slate-400 hover:text-slate-700">
                   {show?<EyeOff className="w-5 h-5"/>:<Eye className="w-5 h-5"/>}
                 </button>
               </div>
             </div>
             <button data-testid="login-form-submit-button" disabled={loading} type="submit"
-              className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20">
-              {loading ? "Memproses..." : (<><LogIn className="w-4 h-4"/>Masuk</>)}
+              className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20">
+              {loading ? (<><Loader2 className="w-4 h-4 animate-spin"/>Memproses...</>) : (<><LogIn className="w-4 h-4"/>Masuk</>)}
             </button>
             <div className="text-center">
               <a href="/forgot-password" data-testid="forgot-password-link" className="text-sm text-sky-600 hover:text-sky-800 font-semibold">Lupa password?</a>

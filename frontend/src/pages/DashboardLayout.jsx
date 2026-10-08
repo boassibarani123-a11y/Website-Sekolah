@@ -82,16 +82,10 @@ export default function DashboardLayout() {
           ))}
         </nav>
         <div className="p-3 border-t border-slate-800">
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50">
-            <div className="w-9 h-9 rounded-full bg-sky-500 flex items-center justify-center text-sm font-bold">{user.name?.[0]}</div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate">{user.name}</p>
-              <p className="text-[10px] text-sky-300 truncate">{ROLE_LABEL[user.role]}</p>
-            </div>
-            <button data-testid="logout-button" onClick={async()=>{await logout(); nav("/login");}} className="text-slate-400 hover:text-rose-400 transition-colors">
-              <LogOut className="w-4 h-4"/>
-            </button>
-          </div>
+          <button data-testid="logout-button-sidebar" onClick={async()=>{await logout(); nav("/login");}}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors text-sm font-medium">
+            <LogOut className="w-4 h-4"/>Keluar
+          </button>
         </div>
       </aside>
 
@@ -124,6 +118,20 @@ export default function DashboardLayout() {
               </div>
             )}
             <NotificationBell/>
+            <button data-testid="profile-button" onClick={()=>nav("/profile")} title="Profil Saya"
+              className="flex items-center gap-2 pl-1 pr-1 sm:pr-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors">
+              <span className="w-8 h-8 rounded-full bg-sky-500 text-white flex items-center justify-center text-sm font-bold overflow-hidden shrink-0">
+                {user.photo ? <img src={user.photo} alt="" className="w-full h-full object-cover"/> : (user.name?.[0] || "?")}
+              </span>
+              <span className="hidden sm:block text-left leading-tight">
+                <span className="block text-xs font-bold text-slate-900 max-w-[120px] truncate">{user.name}</span>
+                <span className="block text-[10px] text-slate-500">{ROLE_LABEL[user.role]}</span>
+              </span>
+            </button>
+            <button data-testid="logout-button" onClick={async()=>{await logout(); nav("/login");}} title="Keluar"
+              className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-rose-100 hover:text-rose-600 transition-colors">
+              <LogOut className="w-5 h-5"/>
+            </button>
             <button data-testid="menu-toggle" onClick={()=>setOpen(!open)} className="lg:hidden p-2 rounded-lg bg-slate-100">
               <ChevronDown className={`w-5 h-5 transition-transform ${open?"rotate-180":""}`}/>
             </button>
