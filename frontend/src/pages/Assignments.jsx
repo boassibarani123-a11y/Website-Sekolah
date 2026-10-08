@@ -14,6 +14,7 @@ async function uploadFile(file) {
 
 function RichText({ value, onChange }) {
   const ref = useRef(null);
+  useEffect(() => { if (ref.current) ref.current.innerHTML = value || ""; }, []); // init once; keep uncontrolled
   const exec = (cmd, val = null) => { document.execCommand(cmd, false, val); ref.current?.focus(); onChange(ref.current.innerHTML); };
   const Btn = ({ cmd, val, children, title }) => (
     <button type="button" title={title} onMouseDown={(e) => { e.preventDefault(); exec(cmd, val); }}
@@ -35,7 +36,7 @@ function RichText({ value, onChange }) {
       </div>
       <div ref={ref} contentEditable suppressContentEditableWarning data-testid="assign-desc-editor"
         onInput={(e) => onChange(e.currentTarget.innerHTML)}
-        className="min-h-[140px] px-3 py-2 text-sm outline-none" dangerouslySetInnerHTML={{ __html: value }} />
+        className="min-h-[140px] px-3 py-2 text-sm outline-none" />
     </div>
   );
 }
