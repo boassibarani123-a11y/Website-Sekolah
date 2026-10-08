@@ -1,0 +1,31 @@
+{
+  "summary": "Verified Tahap 3 (Schoolgram rework + chat + verify-password) and the complex Beri Tugas Baru form fix. Backend: 12/12 pytest cases pass. Frontend: Schoolgram gate (wrong pw rejected, correct pw unlocks), stories row, tab switch (reels/chat), mobile bottom nav with 4 items (beranda/reels/chat/profil), class-detail assignment modal with all 9 expected data-testids. Websocket not required for pass — polling fallback and REST send/history work correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_schoolgram.py",
+    "/app/test_reports/pytest/iter35.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now 4836 lines — splitting by domain (schoolgram, chat, assignments, users) is overdue for maintainability.",
+    "Schoolgram.jsx is 587 lines (Gate+Beranda+Reels+Chat+ProfilHub+ClassProfile+EditProfileModal+UploadModal in one file) — recommend splitting into /components/schoolgram/* for easier future work.",
+    "WS endpoint /api/ws/chat silently closes (code=1008) on bad token with no reason event — client cannot distinguish auth failure from network drop; consider a one-shot JSON error before close.",
+    "chat_send broadcasts to both from and to but there is no delivery/read receipts persisted — fine for MVP but acknowledge in docs.",
+    "SgPostIn.media_type defaults to 'image' but no server-side validation on the actual file extension/content-type; a client could post a non-video URL with media_type='video' and it would appear in Reels. Add a basic sanity check or infer from file ext."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter35_schoolgram.py",
+    "/app/test_reports/iteration_35.json"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Super admin boassibarani123@gmail.com / Boas12345io. Ad-hoc TEST_ ketua_kelas + 2x TEST_ siswa created via POST /api/users.",
+  "seed_data_creation": "Each pytest module run creates one TEST ketua_kelas and two TEST siswa accounts (unique uuid4 hex tag), plus one video + one image Schoolgram post attached to the first existing class. These accumulate across runs but are prefixed TEST_ for easy cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iter35_schoolgram.py as regression. The frontend login redirects to '/' (not '/dashboard') — don't wait for '/dashboard' URL; just wait ~3s after submit. The schoolgram gate uses sessionStorage key 'sg_unlocked' — clear sessionStorage between runs if needed. Websocket does not require ingress upgrade; polling fallback is enough and REST /api/chat/send + /api/chat/history work correctly."
+}

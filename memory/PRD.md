@@ -103,3 +103,14 @@ Import existing project from GitHub (https://github.com/boassibarani123-a11y/Web
 - Mobile bottom nav: Beranda (home), Reels (video kreatif kelas), Chat antar siswa (REAL-TIME websocket - pilihan user), Profil kelas.
 - Profil kelas: hanya ketua_kelas bisa ubah kelasnya; siswa lain bisa lihat semua profil kelas. Super admin fleksibel.
 - Gate: buka Schoolgram harus login ulang.
+
+### FIX + TAHAP 3 — SELESAI & TERUJI (iteration_35: backend 12/12 / frontend 100%, no bugs)
+- FIX Form Tugas: form kompleks yang benar ada di ClassDetail.jsx ("Beri Tugas Baru" di halaman /classes/{id}). Diupgrade: Judul, Keterangan rich-text, Kelas (terkunci), Kelas Kelompok, Mata Pelajaran, Guru, Batas Pengumpulan (datetime), Link, Semester, Status toggle, Lampiran File (banyak) + Video (maks 20MB).
+- Schoolgram (perombakan total, Schoolgram.jsx):
+  - Gate login-ulang (POST /auth/verify-password) sebelum buka Schoolgram.
+  - Beranda: baris story semua kelas (GET /schoolgram/stories) + feed vertikal semua postingan kelas ala IG (GET /schoolgram/feed), dukung gambar & video.
+  - Reels: video kreatif kelas (GET /schoolgram/reels, post media_type=video), auto-play saat terlihat.
+  - Chat antar siswa REAL-TIME: websocket @app.websocket('/api/ws/chat') (JWT via cookie/query) + fallback polling 4s; REST /chat/contacts, /chat/history/{peer}, /chat/send.
+  - Profil kelas: lihat semua kelas; hanya ketua_kelas yg bisa Edit Profil (avatar/cover/bio) + Post/Story kelasnya (PATCH /schoolgram/class/{cid}/profile via _assert_manage, non-pengelola 403). Super admin fleksibel.
+  - Mobile bottom nav: Beranda (home), Reels (play), Pesan (pesawat kertas), Profil; desktop pakai tab atas.
+- Backend: SgPostIn.media_type; posts simpan media_type; schoolgram_class kirim avatar/cover.
