@@ -82,3 +82,24 @@ Import existing project from GitHub (https://github.com/boassibarani123-a11y/Web
 - Frontend: package.json ditambah react-easy-crop, react-barcode, html2canvas, jspdf, html5-qrcode (dipakai tapi tak terdaftar). yarn.lock dibersihkan dari mirror mati `mirrors.tencentyun.com` → `registry.yarnpkg.com`, lalu `yarn install` sukses.
 - Verifikasi: backend login /api/auth/login OK, super admin ter-seed, frontend compile tanpa error (hanya lint warnings), login E2E → dashboard Super Admin tampil.
 - Catatan: Fitur AI akan aktif otomatis begitu OPENAI_API_KEY diisi di backend/.env (lalu restart backend). Email reset password/rapor butuh SMTP_* diisi.
+
+## Iterasi Perubahan Besar — 2026-06 (rencana 3 tahap, user approved; tiap tahap di-test lalu lanjut)
+
+### TAHAP 1 — SELESAI & TERUJI (iteration_34: backend 100% / frontend 100%, no bugs)
+- Rebrand EMERGENT→SMANSALA: title browser + Open Graph/Twitter meta (link preview WA) di public/index.html.
+- Halaman login: hapus kartu publik "Lihat Presentasi" & "Dokumentasi Sistem" (dipindah ke sidebar Super Admin), urutan jadi Struktur Organisasi -> PPDB -> Galeri.
+- Absensi disembunyikan dari siswa: menu Presensi hanya super_admin/kepsek/staff_tu/admin_absensi; backend /attendance/scan guard sama (siswa->403).
+- Role baru "Admin Absensi" (admin_absensi): sidebar hanya Dashboard + Presensi + Rekap Absensi (whitelist ADMIN_ABSENSI_PATHS). Ditambah ke ROLES + dropdown Kelola Akun.
+- PPDB super admin fleksibel: PUT /api/ppdb/{id} (edit penuh) + DELETE /api/ppdb/{id}; non-super hanya ubah status. UI AdminPpdb: tombol Ubah + Hapus.
+- Papan Peringkat: tab "Kelola Poin" (edit/hapus entri). Backend GET /points/manage, PATCH/DELETE /points/{id}.
+- Laporan Excel dirapikan (pretty_excel + weekly): palet minimal (header slate, zebra abu muda, garis aksen sky tipis), sederhana tapi tidak monoton.
+
+### TAHAP 2 — SELESAI & TERUJI (iteration_34)
+- Form Tugas kompleks (Assignments.jsx): Judul, Keterangan rich-text, Kelas, Kelas Kelompok, Mata Pelajaran, Guru, Batas Pengumpulan (datetime), Link, Semester, Status toggle, Lampiran File & Video (maks 20MB disk lokal). AssignmentIn/Update diperluas; /upload -> 20MB.
+- Halaman "Daftar Guru & Staff" (/guru-staff): tabel No/Nama/NIP/Divisi/Username/Opsi (Mapel, Ubah, Reset, Hapus), filter, Export Excel (GET /api/users/staff/export/xlsx). Field `nip` ditambah ke user model.
+
+### TAHAP 3 — BELUM DIKERJAKAN (next): Perombakan total Schoolgram
+- Beranda IG: baris story semua kelas di atas + feed postingan semua kelas (1 kolom vertikal, gambar/video).
+- Mobile bottom nav: Beranda (home), Reels (video kreatif kelas), Chat antar siswa (REAL-TIME websocket - pilihan user), Profil kelas.
+- Profil kelas: hanya ketua_kelas bisa ubah kelasnya; siswa lain bisa lihat semua profil kelas. Super admin fleksibel.
+- Gate: buka Schoolgram harus login ulang.
