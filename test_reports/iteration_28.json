@@ -1,5 +1,5 @@
 {
-  "summary": "Fresh-import smoke verification for Website-Sekolah (SMA Negeri 1 Laguboti). Backend: 16/16 pytest tests passed (public /settings/org/org-structures, super_admin login & /auth/me, dashboard stats, classes, library/config/stats, achievements, attendance, posts, object-storage /upload via Emergent proxy, AI book summary /books/{id}/ai-summary via EMERGENT_LLM_KEY). Frontend: login page renders school name/NPSN/address with all expected data-testids; login with seeded super_admin succeeds and lands on dashboard with widgets rendering; all core modules (School Info, Classes, Library, Schoolgram, Prestasi/Achievements, Presensi Barcode/Attendance) load without crashes or error UI; public pages /struktur-organisasi, /galeri, /presentasi, /dokumentasi, /profil-sekolah, /ppdb all render content as expected. End-to-end wiring to Emergent integration proxy (object storage + AI) is working.",
+  "summary": "Fresh-import smoke verification for Website-Sekolah (SMA Negeri 1 Laguboti). Backend: 16/16 pytest tests passed (public /settings/org/org-structures, super_admin login & /auth/me, dashboard stats, classes, library/config/stats, achievements, attendance, posts, object-storage /upload via SMANSALA proxy, AI book summary /books/{id}/ai-summary via EMERGENT_LLM_KEY). Frontend: login page renders school name/NPSN/address with all expected data-testids; login with seeded super_admin succeeds and lands on dashboard with widgets rendering; all core modules (School Info, Classes, Library, Schoolgram, Prestasi/Achievements, Presensi Barcode/Attendance) load without crashes or error UI; public pages /struktur-organisasi, /galeri, /presentasi, /dokumentasi, /profil-sekolah, /ppdb all render content as expected. End-to-end wiring to SMANSALA integration proxy (object storage + AI) is working.",
   "backend_issues": { "critical": [], "minor": [] },
   "frontend_issues": {
     "ui_bugs": [],
@@ -13,13 +13,13 @@
     "/app/test_reports/pytest/iter28.xml"
   ],
   "action_items": [
-    "Non-blocking: backend uses model string 'gpt-5.4' in _ai_text (server.py line 3585). AI summary endpoint currently returns 200 with content via Emergent proxy, so it works, but confirm the intended model name — standard LlmChat examples use 'gpt-4o-mini' / 'gpt-5' etc. If model id is invalid, cached results may be masking it; consider a safer default like 'gpt-4o-mini'.",
+    "Non-blocking: backend uses model string 'gpt-5.4' in _ai_text (server.py line 3585). AI summary endpoint currently returns 200 with content via SMANSALA proxy, so it works, but confirm the intended model name — standard LlmChat examples use 'gpt-4o-mini' / 'gpt-5' etc. If model id is invalid, cached results may be masking it; consider a safer default like 'gpt-4o-mini'.",
     "Non-blocking: console shows 401 for /api/auth/me on public and login routes — this is expected (frontend probes auth). To reduce noise, skip the /auth/me call when no token is present in localStorage."
   ],
   "critical_code_review_comments": [
     "server.py is 4024 lines — well above 700-line guideline. Should be split into routers/modules (auth, library, attendance, ppdb, storage, ai, exports).",
     "put_object/init_storage use synchronous `requests` inside async FastAPI handlers; blocks the event loop under load (consider httpx.AsyncClient or run_in_executor).",
-    "AI model id 'openai/gpt-5.4' at line 3585 is unusual; verify it is a supported model for Emergent LlmChat.",
+    "AI model id 'openai/gpt-5.4' at line 3585 is unusual; verify it is a supported model for SMANSALA LlmChat.",
     "A number of GET endpoints use `.to_list(5000)` / `.to_list(1000)` without pagination (library_stats, list_books, etc.) — fine for seed data but will degrade at scale."
   ],
   "updated_files": [],
@@ -28,6 +28,6 @@
   "seed_data_creation": "Test created a transient book 'TEST_AI Buku Uji' for the AI-summary test and deleted it in teardown. No persistent test data left behind.",
   "retest_needed": false,
   "main_agent_can_self_test": true,
-  "context_for_next_testing_agent": "Smoke suite for fresh import saved at /app/backend/tests/test_iter28_smoke.py — run with REACT_APP_BACKEND_URL env var set. Covers public endpoints, auth, core module list endpoints, Emergent object-storage upload, and AI book summary. Reuse as regression. Frontend protected routes live under '/' (e.g. /dashboard, /library, /schoolgram, /achievements, /attendance). Public routes use Indonesian paths: /struktur-organisasi, /galeri, /presentasi, /dokumentasi, /profil-sekolah, /ppdb.",
+  "context_for_next_testing_agent": "Smoke suite for fresh import saved at /app/backend/tests/test_iter28_smoke.py — run with REACT_APP_BACKEND_URL env var set. Covers public endpoints, auth, core module list endpoints, SMANSALA object-storage upload, and AI book summary. Reuse as regression. Frontend protected routes live under '/' (e.g. /dashboard, /library, /schoolgram, /achievements, /attendance). Public routes use Indonesian paths: /struktur-organisasi, /galeri, /presentasi, /dokumentasi, /profil-sekolah, /ppdb.",
   "rca of the issue": "No bugs reproduced in this iteration; app is healthy post-import."
 }

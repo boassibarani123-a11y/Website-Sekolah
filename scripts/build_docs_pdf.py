@@ -31,7 +31,7 @@ class PDF(FPDF):
         self.set_y(-12)
         self.set_font("Vera", "", 7)
         self.set_text_color(*GREY)
-        self.cell(0, 6, "Dibuat oleh Emergent - Dokumen setup & deployment", align="C")
+        self.cell(0, 6, "Dibuat oleh SMANSALA - Dokumen setup & deployment", align="C")
 
 
 pdf = PDF(format="A4")
@@ -269,17 +269,17 @@ h2("Layanan Third-Party")
 table(
     ["Layanan", "Dipakai untuk", "Perlu disiapkan"],
     [
-        ["Emergent LLM (OpenAI gpt-5.4)", "Ringkasan AI buku & rekomendasi perpustakaan",
+        ["SMANSALA LLM (OpenAI gpt-5.4)", "Ringkasan AI buku & rekomendasi perpustakaan",
          "EMERGENT_LLM_KEY. Tanpa ini fitur AI mati (sisanya tetap jalan)"],
-        ["Emergent Email", "Email pengumuman, reset password, reminder absensi, kirim rapor",
+        ["SMANSALA Email", "Email pengumuman, reset password, reminder absensi, kirim rapor",
          "EMERGENT_EMAIL_KEY. Kosong = fitur email mati (opsional)"],
-        ["Emergent Object Storage", "Upload file/gambar (galeri, berkas PPDB, logo)",
+        ["SMANSALA Object Storage", "Upload file/gambar (galeri, berkas PPDB, logo)",
          "Inisialisasi otomatis memakai EMERGENT_LLM_KEY"],
         ["MongoDB", "Database utama seluruh data aplikasi", "Instance MongoDB aktif (lokal/Docker/Atlas)"],
     ],
     [42, 55, EPW - 97],
 )
-para("Ringkas: yang WAJIB untuk aplikasi inti hanyalah MongoDB. Emergent LLM diperlukan hanya jika "
+para("Ringkas: yang WAJIB untuk aplikasi inti hanyalah MongoDB. SMANSALA LLM diperlukan hanya jika "
      "ingin fitur AI aktif. Email bersifat opsional.", size=9)
 
 # ---------------- 4. AI ----------------
@@ -313,7 +313,7 @@ bullet("Klik salah satu buku untuk membuka detail, lalu klik tombol 'Ringkasan A
 bullet("Klik berikutnya instan karena ringkasan sudah tersimpan (cached) di field ai_summary.")
 
 h2("Mengisi saldo / mengganti kunci AI")
-para("EMERGENT_LLM_KEY adalah Universal Key Emergent yang mendukung OpenAI/Anthropic/Gemini. "
+para("EMERGENT_LLM_KEY adalah Universal Key SMANSALA yang mendukung OpenAI/Anthropic/Gemini. "
      "Bila saldo menipis: Profile > Manage plan > Universal Key > Add Balance (atau aktifkan auto top-up). "
      "Saat deploy di VPS, cukup set nilai kunci yang sama pada environment variable EMERGENT_LLM_KEY.")
 

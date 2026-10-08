@@ -297,7 +297,7 @@ bullet("Frontend: React + Tailwind + shadcn/ui.")
 bullet("Backend: FastAPI (Python), REST API dengan prefix /api.")
 bullet("Database: MongoDB (dibuat otomatis, +/- 45 collection).")
 bullet("Autentikasi: JWT (HS256) dengan otorisasi berbasis peran.")
-bullet("AI: model OpenAI gpt-5.4 (via Emergent) untuk fitur Perpustakaan Pintar.")
+bullet("AI: model OpenAI gpt-5.4 (via SMANSALA) untuk fitur Perpustakaan Pintar.")
 h2("Peran pengguna (9)")
 para("Super Admin, Kepala Sekolah, Staff TU, Guru/Wali Kelas, Siswa, Ketua Kelas, Bendahara, "
      "Ketua OSIS, Admin Perpustakaan - serta Orang Tua sebagai penerima notifikasi.")

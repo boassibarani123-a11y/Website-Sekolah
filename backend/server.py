@@ -1,3 +1,25 @@
+
+# --- AI Rate Limiter per User ---
+from datetime import date
+from fastapi import HTTPException
+
+user_ai_usage = {}
+
+def check_ai_rate_limit(user_id: str, max_per_day: int = 20):
+    today = date.today().isoformat()
+    if user_id not in user_ai_usage:
+        user_ai_usage[user_id] = {"date": today, "count": 0}
+    
+    usage = user_ai_usage[user_id]
+    if usage["date"] != today:
+        usage["date"] = today
+        usage["count"] = 0
+        
+    if usage["count"] >= max_per_day:
+        raise HTTPException(status_code=429, detail="Batas harian pertanyaan AI Anda (15 pesan/hari) telah tercapai. Silakan coba lagi besok.")
+    
+    usage["count"] += 1
+
 from dotenv import load_dotenv
 from pathlib import Path
 ROOT_DIR = Path(__file__).parent
@@ -4571,7 +4593,7 @@ async def public_gallery_file(path: str):
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
-app.include_router(api)
+app.include_router(api, prefix="/api")
 
 @app.on_event("shutdown")
 async def shutdown():

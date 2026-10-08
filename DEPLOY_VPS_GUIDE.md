@@ -11,11 +11,11 @@ Ganti `sekolah.contoh.com` dengan domain kamu. Jalankan sebagai user dengan sudo
 ## ⚠️ PRASYARAT WAJIB — Sinkronkan kode terbaru ke GitHub dulu
 
 Semua perbaikan terbaru (penyimpanan upload ke **disk lokal**, logo transparan,
-validasi kuis, galeri sekolah) ada di workspace Emergent. Branch GitHub `main10`
+validasi kuis, galeri sekolah) ada di workspace SMANSALA. Branch GitHub `main10`
 BELUM berisi perubahan ini sampai kamu mendorongnya.
 
-**Di Emergent, klik tombol "Save to GitHub" dan push ke branch `main10` TERLEBIH DAHULU.**
-Kalau VPS menarik kode sebelum ini, upload gambar akan tetap memakai layanan Emergent (salah).
+**Di SMANSALA, klik tombol "Save to GitHub" dan push ke branch `main10` TERLEBIH DAHULU.**
+Kalau VPS menarik kode sebelum ini, upload gambar akan tetap memakai layanan SMANSALA (salah).
 (Butuh bantuan soal fitur Save to GitHub? Tanyakan saya, nanti saya arahkan.)
 
 ---
@@ -82,7 +82,7 @@ ENV
 # Generate secret acak (jalankan 2x, tempel ke JWT_SECRET & WEBHOOK_CRON_SECRET):
 openssl rand -hex 32
 ```
-> Catatan: `UPLOAD_DIR` membuat semua upload gambar tersimpan di disk VPS — **tanpa layanan Emergent**.
+> Catatan: `UPLOAD_DIR` membuat semua upload gambar tersimpan di disk VPS — **tanpa layanan SMANSALA**.
 > `OPENAI_API_KEY` opsional (fitur AI perpustakaan/kuis). Email opsional via SMTP (`SMTP_HOST` dst). Fitur inti tidak butuh keduanya.
 
 Install dependensi Python:
