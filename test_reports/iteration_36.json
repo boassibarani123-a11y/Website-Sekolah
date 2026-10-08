@@ -1,0 +1,25 @@
+{
+  "summary": "Targeted re-test of reversed typing bug in RichText editors (ClassDetail and Assignments). All scenarios pass: typing per-character preserves correct LTR order, newline/multiline order preserved, Bold formatting applies without crash, end-to-end save of assignment with description works and description is preserved as typed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Assignment Guru dropdown (ClassDetail NewAssignModal)", "issues": ["Guru dropdown shows duplicate 'TEST guru' entries — likely a duplicate seed/list, worth deduping or showing unique display name"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RichText fix is correct: mount-only useEffect sets innerHTML once; contentEditable has no dangerouslySetInnerHTML. onInput propagates HTML upward keeping caret stable.",
+    "Minor: Guru list contains duplicates ('TEST guru' x2) — consider distinct-by-id and/or unique display names in the dropdown render."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "boassibarani123@gmail.com / Boas12345io",
+  "seed_data_creation": "Created one assignment titled 'TEST_ReverseTypingBug' in class XI IPA 2 (b9e38fdb-a9f2-4dcf-b5f0-db049fcc1405) with description 'bosek pagi ini\\nselamat datang' (bolded).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reversed-typing bug in RichText editors is fixed and verified. ClassDetail editor (data-testid assignment-desc-editor) and Assignments editor (data-testid assign-desc-editor) both type in correct order and persist on save. Observed cosmetic issue: duplicate guru entries in the Guru dropdown.",
+  "rca of the issue": "Previous implementation used dangerouslySetInnerHTML tied to React state on every render; each keystroke reset the DOM and moved the caret to position 0 so subsequent characters were inserted before the previous ones (producing reversed text). Fix: initialize innerHTML once in a mount-only useEffect and keep the editor uncontrolled, propagating changes via onInput. Verified by typing per-character using page.keyboard.type and reading inner_text."
+}
