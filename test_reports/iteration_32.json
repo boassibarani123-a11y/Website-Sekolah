@@ -1,0 +1,40 @@
+{
+  "summary": "Iter32 verification of (1) quiz answer-index locking (QuizQuestion model) and (2) SchoolInfo redesign + gallery upload. 7/8 backend tests passed. Frontend gallery flow passed end-to-end (upload -> grid -> Simpan -> reload persists). Discovered one real backend bug in the new answer-normalizer: when option text looks like a digit, the normalizer casts it to int(index) instead of first checking `in options`, silently mislocating the correct answer.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/quizzes (and /api/exams) - QuizQuestion._normalize validator (server.py L1816-1838)",
+        "issue": "Priority bug: when `answer` is sent as a string that happens to be digits (e.g. options=['1','2','3','4'], answer='2'), the validator uses `s.lstrip('-').isdigit()` BEFORE checking `s in opts`, so '2' is cast to int index 2 (option '3') instead of options.index('2')=1. Silently stores wrong answer -> students who pick the correct option are marked wrong. Repro: /app/backend/tests/test_iter32_quiz_gallery.py::test_quiz_digit_option_text_normalizes_correctly. Fix: swap order - check `s in opts` first, fall back to int-if-digit.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_quiz_gallery.py",
+    "/app/test_reports/pytest/iter32.xml"
+  ],
+  "action_items": [
+    "Fix QuizQuestion._normalize in /app/backend/server.py (~L1825-1832): prefer `s in opts` match over isdigit->int cast. Suggested order: if s in opts -> opts.index(s); elif s.lstrip('-').isdigit() -> int(s); else 0. This affects both Quizzes and Exams since they share QuizQuestion."
+  ],
+  "critical_code_review_comments": [
+    "QuizQuestion._normalize ordering bug (above) silently breaks the whole point of the 'lock answer to index' change for the common Mathematics case of numeric option texts.",
+    "QuizQuestion._normalize silently falls back to answer=0 when text is not a digit and not in opts; consider raising ValueError so authors see the mistake instead of silently defaulting (currently masks typos).",
+    "server.py is 4458 lines - splitting into modules by domain (quizzes, exams, settings, upload, ppdb) would help maintainability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_quiz_gallery.py (new regression suite)"
+  ],
+  "success_rate": {"backend": "87.5% (7/8)", "frontend": "100%"},
+  "test_credentials": "super_admin boassibarani123@gmail.com / Boas12345io",
+  "seed_data_creation": "Created TEST_* class + siswa for quiz E2E; all teardown runs in fixture. Gallery test uploads a 1x1 PNG and cleans it up by removing the appended URL and saving again.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_iter32_quiz_gallery.py. Run with REACT_APP_BACKEND_URL env + `pytest`. After the normalizer fix, test_quiz_digit_option_text_normalizes_correctly should pass. The 6 other tests (text->index normalization for non-digit text, out-of-range rejection, <2 options rejection, full shuffled-scoring E2E with 100%, exam parity, upload+gallery persist) are already green and should remain green. Frontend SchoolInfo redesign + gallery upload+persist flow verified via Playwright - PASS. settings.gallery_images is cleaned up at end of test.",
+  "rca of the issue": "RCA for digit-text bug: QuizQuestion._normalize branches on `s.lstrip('-').isdigit()` BEFORE `s in opts`. For option texts like ['1','2','3','4'] and answer='2', `'2'.isdigit()` is True, so answer becomes int('2')=2 (the position of '3'), bypassing the text-match branch. Reproduction: POST /api/quizzes {questions:[{q:'?',options:['1','2','3','4'],answer:'2'}]} returns stored answer=2 instead of 1. Mitigation: reorder branches to prefer `s in opts` match."
+}

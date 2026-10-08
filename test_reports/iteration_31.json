@@ -1,0 +1,31 @@
+{
+  "summary": "E2E regression for iter31: 6 core modules (Absensi QR, Schoolgram, Inventaris, Tugas, Kuis, Pemilu OSIS) + Kartu Pelajar logo. Backend pytest /app/backend/tests/test_iter31_core_modules.py = 13/13 PASSED in ~8s against preview URL. Covers: auth (super_admin login + /auth/me role check), user management (POST /users for guru/siswa/ketua_osis, siswa phone validation 400), classes (POST /classes + list), Absensi QR (POST /attendance/scan by qr_code and by nisn, GET /attendance, GET /attendance/stats, GET /attendance/confirm redirect-303 invalid-token path), Schoolgram (POST /posts as super_admin, GET /posts as siswa, POST /posts/{id}/like, POST /posts/{id}/comment), Inventaris (POST /inventory, GET /inventory, POST /borrow by siswa, GET /inventory/{id}/history), Tugas (POST /assignments as super_admin, GET /assignments as siswa, POST /submissions as siswa), Kuis (POST /quizzes with answer=index, POST /quizzes/{id}/start, POST /quizzes/attempt with shuffled option mapping -> score 2/2), Pemilu OSIS (POST /candidates ketua, POST /vote/{cid} 200, GET /my-votes contains vote, second POST /vote same position 400), Settings/Logo (GET /api/settings has school_logo_url, resolved URL https://edu-portal-956.preview.emergentagent.com/school-logo.png returns 200 image/png 220 KB). Frontend Playwright on preview: login page shows 2 school-logo imgs (naturalWidth=472, both brand slots), after login dashboard sidebar shows school-logo img (naturalWidth=472), /print-cards with a seeded siswa shows 2 school-logo imgs on StudentIdCard front+back (SMA NEGERI 1 LAGUBOTI logo circle). Seeded TEST data was cleaned up in all tests.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_core_modules.py",
+    "/app/test_reports/pytest/iter31.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 4405 lines — refactor into routers (attendance, inventory, assignments, quizzes, posts, elections, settings) is overdue (>700-line guideline).",
+    "QuizIn.answer field accepts both int (index) and str (text), but attempt_quiz with a session compares the ORIGINAL option index (int) against questions[*].answer. If a teacher creates a quiz with answer as text, students will always score 0 (session path). Enforce `answer: int` in the Pydantic model, or normalize text->index on insert.",
+    "POST /inventory (and other dstamp'd endpoints) returns the mongo doc without stripping `_id` reliably — delete `doc.pop('_id', None)` after insert is used, OK, but add `response_model_exclude={'_id'}` or wrap through strip() for safety.",
+    "POST /vote/{cid} prevents double-vote per position but does not require the siswa's class to be in a configured 'voter' pool — any siswa (even test accounts) can vote once per position. Fine if that's the design.",
+    "GET /attendance/confirm uses FRONTEND_URL env but if unset it redirects to '/konfirmasi-absensi?...' (relative) which may 404; set FRONTEND_URL in backend/.env for production confirm-emails.",
+    "DEFAULT_SETTINGS.school_logo_url defaults to '/school-logo.png' (same-origin) — fine since the preview serves /school-logo.png (200 image/png). For external hosting the frontend must prefix with REACT_APP_BACKEND_URL; current Login.jsx / DashboardLayout.jsx / StudentIdCard.jsx use the raw value as <img src>, which works only because the preview URL is same-origin."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter31_core_modules.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "super_admin boassibarani123@gmail.com / Boas12345io. All other role accounts (guru/siswa/ketua_osis) are created and torn down inside the pytest fixture.",
+  "seed_data_creation": "Pytest fixture creates TEST_{tag}_X class + 1 guru + 1 siswa + 1 ketua_osis user, all torn down. Playwright test for ID card created TEST_CARDS_CLS class + 1 siswa, cleaned up via DELETE after screenshot.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 6 core modules + logo rendering are fully functional on preview. Regression harness: /app/backend/tests/test_iter31_core_modules.py (13 tests, 8s). Quiz answer field MUST be integer index (not string text) — if main agent changes quiz UI to send text, scoring will break. School logo is served at /school-logo.png (220 KB) and rendered in Login (2 slots), Sidebar (1), StudentIdCard front+back (2). The test fixture leaves no residual data."
+}
