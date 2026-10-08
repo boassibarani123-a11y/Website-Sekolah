@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { School, ArrowLeft, Plus, X, ClipboardList, BrainCircuit, Paperclip,
-  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock, Network, ShieldCheck } from "lucide-react";
+  FileText, ImageIcon, Upload, Trash2, CheckCircle2, Pencil, CalendarClock, AlertTriangle, Users2, Circle, PiggyBank, Lock, Network, ShieldCheck, Video, Link as LinkIcon, Loader2 } from "lucide-react";
 import { QuizUnlockModal, QuizPasswordField, quizPasswordBody } from "@/components/QuizPassword";
 import { QuizTakeModal, QuizTimeField } from "@/components/QuizTake";
 import { ClassKas } from "@/components/ClassKas";
@@ -23,6 +23,51 @@ async function uploadFiles(fileList) {
     out.push({ url: `${BACKEND}${r.data.url}`, name: f.name, type: f.type });
   }
   return out;
+}
+
+const SUBJECTS_FALLBACK = ["Matematika","Bahasa Indonesia","Bahasa Inggris","Fisika","Kimia","Biologi","Ekonomi","Geografi","Sejarah","Sosiologi","PKN","PAI","Seni Budaya","PJOK","Informatika","Prakarya"];
+
+async function uploadOne(file) {
+  const fd = new FormData(); fd.append("file", file);
+  const r = await api.post("/upload", fd);
+  return `${BACKEND}${r.data.url}`;
+}
+
+function RichText({ value, onChange }) {
+  const ref = useRef(null);
+  const exec = (cmd, val = null) => { document.execCommand(cmd, false, val); ref.current?.focus(); onChange(ref.current.innerHTML); };
+  const Btn = ({ cmd, val, children, title }) => (
+    <button type="button" title={title} onMouseDown={(e) => { e.preventDefault(); exec(cmd, val); }}
+      className="px-2 py-1 rounded hover:bg-slate-200 text-slate-600 text-sm min-w-[30px]">{children}</button>
+  );
+  return (
+    <div className="border-2 border-slate-200 rounded-xl overflow-hidden">
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200 bg-slate-50 px-2 py-1">
+        <Btn cmd="bold" title="Tebal"><b>B</b></Btn>
+        <Btn cmd="italic" title="Miring"><i>I</i></Btn>
+        <Btn cmd="underline" title="Garis bawah"><u>U</u></Btn>
+        <span className="w-px h-5 bg-slate-200 mx-1" />
+        <Btn cmd="insertUnorderedList" title="Daftar butir">• List</Btn>
+        <Btn cmd="insertOrderedList" title="Daftar nomor">1. List</Btn>
+        <span className="w-px h-5 bg-slate-200 mx-1" />
+        <Btn cmd="formatBlock" val="H3" title="Sub-judul">H</Btn>
+        <button type="button" title="Tautan" onMouseDown={(e) => { e.preventDefault(); const u = prompt("URL tautan:"); if (u) exec("createLink", u); }}
+          className="px-2 py-1 rounded hover:bg-slate-200 text-slate-600 text-sm"><LinkIcon className="w-3.5 h-3.5" /></button>
+      </div>
+      <div ref={ref} contentEditable suppressContentEditableWarning data-testid="assignment-desc-editor"
+        onInput={(e) => onChange(e.currentTarget.innerHTML)}
+        className="min-h-[130px] px-3 py-2 text-sm outline-none" dangerouslySetInnerHTML={{ __html: value }} />
+    </div>
+  );
+}
+
+function AField({ label, required, children, full }) {
+  return (
+    <div className={full ? "sm:col-span-2" : ""}>
+      <label className="text-xs font-semibold text-slate-600">{label}{required && <span className="text-rose-500"> *</span>}</label>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
 }
 
 function AttachmentChip({ att }) {
@@ -316,13 +361,23 @@ function TugasTab({ klass, subject, subjects, teachSubjects, isTeacher, isStuden
 
 function NewAssignModal({ klass, subjects, initial, onClose, onDone }) {
   const isEdit = !!(initial && initial.id);
+  const subjOpts = subjects && subjects.length ? subjects : SUBJECTS_FALLBACK;
   const [f, setF] = useState({
     title: initial?.title || "", description: initial?.description || "",
-    subject: initial?.subject || subjects[0] || "", due_date: initial?.due_date || "",
+    kelas_kelompok: initial?.kelas_kelompok || "",
+    subject: initial?.subject || "", guru_id: initial?.guru_id || "", guru_name: initial?.guru_name || "",
+    due_date: initial?.due_date || "", link: initial?.link || "",
+    semester: initial?.semester || "genap", active: initial?.active !== false,
+    video_url: initial?.video_url || "",
   });
   const [atts, setAtts] = useState(initial?.attachments || []);
+  const [teachers, setTeachers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [vidBusy, setVidBusy] = useState(false);
+  const inp = "w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm focus:border-sky-500 outline-none";
+
+  useEffect(() => { api.get("/users?role=guru").then(r => setTeachers(r.data)).catch(() => {}); }, []);
 
   const onFiles = async (e) => {
     if (!e.target.files?.length) return;
@@ -331,64 +386,111 @@ function NewAssignModal({ klass, subjects, initial, onClose, onDone }) {
     catch { toast.error("Gagal upload file"); }
     finally { setUploading(false); }
   };
+  const onVideo = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { toast.error("Video maksimal 20MB"); return; }
+    setVidBusy(true);
+    try { const url = await uploadOne(file); setF(s => ({ ...s, video_url: url })); toast.success("Video terunggah"); }
+    catch { toast.error("Gagal mengunggah video"); }
+    finally { setVidBusy(false); }
+  };
   const save = async () => {
     if (!f.title.trim()) return toast.error("Judul wajib diisi");
+    if (!f.subject) return toast.error("Mata Pelajaran wajib dipilih");
     setBusy(true);
     try {
-      if (isEdit) {
-        await api.patch(`/assignments/${initial.id}`, { ...f, attachments: atts });
-        toast.success("Tugas diperbarui");
-      } else {
-        await api.post("/assignments", { ...f, kelas: klass.name, class_id: klass.id, attachments: atts });
-        toast.success("Tugas dibuat");
-      }
+      const payload = { ...f, kelas: klass.name, class_id: klass.id, attachments: atts };
+      if (isEdit) { await api.patch(`/assignments/${initial.id}`, payload); toast.success("Tugas diperbarui"); }
+      else { await api.post("/assignments", payload); toast.success("Tugas dibuat"); }
       onDone();
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
     finally { setBusy(false); }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold text-lg">{isEdit ? "Edit Tugas" : "Beri Tugas Baru"}</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button></div>
-        <div className="p-5 space-y-3">
-          <input data-testid="assignment-title-input" placeholder="Judul tugas" value={f.title} onChange={e=>setF({...f,title:e.target.value})} className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
-          <textarea rows={3} placeholder="Deskripsi / instruksi" value={f.description} onChange={e=>setF({...f,description:e.target.value})} className="w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-slate-600 uppercase">Mata Pelajaran</label>
-              {subjects.length>0 ? (
-                <select data-testid="assignment-subject-select" value={f.subject} onChange={e=>setF({...f,subject:e.target.value})} className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
-                  {subjects.map(s=><option key={s} value={s}>{s}</option>)}
-                </select>
-              ) : (
-                <input placeholder="Mapel" value={f.subject} onChange={e=>setF({...f,subject:e.target.value})} className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
-              )}
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-600 uppercase">Deadline</label>
-              <input type="date" value={f.due_date} onChange={e=>setF({...f,due_date:e.target.value})} className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
-            </div>
+    <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()} data-testid="assign-form-modal">
+        <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white z-10">
+          <h3 className="font-heading font-bold text-lg">{isEdit ? "Edit Tugas" : "Beri Tugas Baru"}</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <AField label="Judul" required full>
+            <input data-testid="assignment-title-input" placeholder="Judul tugas" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} className={inp} />
+          </AField>
+          <AField label="Keterangan" full>
+            <RichText value={f.description} onChange={v => setF({ ...f, description: v })} />
+          </AField>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <AField label="Kelas">
+              <input value={klass.name} disabled className={`${inp} bg-slate-100 text-slate-500`} />
+            </AField>
+            <AField label="Kelas Kelompok">
+              <input placeholder="Abaikan jika tidak ada" value={f.kelas_kelompok} onChange={e => setF({ ...f, kelas_kelompok: e.target.value })} className={inp} />
+            </AField>
+            <AField label="Mata Pelajaran" required>
+              <select data-testid="assignment-subject-select" value={f.subject} onChange={e => setF({ ...f, subject: e.target.value })} className={inp}>
+                <option value="">— Pilih Mata Pelajaran —</option>
+                {subjOpts.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </AField>
+            <AField label="Guru">
+              <select data-testid="assignment-guru-select" value={f.guru_id} onChange={e => { const t = teachers.find(x => x.id === e.target.value); setF({ ...f, guru_id: e.target.value, guru_name: t?.name || "" }); }} className={inp}>
+                <option value="">— Pilih Guru —</option>
+                {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </AField>
+            <AField label="Batas Pengumpulan">
+              <input data-testid="assignment-due-input" type="datetime-local" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={inp} />
+            </AField>
+            <AField label="Link">
+              <input placeholder="Link Zoom/Gmeet atau dokumen" value={f.link} onChange={e => setF({ ...f, link: e.target.value })} className={inp} />
+            </AField>
+            <AField label="Semester">
+              <div className="flex items-center gap-4 pt-2">
+                {["genap", "ganjil"].map(s => (
+                  <label key={s} className="flex items-center gap-1.5 text-sm cursor-pointer capitalize">
+                    <input type="radio" name="semester" checked={f.semester === s} onChange={() => setF({ ...f, semester: s })} className="accent-rose-500" />{s}
+                  </label>
+                ))}
+              </div>
+            </AField>
+            <AField label="Status">
+              <button type="button" data-testid="assignment-status-toggle" onClick={() => setF({ ...f, active: !f.active })}
+                className={`mt-1 relative w-12 h-6 rounded-full transition-colors ${f.active ? "bg-rose-500" : "bg-slate-300"}`}>
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${f.active ? "left-6" : "left-0.5"}`} />
+              </button>
+            </AField>
           </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-600 uppercase flex items-center gap-1"><Paperclip className="w-3.5 h-3.5"/>Lampiran (PDF / gambar, bisa banyak)</label>
-            <input data-testid="assignment-file-input" type="file" multiple accept="image/*,application/pdf" onChange={onFiles} className="mt-1 w-full text-sm"/>
-            {uploading && <p className="text-xs text-sky-600 mt-1">Mengunggah...</p>}
+
+          <AField label="Lampiran File (PDF / gambar, bisa banyak)" full>
+            <input data-testid="assignment-file-input" type="file" multiple accept="image/*,application/pdf" onChange={onFiles} className="text-xs" />
+            {uploading && <p className="text-xs text-sky-600 mt-1 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Mengunggah...</p>}
+            <p className="text-[10px] text-rose-500 mt-0.5">*Maksimal : 20MB / file</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {atts.map((att,i)=>(
+              {atts.map((att, i) => (
                 <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded-lg text-xs">
-                  {att.name}<button onClick={()=>setAtts(atts.filter((_,idx)=>idx!==i))}><X className="w-3 h-3"/></button>
+                  <Paperclip className="w-3 h-3" />{att.name}<button onClick={() => setAtts(atts.filter((_, idx) => idx !== i))}><X className="w-3 h-3" /></button>
                 </span>
               ))}
             </div>
-          </div>
-          <button data-testid="save-assignment-button" disabled={busy||uploading} onClick={save} className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 disabled:opacity-60">{busy?"Menyimpan...":"Simpan Tugas"}</button>
+          </AField>
+
+          <AField label="Video" full>
+            <input data-testid="assignment-video-input" type="file" accept="video/*" onChange={onVideo} className="text-xs" />
+            {vidBusy ? <span className="text-xs text-slate-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />mengunggah…</span>
+              : f.video_url && <span className="text-xs text-emerald-600 flex items-center gap-1"><Video className="w-3 h-3" />video terunggah</span>}
+            <p className="text-[10px] text-rose-500 mt-0.5">*Maksimal : 20MB</p>
+          </AField>
+
+          <button data-testid="save-assignment-button" disabled={busy || uploading || vidBusy} onClick={save} className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Loader2 className="w-4 h-4 animate-spin" />}{busy ? "Menyimpan..." : "Simpan Tugas"}</button>
         </div>
       </div>
     </div>
   );
 }
+
 
 function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
   const [subs, setSubs] = useState([]);

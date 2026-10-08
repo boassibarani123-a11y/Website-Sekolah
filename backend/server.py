@@ -43,7 +43,7 @@ from html import escape
 from urllib.parse import urlparse, urlencode
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Header, Query, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Header, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, RedirectResponse
 import re
 from starlette.middleware.cors import CORSMiddleware
@@ -4431,7 +4431,7 @@ async def schoolgram_class(cid: str, user=Depends(get_current_user)):
         p["liked"] = user["id"] in p.get("likes", [])
     now = now_iso()
     return {
-        "class": {"id": c["id"], "name": c["name"], "description": c.get("description", "")},
+        "class": {"id": c["id"], "name": c["name"], "description": c.get("description", ""), "avatar": c.get("avatar"), "cover": c.get("cover")},
         "posts": posts,
         "stories": await db.stories.find({"class_id": cid, "expires_at": {"$gte": now}}, {"_id": 0}).sort("created_at", -1).to_list(100),
         "highlights": await db.stories.find({"class_id": cid, "highlighted": True}, {"_id": 0}).sort("created_at", -1).to_list(100),
@@ -4450,11 +4450,13 @@ async def _assert_manage(cid, user):
 class SgPostIn(BaseModel):
     image: str
     caption: Optional[str] = ""
+    media_type: Optional[str] = "image"  # image | video
 
 @api.post("/schoolgram/class/{cid}/post")
 async def sg_create_post(cid: str, body: SgPostIn, user=Depends(get_current_user)):
     c = await _assert_manage(cid, user)
     doc = {"id": str(uuid.uuid4()), "image": body.image, "caption": body.caption or "",
+           "media_type": body.media_type or "image",
            "author_id": user["id"], "author_name": user["name"], "author_role": user["role"],
            "class_id": cid, "kelas": c["name"], "likes": [], "comments": [], "created_at": now_iso(),
            "is_demo": bool(user.get("is_demo"))}
@@ -4520,6 +4522,134 @@ async def sg_delete_story(sid: str, user=Depends(get_current_user)):
     await _assert_manage(s.get("class_id"), user)
     await db.stories.delete_one({"id": sid})
     return {"ok": True}
+
+# ==================== SCHOOLGRAM FEED / REELS / PROFILE / CHAT ====================
+def _enrich_post(p, uid):
+    p["like_count"] = len(p.get("likes", []))
+    p["liked"] = uid in p.get("likes", [])
+    p["comment_count"] = len(p.get("comments", []))
+    return p
+
+@api.get("/schoolgram/feed")
+async def sg_feed(user=Depends(get_current_user)):
+    await _story_cleanup()
+    posts = await db.posts.find({}, {"_id": 0}).sort("created_at", -1).to_list(300)
+    return [_enrich_post(p, user["id"]) for p in posts]
+
+@api.get("/schoolgram/stories")
+async def sg_all_stories(user=Depends(get_current_user)):
+    await _story_cleanup()
+    now = now_iso()
+    stories = await db.stories.find({"expires_at": {"$gte": now}}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    groups = {}
+    for s in stories:
+        g = groups.setdefault(s["class_id"], {"class_id": s["class_id"], "class_name": s.get("class_name"), "items": []})
+        g["items"].append(s)
+    return list(groups.values())
+
+@api.get("/schoolgram/reels")
+async def sg_reels(user=Depends(get_current_user)):
+    posts = await db.posts.find({"media_type": "video"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [_enrich_post(p, user["id"]) for p in posts]
+
+class SgProfileIn(BaseModel):
+    description: Optional[str] = None
+    avatar: Optional[str] = None
+    cover: Optional[str] = None
+
+@api.patch("/schoolgram/class/{cid}/profile")
+async def sg_edit_profile(cid: str, body: SgProfileIn, user=Depends(get_current_user)):
+    await _assert_manage(cid, user)
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.classes.update_one({"id": cid}, {"$set": upd})
+    return {"ok": True}
+
+class VerifyPwIn(BaseModel):
+    password: str
+
+@api.post("/auth/verify-password")
+async def verify_password(body: VerifyPwIn, user=Depends(get_current_user)):
+    full = await db.users.find_one({"id": user["id"]})
+    if not full or not verify_pw(body.password, full.get("password_hash", "")):
+        raise HTTPException(401, "Password salah")
+    return {"ok": True}
+
+# ---- Realtime Chat (students) ----
+class ChatConnManager:
+    def __init__(self):
+        self.active: dict = {}
+    def add(self, uid, ws):
+        self.active.setdefault(uid, set()).add(ws)
+    def remove(self, uid, ws):
+        if uid in self.active:
+            self.active[uid].discard(ws)
+            if not self.active[uid]:
+                self.active.pop(uid, None)
+    async def send(self, uid, data):
+        for ws in list(self.active.get(uid, [])):
+            try:
+                await ws.send_json(data)
+            except Exception:
+                pass
+
+chat_manager = ChatConnManager()
+
+def _chat_room(a, b):
+    return "__".join(sorted([a, b]))
+
+@api.get("/chat/contacts")
+async def chat_contacts(user=Depends(get_current_user)):
+    users = await db.users.find(
+        {"role": {"$in": ["siswa", "ketua_kelas"]}, "id": {"$ne": user["id"]}, **dscope(user)},
+        {"_id": 0, "id": 1, "name": 1, "kelas": 1, "photo": 1}).to_list(2000)
+    users.sort(key=lambda u: u.get("name") or "")
+    return users
+
+@api.get("/chat/history/{peer}")
+async def chat_history(peer: str, user=Depends(get_current_user)):
+    room = _chat_room(user["id"], peer)
+    return await db.chat_messages.find({"room": room}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+
+class ChatSend(BaseModel):
+    to: str
+    text: str
+
+@api.post("/chat/send")
+async def chat_send(body: ChatSend, user=Depends(get_current_user)):
+    if not body.text.strip():
+        raise HTTPException(400, "Pesan kosong")
+    msg = {"id": str(uuid.uuid4()), "room": _chat_room(user["id"], body.to),
+           "from_id": user["id"], "from_name": user["name"], "to_id": body.to,
+           "text": body.text.strip(), "created_at": now_iso()}
+    await db.chat_messages.insert_one(msg)
+    msg.pop("_id", None)
+    await chat_manager.send(body.to, {"type": "message", "message": msg})
+    await chat_manager.send(user["id"], {"type": "message", "message": msg})
+    return msg
+
+@app.websocket("/api/ws/chat")
+async def ws_chat(ws: WebSocket, token: str = ""):
+    if not token:
+        token = ws.cookies.get("access_token", "")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        uid = payload.get("sub")
+    except Exception:
+        await ws.close(code=1008)
+        return
+    if not uid:
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    chat_manager.add(uid, ws)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        chat_manager.remove(uid, ws)
+    except Exception:
+        chat_manager.remove(uid, ws)
 
 # ==================== ASISTEN AI ====================
 import json as _json
