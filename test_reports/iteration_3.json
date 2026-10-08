@@ -1,0 +1,30 @@
+{
+  "summary": "Phase 2 enhancement testing fully verified. Backend: 6/6 pytest passed (test_iter38_phase2.py) covering (1) guru user record exposes phone+subjects, (2) PPDB /register succeeds without jurusan_pilihan and persists with empty jurusan, (3) /api/attendance/scan manual NISN flow + /api/attendance list reflects new row, (4) /api/points/leaderboard honors category and period (bulan/semester) filters. Frontend (Playwright, super admin): (A) /guru-staff — view-grid is default, staff-grid renders staff-card-{id} with staff-assignment-{id} showing 'Wali Kelas: X-1' + mapel chips (Matematika, Fisika), staff-wa-{id} href = https://wa.me/6281298765432 (phone normalized to 62… correctly); toggling to view-table shows staff-row-{id} with WhatsApp column, toggling back to view-grid works. (B) /attendance — attendance-live-log + live-indicator render; submitting manual-nisn-input + manual-nisn-submit caused attendance-log-row to appear within ~1s without page reload (name, kelas, time, 'HADIR' status, 'MANUAL' method badge all correct). (C) /ppdb public form — NO 'Jurusan Pilihan' label, NO 'jurusan' word anywhere; section 'C. Akademik' present. (D) /admin-ppdb table thead = 'NAMA | ASAL | NEM | STATUS | AKSI' — no Jurusan column. (E) /leaderboard Per Siswa — leaderboard-podium with podium-rank-1/2/3 shows top 3 (500/400/300 pts) in correct order; lb-category filter 'akademik' narrows board correctly (only s3 with akademik points visible, s1/s2 with prestasi hidden); lb-period 'bulan' re-queries and still shows this-month awards.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Leaderboard podium", "issues": ["Minor: residual pre-existing TEST Siswa (64e24030/1b7adcf0/b632e697) rows persist in global leaderboard from earlier dev/test runs — not from this iteration. Consider a one-off cleanup or ensure cleanup fixtures in dev."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_phase2.py",
+    "/app/test_reports/pytest/iter38_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "points_leaderboard aggregation ($group with {_id:'$user_id', name:$last:$user_name, kelas:$last:$kelas}) — using $last on unsorted group may yield stale user_name/kelas if a student changes class. Not blocking but consider $first with pre-sort by created_at desc or re-join to users collection.",
+    "ppdb_register still accepts jurusan_pilihan as Optional in payload — good backward compatibility; frontend no longer sends it. Consider removing the field from PpdbIn in a later cleanup once no clients send it.",
+    "backend/server.py is now ~4852 lines — exceeds 700-line guideline. Already flagged previously; splitting into routers (auth/users/ppdb/attendance/points/schoolgram) would greatly aid maintainability.",
+    "/api/attendance/scan returns the full student doc via strip() — strip() removes password_hash and _id, good; but is_demo and parent_* fields are still returned. Non-critical."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter38_phase2.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100%"},
+  "test_credentials": "Super Admin — boassibarani123@gmail.com / Boas12345io (seeded).",
+  "seed_data_creation": "Throwaway guru + 3 throwaway siswa created per run, PPDB entry created+deleted. All created users deleted via DELETE /api/users/{id} at end of each playwright run and pytest teardown. Super admin never touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 2 fully green. Reusable data-testids verified: view-grid, view-table, staff-grid, staff-card-{id}, staff-assignment-{id}, staff-wa-{id}, staff-row-{id}, attendance-live-log, live-indicator, attendance-log-row-{id}, manual-nisn-input, manual-nisn-submit, ppdb-form (no jurusan), admin-ppdb-page (no jurusan column), leaderboard-podium, podium-rank-1/2/3, lb-category, lb-period, board-siswa, board-kelas. Note login redirects to '/' (dashboard rendered via SPA route) rather than '/dashboard' URL — use wait_for_timeout after submit instead of wait_for_url('**/dashboard**').",
+  "rca of the issue": "N/A — no app issues found in Phase 2 scope."
+}
