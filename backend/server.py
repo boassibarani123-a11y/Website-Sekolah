@@ -2365,9 +2365,40 @@ class CommentIn(BaseModel):
 
 @api.post("/posts/{pid}/comment")
 async def comment_post(pid: str, body: CommentIn, user=Depends(get_current_user)):
-    c = {"id": str(uuid.uuid4()), "user_name": user["name"], "text": body.text, "created_at": now_iso()}
+    c = {"id": str(uuid.uuid4()), "user_id": user["id"], "user_name": user["name"], "text": body.text, "created_at": now_iso()}
     await db.posts.update_one({"id": pid}, {"$push": {"comments": c}})
     return c
+
+@api.patch("/posts/{pid}/comment/{cid}")
+async def edit_comment(pid: str, cid: str, body: CommentIn, user=Depends(get_current_user)):
+    post = await db.posts.find_one({"id": pid})
+    if not post:
+        raise HTTPException(404, "Post tidak ditemukan")
+    found = next((x for x in post.get("comments", []) if x.get("id") == cid), None)
+    if not found:
+        raise HTTPException(404, "Komentar tidak ditemukan")
+    if found.get("user_id") != user["id"]:
+        raise HTTPException(403, "Hanya pemilik komentar yang dapat mengubahnya")
+    await db.posts.update_one({"id": pid, "comments.id": cid},
+                              {"$set": {"comments.$.text": body.text, "comments.$.edited": True}})
+    found["text"] = body.text
+    found["edited"] = True
+    return found
+
+@api.delete("/posts/{pid}/comment/{cid}")
+async def delete_comment(pid: str, cid: str, user=Depends(get_current_user)):
+    post = await db.posts.find_one({"id": pid})
+    if not post:
+        raise HTTPException(404, "Post tidak ditemukan")
+    found = next((x for x in post.get("comments", []) if x.get("id") == cid), None)
+    if not found:
+        raise HTTPException(404, "Komentar tidak ditemukan")
+    is_owner = found.get("user_id") == user["id"]
+    is_admin = user["role"] in ("super_admin", "kepsek")
+    if not (is_owner or is_admin):
+        raise HTTPException(403, "Hanya pemilik komentar yang dapat menghapusnya")
+    await db.posts.update_one({"id": pid}, {"$pull": {"comments": {"id": cid}}})
+    return {"ok": True}
 
 # ---------------- ANNOUNCEMENTS ----------------
 class AnnouncementIn(BaseModel):
@@ -2746,6 +2777,9 @@ async def del_candidate(cid: str, user=Depends(require_roles("super_admin", "ket
 async def vote(cid: str, user=Depends(require_roles("siswa"))):
     cand = await db.candidates.find_one({"id": cid})
     if not cand: raise HTTPException(404, "Kandidat tidak ditemukan")
+    cfg = await db.election_config.find_one({"_id": "main"})
+    if (cfg or {}).get("status") != "berlangsung":
+        raise HTTPException(400, "Pemilihan belum dibuka atau sudah ditutup oleh panitia.")
     existing = await db.votes.find_one({"student_id": user["id"], "position": cand["position"]})
     if existing:
         raise HTTPException(400, f"Anda sudah memilih untuk posisi {cand['position']}")
@@ -2758,6 +2792,39 @@ async def vote(cid: str, user=Depends(require_roles("siswa"))):
 async def my_votes(user=Depends(get_current_user)):
     votes = await db.votes.find({"student_id": user["id"]}, {"_id": 0}).to_list(20)
     return votes
+
+@api.get("/election/status")
+async def get_election_status(user=Depends(get_current_user)):
+    cfg = await db.election_config.find_one({"_id": "main"})
+    return {"status": (cfg or {}).get("status", "belum")}
+
+@api.patch("/election/status")
+async def set_election_status(status: str, user=Depends(require_roles("super_admin", "ketua_osis"))):
+    if status not in ("belum", "berlangsung", "selesai"):
+        raise HTTPException(400, "Status tidak valid")
+    await db.election_config.update_one({"_id": "main"}, {"$set": {"status": status}}, upsert=True)
+    return {"status": status}
+
+@api.get("/election/stats")
+async def election_stats(user=Depends(get_current_user)):
+    cands = await db.candidates.find(dscope(user), {"_id": 0}).to_list(200)
+    for c in cands:
+        c["vote_count"] = await db.votes.count_documents({"candidate_id": c["id"]})
+    dpt = await db.users.count_documents({"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}})
+    all_voters = await db.votes.distinct("student_id")
+    voters_count = len(all_voters)
+    by_position = {}
+    for pos in ("ketua", "wakil"):
+        voters = await db.votes.distinct("student_id", {"position": pos})
+        by_position[pos] = len(voters)
+    cfg = await db.election_config.find_one({"_id": "main"})
+    return {
+        "dpt": dpt, "voters": voters_count,
+        "participation": round((voters_count / dpt) * 100, 1) if dpt else 0,
+        "total_votes": await db.votes.count_documents({}),
+        "by_position": by_position, "candidates": cands,
+        "status": (cfg or {}).get("status", "belum"),
+    }
 
 # ---------------- FEEDBACK ----------------
 class FeedbackIn(BaseModel):

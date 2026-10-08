@@ -184,7 +184,13 @@ export default function Inventory() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                {(() => {
+                  const todayISO = new Date().toISOString().slice(0, 10);
+                  const late = r.status === "Disetujui" && r.return_date && r.return_date < todayISO;
+                  const label = r.status === "Disetujui" ? (late ? "Terlambat" : "Dipinjam") : r.status;
+                  const cls = late ? "bg-rose-100 text-rose-700 border-rose-200" : STATUS_STYLE[r.status];
+                  return <span data-testid={`borrow-status-${r.id}`} className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${cls}`}>{label}</span>;
+                })()}
                 {isStaff && r.status==="Menunggu Approval" && (
                   <>
                     <button onClick={()=>approve(r.id,"Disetujui")} className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"><Check className="w-4 h-4"/></button>
@@ -224,7 +230,13 @@ function HistoryModal({item, onClose}) {
         <div key={r.id} className="border border-slate-200 rounded-lg p-3 text-sm">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold text-slate-900">{r.requester_name} <span className="text-slate-400 font-normal">× {r.quantity}</span></span>
-            <span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full border ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+            {(() => {
+              const todayISO = new Date().toISOString().slice(0, 10);
+              const late = r.status === "Disetujui" && r.return_date && r.return_date < todayISO;
+              const label = r.status === "Disetujui" ? (late ? "Terlambat" : "Dipinjam") : r.status;
+              const cls = late ? "bg-rose-100 text-rose-700 border-rose-200" : STATUS_STYLE[r.status];
+              return <span className={`px-2 py-0.5 text-[11px] font-semibold rounded-full border ${cls}`}>{label}</span>;
+            })()}
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
             {ROLE_LABEL[r.requester_role] || r.requester_role || "—"}

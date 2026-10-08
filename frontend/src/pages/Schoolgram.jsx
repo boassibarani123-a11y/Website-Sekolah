@@ -23,6 +23,43 @@ const Avatar = ({ name, src, size = "w-9 h-9", photo }) => (
     : <div className={`${size} rounded-full flex items-center justify-center text-white font-bold shrink-0`} style={{ background: "var(--brand)" }}>{(name || "?")[0]?.toUpperCase()}</div>
 );
 
+function CommentRow({ c, postId, meId, isAdmin, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(c.text);
+  const mine = c.user_id === meId;
+  const save = async () => {
+    if (!val.trim()) return;
+    try { await api.patch(`/posts/${postId}/comment/${c.id}`, { text: val }); onChange({ ...c, text: val, edited: true }); setEditing(false); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Gagal mengubah komentar"); }
+  };
+  const del = async () => {
+    if (!window.confirm("Hapus komentar ini?")) return;
+    try { await api.delete(`/posts/${postId}/comment/${c.id}`); onChange(null, c.id); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Gagal menghapus komentar"); }
+  };
+  return (
+    <div className="group flex items-start justify-between gap-2 text-sm" data-testid={`sg-comment-${c.id}`}>
+      {editing ? (
+        <div className="flex-1 flex gap-1 items-center">
+          <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} className="flex-1 px-2 py-1 border border-slate-200 rounded text-sm focus:border-sky-500 outline-none" />
+          <button data-testid={`sg-comment-save-${c.id}`} onClick={save} className="text-sky-600 text-xs font-semibold px-1">Simpan</button>
+          <button onClick={() => { setEditing(false); setVal(c.text); }} className="text-slate-400 text-xs px-1">Batal</button>
+        </div>
+      ) : (
+        <>
+          <p className="flex-1 min-w-0"><b className="text-slate-900">{c.user_name}</b> <span className="text-slate-700">{c.text}</span>{c.edited && <span className="text-[10px] text-slate-400"> (diedit)</span>}</p>
+          {(mine || isAdmin) && (
+            <span className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              {mine && <button data-testid={`sg-comment-edit-${c.id}`} onClick={() => setEditing(true)} className="text-slate-400 hover:text-sky-600"><Pencil className="w-3.5 h-3.5" /></button>}
+              <button data-testid={`sg-comment-delete-${c.id}`} onClick={del} className="text-slate-400 hover:text-rose-600"><Trash2 className="w-3.5 h-3.5" /></button>
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Schoolgram() {
   const { user } = useAuth();
   const [unlocked, setUnlocked] = useState(sessionStorage.getItem("sg_unlocked") === "1");
@@ -180,7 +217,8 @@ function PostCard({ post, user, onChanged }) {
         {p.caption && <p className="text-sm text-slate-800"><b>{p.kelas || p.author_name}</b> {p.caption}</p>}
         {comments.length > 2 && !showAll && <button onClick={() => setShowAll(true)} className="text-xs text-slate-400">Lihat semua {comments.length} komentar</button>}
         {(showAll ? comments : comments.slice(-2)).map(c => (
-          <p key={c.id} className="text-sm"><b className="text-slate-900">{c.user_name}</b> <span className="text-slate-700">{c.text}</span></p>
+          <CommentRow key={c.id} c={c} postId={p.id} meId={user.id} isAdmin={["super_admin", "kepsek"].includes(user.role)}
+            onChange={(u, d) => setP(pr => ({ ...pr, comments: d ? (pr.comments || []).filter(x => x.id !== d) : (pr.comments || []).map(x => x.id === u.id ? u : x) }))} />
         ))}
         <div className="flex gap-2 pt-1">
           <input data-testid={`sg-feed-comment-input-${p.id}`} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && comment()}
@@ -548,6 +586,8 @@ function StoryViewer({ state, canManage, onClose, onChanged }) {
 }
 
 function PostModal({ post, canManage, onClose, onChanged }) {
+  const { user } = useAuth();
+  const isAdmin = ["super_admin", "kepsek"].includes(user.role);
   const [p, setP] = useState(post);
   const [commentText, setCommentText] = useState("");
   const [editing, setEditing] = useState(false);
@@ -577,7 +617,8 @@ function PostModal({ post, canManage, onClose, onChanged }) {
             <div className="flex gap-2"><input value={caption} onChange={e => setCaption(e.target.value)} className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-lg text-sm" /><button data-testid="sg-post-save" onClick={saveEdit} className="px-3 py-2 bg-sky-600 text-white text-sm rounded-lg font-semibold">Simpan</button></div>
           ) : (p.caption && <p className="text-sm text-slate-800"><b>{p.kelas}</b> {p.caption}</p>)}
           <div className="border-t border-slate-100 pt-3 space-y-2">
-            {(p.comments || []).map(c => <div key={c.id} className="text-sm"><b className="text-slate-900">{c.user_name}</b> <span className="text-slate-700">{c.text}</span></div>)}
+            {(p.comments || []).map(c => <CommentRow key={c.id} c={c} postId={p.id} meId={user.id} isAdmin={isAdmin}
+              onChange={(u, d) => setP(pr => ({ ...pr, comments: d ? (pr.comments || []).filter(x => x.id !== d) : (pr.comments || []).map(x => x.id === u.id ? u : x) }))} />)}
             <div className="flex gap-2"><input data-testid="sg-comment-input" value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="Tulis komentar..." className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-lg text-sm focus:border-sky-500 outline-none" /><button data-testid="sg-comment-send" onClick={submitComment} className="px-3 py-2 bg-sky-600 text-white text-sm rounded-lg font-semibold">Kirim</button></div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Download, Wand2, CheckCircle2, XCircle, Eye, X, Pencil, Trash2 } from "lucide-react";
+import { Download, Wand2, CheckCircle2, XCircle, Eye, X, Pencil, Trash2, MessageCircle, Save } from "lucide-react";
 
 const STATUS_STYLE = {
   pending: "bg-slate-100 text-slate-700 border-slate-200",
@@ -18,6 +18,7 @@ export default function AdminPpdb() {
   const [filter, setFilter] = useState("");
   const [statusF, setStatusF] = useState("all");
   const [detail, setDetail] = useState(null);
+  const [noteDraft, setNoteDraft] = useState("");
   const [edit, setEdit] = useState(null);
   const [selectOpen, setSelectOpen] = useState(false);
   const [threshold, setThreshold] = useState(75);
@@ -40,7 +41,19 @@ export default function AdminPpdb() {
 
   const updateStatus = async (id, status) => {
     await api.patch(`/ppdb/${id}?status=${status}`);
-    toast.success(`Status → ${status}`); load();
+    toast.success(`Status → ${status.replace("_", " ")}`); load();
+  };
+  const saveNote = async (id, notes) => {
+    try { await api.patch(`/ppdb/${id}?notes=${encodeURIComponent(notes)}`); toast.success("Catatan disimpan"); load(); }
+    catch { toast.error("Gagal menyimpan catatan"); }
+  };
+  const waNotify = (p) => {
+    const raw = (p.parent_phone || p.phone || "").replace(/\D/g, "");
+    if (!raw) return null;
+    const n = raw.startsWith("0") ? "62" + raw.slice(1) : raw;
+    const st = p.status === "lolos" ? "DINYATAKAN LOLOS" : p.status === "tidak_lolos" ? "dinyatakan BELUM LOLOS" : "sedang dalam proses seleksi";
+    const msg = `Halo ${p.parent_name || "Bapak/Ibu"}, hasil seleksi PPDB a.n. ${p.full_name} di SMA Negeri 1 Laguboti: ${st}.` + (p.notes ? ` Catatan: ${p.notes}.` : "") + ` Terima kasih.`;
+    return `https://wa.me/${n}?text=${encodeURIComponent(msg)}`;
   };
   const runAutoSelect = async () => {
     try {
@@ -134,7 +147,7 @@ export default function AdminPpdb() {
                     <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full border ${STATUS_STYLE[p.status] || STATUS_STYLE.pending}`}>{p.status.replace("_"," ")}</span>
                   </td>
                   <td className="px-4 py-3 text-right space-x-1">
-                    <button onClick={()=>setDetail(p)} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><Eye className="w-3.5 h-3.5"/></button>
+                    <button data-testid={`ppdb-detail-${p.id}`} onClick={()=>{setDetail(p); setNoteDraft(p.notes||"");}} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><Eye className="w-3.5 h-3.5"/></button>
                     <button onClick={()=>updateStatus(p.id,"lolos")} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200"><CheckCircle2 className="w-3.5 h-3.5"/></button>
                     <button onClick={()=>updateStatus(p.id,"tidak_lolos")} className="p-1.5 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200"><XCircle className="w-3.5 h-3.5"/></button>
                     {isSuper && <button data-testid={`ppdb-edit-${p.id}`} onClick={()=>setEdit({...p})} className="p-1.5 bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200"><Pencil className="w-3.5 h-3.5"/></button>}
@@ -181,13 +194,41 @@ export default function AdminPpdb() {
               <Row k="Asal Sekolah" v={detail.prev_school}/><Row k="NEM" v={detail.nem_avg}/>
               <Row k="Ortu" v={`${detail.parent_name} (${detail.parent_phone})`}/>
               <Row k="Email Ortu" v={detail.parent_email}/>
-              {detail.berkas_urls?.length > 0 && (
-                <div><p className="text-xs font-semibold uppercase text-slate-600 mb-1">Berkas</p>
-                  <div className="flex flex-wrap gap-2">
-                    {detail.berkas_urls.map((u,i)=>(<a key={i} href={u} target="_blank" rel="noreferrer"
-                      className="px-3 py-1.5 bg-sky-100 text-sky-700 rounded-lg text-xs font-semibold">Berkas #{i+1}</a>))}
+              <div><p className="text-xs font-semibold uppercase text-slate-600 mb-1">Berkas Dokumen (Rapor / Ijazah)</p>
+                {detail.berkas_urls?.length > 0 ? (
+                  <div className="flex flex-wrap gap-2" data-testid="ppdb-detail-docs">
+                    {detail.berkas_urls.map((u, i) => (<a key={i} href={u} target="_blank" rel="noreferrer"
+                      className="px-3 py-1.5 bg-sky-100 text-sky-700 rounded-lg text-xs font-semibold hover:bg-sky-200">📄 Dokumen #{i + 1}</a>))}
                   </div>
+                ) : <p className="text-xs text-slate-400 italic">Belum ada berkas yang diunggah.</p>}
+              </div>
+
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-xs font-semibold uppercase text-slate-600 mb-1.5">Ubah Status Seleksi</p>
+                <div className="flex gap-2 flex-wrap">
+                  {[["pending","Pending","bg-slate-100 text-slate-700"],["lolos","Lolos","bg-emerald-100 text-emerald-700"],["tidak_lolos","Tidak Lolos","bg-rose-100 text-rose-700"]].map(([s,l,c])=>(
+                    <button key={s} data-testid={`ppdb-detail-status-${s}`} onClick={async()=>{await updateStatus(detail.id,s); setDetail({...detail,status:s});}}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${detail.status===s?"ring-2 ring-offset-1 ring-slate-400 "+c:c} hover:opacity-80`}>{l}</button>
+                  ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold uppercase text-slate-600">Catatan / Alasan Penolakan</label>
+                <textarea data-testid="ppdb-detail-note" rows={2} value={noteDraft} onChange={e=>setNoteDraft(e.target.value)}
+                  placeholder="mis. Nilai di bawah passing grade, berkas tidak lengkap..."
+                  className="mt-1 w-full px-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:border-sky-500 outline-none"/>
+                <button data-testid="ppdb-detail-save-note" onClick={()=>{saveNote(detail.id, noteDraft); setDetail({...detail, notes: noteDraft});}}
+                  className="mt-2 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"><Save className="w-3.5 h-3.5"/>Simpan Catatan</button>
+              </div>
+
+              {waNotify(detail) ? (
+                <a data-testid="ppdb-detail-wa" href={waNotify(detail)} target="_blank" rel="noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 bg-emerald-500 text-white rounded-xl font-semibold hover:bg-emerald-600">
+                  <MessageCircle className="w-4 h-4"/>Kirim Notifikasi Status via WhatsApp
+                </a>
+              ) : (
+                <p className="text-xs text-amber-600 text-center">Nomor WhatsApp ortu/siswa belum tersedia untuk notifikasi.</p>
               )}
             </div>
           </div>
