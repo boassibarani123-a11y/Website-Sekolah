@@ -1,0 +1,34 @@
+{
+  "summary": "Comprehensive backend + frontend test of iter41 backlog features (Feedback, Pengumuman, Admin PPDB w/ Review+rejection-note, Pemilu OSIS edit/vote, Rapor Digital semester+summary+note, Achievements gallery filters/edit, Inventory borrow filters, regression on Jadwal/Schoolgram). Backend: 29/29 pytest cases PASSED in test_iter41_backlog.py — feedback submit (hides author_id, anonymous works), /feedback/mine, reviewer list+patch+delete, role gating (siswa→403 on /feedback), candidate CRUD (incl. anggota→400), vote blocked when status!=berlangsung + duplicate vote blocked, public /ppdb/register, PATCH rejection with note, reports-summary with valid & invalid semester (400), /reports/{sid} with valid & invalid semester (400), PUT /reports/{sid}/note persists & reload returns note, gallery POST/PATCH as kepsek. Frontend (super_admin): login OK, /feedback shows reviewer stats+search+filters, /announcements shows search+category filter, /admin-ppdb shows 2 registrants, detail modal has review & tidak_lolos buttons + note textarea; clicking Tidak Lolos with EMPTY note correctly shows toast and keeps modal open (verified). /elections shows status control (belum/berlangsung/selesai). /reports semester dropdown offers 'Ganjil 2026/2027' as 1st option and selection triggers summary reload. /achievements renders page. /inventory, /jadwal, /schoolgram, /dashboard all navigate without pageerrors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Reports / global", "issues": ["React hydration warning in console: '<span> cannot be a child of <option>' (originating from a Protected route render). Non-blocking but should be traced — likely a shadcn Select used inline somewhere expects <option> content as text, not <span>."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter41_backlog.py",
+    "/app/test_reports/pytest/iter41_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Investigate hydration warning about <span> child of <option> — scan recent select/option usages (likely in a sidebar/header dropdown rendered under Protected).",
+    "Gallery filters (gallery-filter-Semua/Prestasi/Kegiatan) and inventory borrow-filter-* only render when there is seed data (gallery items / in the 'requests' tab). Not a bug but worth noting for future auto-tests — seed data would improve coverage."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py is still ~5025 lines — long-standing refactor backlog.",
+    "DELETE /api/candidates/{cid} does not scope by dscope(user) (line 2783), unlike GET/PATCH. Minor: a ketua_osis of one tenant could potentially delete another tenant's candidate if multi-tenant is ever enabled.",
+    "Feedback POST returns the full doc with 'reply': None and 'status': 'baru'; good — author_id excluded on all response paths (verified).",
+    "Reports endpoints enforce semester format consistently (returns 400 for malformed strings). PUT /reports/{sid}/note also validates — good.",
+    "PPDB PATCH accepts any 'status' string without enum validation (line 3522-3531) — frontend restricts to pending/review/lolos/tidak_lolos but backend should also validate to prevent arbitrary values."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter41_backlog.py"],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "100% of pages loaded + feature testids verified"},
+  "test_credentials": "Super Admin — boassibarani123@gmail.com / Boas12345io. Tests also create ephemeral TEST_ siswa/guru/kepsek via /api/users (session-scoped).",
+  "seed_data_creation": "Session-scoped: 1 siswa (kelas X-1, TEST_Siswa_*), 1 guru wali X-1 (TEST_Guru_*), 1 kepsek (TEST_Kepsek_*), 1 PPDB registrant (TEST_Calon Siswa). Transient candidates and gallery items are deleted within tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use test_iter41_backlog.py as regression. Run with `-o addopts=` to disable xdist (session fixtures don't share across workers, pytest.ini currently sets '-n auto'). Known env quirks: no gallery items & inventory borrow requests in DB, so related testids only appear after seeding. Hydration warning (<span> child of <option>) is pre-existing — not from Reports.jsx.",
+  "rca of the issue": "N/A — no blocking issues found."
+}
