@@ -120,6 +120,7 @@ export default function AdminPpdb() {
           className="px-3 py-2 border-2 border-slate-200 rounded-xl">
           <option value="all">Semua Status</option>
           <option value="pending">Pending</option>
+          <option value="review">Review</option>
           <option value="lolos">Lolos</option>
           <option value="tidak_lolos">Tidak Lolos</option>
         </select>
@@ -148,8 +149,8 @@ export default function AdminPpdb() {
                   </td>
                   <td className="px-4 py-3 text-right space-x-1">
                     <button data-testid={`ppdb-detail-${p.id}`} onClick={()=>{setDetail(p); setNoteDraft(p.notes||"");}} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><Eye className="w-3.5 h-3.5"/></button>
-                    <button onClick={()=>updateStatus(p.id,"lolos")} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200"><CheckCircle2 className="w-3.5 h-3.5"/></button>
-                    <button onClick={()=>updateStatus(p.id,"tidak_lolos")} className="p-1.5 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200"><XCircle className="w-3.5 h-3.5"/></button>
+                    <button data-testid={`ppdb-quick-lolos-${p.id}`} onClick={()=>updateStatus(p.id,"lolos")} className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200"><CheckCircle2 className="w-3.5 h-3.5"/></button>
+                    <button data-testid={`ppdb-quick-tolak-${p.id}`} onClick={()=>{setDetail(p); setNoteDraft(p.notes||""); toast.info("Isi alasan penolakan, lalu klik Tidak Lolos");}} className="p-1.5 bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200"><XCircle className="w-3.5 h-3.5"/></button>
                     {isSuper && <button data-testid={`ppdb-edit-${p.id}`} onClick={()=>setEdit({...p})} className="p-1.5 bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200"><Pencil className="w-3.5 h-3.5"/></button>}
                     {isSuper && <button data-testid={`ppdb-del-${p.id}`} onClick={()=>delItem(p.id)} className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700"><Trash2 className="w-3.5 h-3.5"/></button>}
                   </td>
@@ -196,9 +197,13 @@ export default function AdminPpdb() {
               <Row k="Email Ortu" v={detail.parent_email}/>
               <div><p className="text-xs font-semibold uppercase text-slate-600 mb-1">Berkas Dokumen (Rapor / Ijazah)</p>
                 {detail.berkas_urls?.length > 0 ? (
-                  <div className="flex flex-wrap gap-2" data-testid="ppdb-detail-docs">
-                    {detail.berkas_urls.map((u, i) => (<a key={i} href={u} target="_blank" rel="noreferrer"
-                      className="px-3 py-1.5 bg-sky-100 text-sky-700 rounded-lg text-xs font-semibold hover:bg-sky-200">📄 Dokumen #{i + 1}</a>))}
+                  <div className="grid grid-cols-3 gap-2" data-testid="ppdb-detail-docs">
+                    {detail.berkas_urls.map((u, i) => (<a key={i} href={u} target="_blank" rel="noreferrer" data-testid={`ppdb-doc-${i}`}
+                      className="group block rounded-xl border-2 border-slate-200 hover:border-sky-400 overflow-hidden bg-slate-50">
+                      {/\.(jpe?g|png|webp)$/i.test(u)
+                        ? <img src={u} alt={`Dokumen ${i + 1}`} className="w-full h-20 object-cover group-hover:scale-105 transition-transform"/>
+                        : <div className="h-20 flex items-center justify-center text-2xl">📄</div>}
+                      <p className="text-[10px] font-semibold text-center py-1 text-sky-700">Dokumen #{i + 1}</p></a>))}
                   </div>
                 ) : <p className="text-xs text-slate-400 italic">Belum ada berkas yang diunggah.</p>}
               </div>
@@ -206,8 +211,11 @@ export default function AdminPpdb() {
               <div className="pt-3 border-t border-slate-100">
                 <p className="text-xs font-semibold uppercase text-slate-600 mb-1.5">Ubah Status Seleksi</p>
                 <div className="flex gap-2 flex-wrap">
-                  {[["pending","Pending","bg-slate-100 text-slate-700"],["lolos","Lolos","bg-emerald-100 text-emerald-700"],["tidak_lolos","Tidak Lolos","bg-rose-100 text-rose-700"]].map(([s,l,c])=>(
-                    <button key={s} data-testid={`ppdb-detail-status-${s}`} onClick={async()=>{await updateStatus(detail.id,s); setDetail({...detail,status:s});}}
+                  {[["pending","Pending","bg-slate-100 text-slate-700"],["review","Review","bg-sky-100 text-sky-700"],["lolos","Lolos","bg-emerald-100 text-emerald-700"],["tidak_lolos","Tidak Lolos","bg-rose-100 text-rose-700"]].map(([s,l,c])=>(
+                    <button key={s} data-testid={`ppdb-detail-status-${s}`} onClick={async()=>{
+                      if (s==="tidak_lolos" && !noteDraft.trim()) { toast.error("Isi alasan penolakan terlebih dahulu"); return; }
+                      if (s==="tidak_lolos" && noteDraft !== (detail.notes||"")) await saveNote(detail.id, noteDraft);
+                      await updateStatus(detail.id,s); setDetail({...detail,status:s,notes:noteDraft});}}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold ${detail.status===s?"ring-2 ring-offset-1 ring-slate-400 "+c:c} hover:opacity-80`}>{l}</button>
                   ))}
                 </div>

@@ -2,17 +2,25 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { FileText, Send, Printer, ArrowLeft, Download } from "lucide-react";
+import { FileText, Send, Printer, ArrowLeft, Download, Search } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
+import { ReportCharts, ReportNote, Completeness, semesterOptions } from "@/components/reports/ReportExtras";
 
 export default function Reports() {
   const { user } = useAuth();
+  const isStaff = ["guru","super_admin","kepsek"].includes(user.role);
+  const semesters = semesterOptions();
+  const [semester, setSemester] = useState(semesters[0]);
   const [students, setStudents] = useState([]);
   const [selected, setSelected] = useState(null);
   const [report, setReport] = useState(null);
+  const [summary, setSummary] = useState({});
+  const [q, setQ] = useState("");
+  const [kelasF, setKelasF] = useState("all");
+  const [incompleteOnly, setIncompleteOnly] = useState(false);
 
   useEffect(() => {
-    if (["guru","super_admin","kepsek"].includes(user.role)) {
+    if (isStaff) {
       api.get("/users?role=siswa").then(r => {
         const list = user.role === "guru" ? r.data.filter(s => s.kelas === user.kelas) : r.data;
         setStudents(list);
@@ -22,13 +30,22 @@ export default function Reports() {
     } else if (user.role === "orang_tua" && user.student_id) {
       loadReport(user.student_id);
     }
-  }, [user]);
+  }, [user]); // eslint-disable-line
+
+  useEffect(() => {
+    if (isStaff) api.get(`/reports-summary?semester=${encodeURIComponent(semester)}`).then(r => setSummary(r.data.items)).catch(() => {});
+    if (selected) loadReport(selected);
+  }, [semester]); // eslint-disable-line
 
   const loadReport = async (sid) => {
     setSelected(sid);
-    const r = await api.get(`/reports/${sid}`);
-    setReport(r.data);
+    try { const r = await api.get(`/reports/${sid}?semester=${encodeURIComponent(semester)}`); setReport(r.data); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal memuat rapor"); }
   };
+  const kelasList = [...new Set(students.map(s => s.kelas).filter(Boolean))].sort();
+  const shown = students.filter(s => (kelasF === "all" || s.kelas === kelasF) &&
+    (!q || `${s.name} ${s.nisn || ""}`.toLowerCase().includes(q.toLowerCase())) &&
+    (!incompleteOnly || (summary[s.id]?.completeness ?? 0) < 100));
   const emailIt = async () => {
     try {
       const r = await api.post(`/reports/${selected}/email`);
@@ -46,20 +63,43 @@ export default function Reports() {
     } catch (e) { toast.error("Gagal export ZIP"); }
   };
 
-  if (report && ["siswa","orang_tua"].includes(user.role)) return <ReportView report={report}/>;
+  const semSelect = (
+    <select data-testid="report-semester-select" value={semester} onChange={e=>setSemester(e.target.value)} className="px-3 py-2 border-2 border-slate-200 rounded-xl text-sm font-semibold no-print">
+      {semesters.map(s => <option key={s} value={s}>Semester {s}</option>)}
+    </select>
+  );
+
+  if (report && ["siswa","orang_tua"].includes(user.role)) return <div className="space-y-4" data-testid="reports-page"><div className="flex justify-end">{semSelect}</div><ReportView report={report}/></div>;
 
   return (
     <div className="space-y-6" data-testid="reports-page">
       {!selected ? (
         <>
-          <div>
-            <h1 className="font-heading text-3xl font-extrabold text-slate-900">📋 Rapor Digital</h1>
-            <p className="mt-1 text-sm text-slate-500">Rangkuman nilai tugas, quiz, dan presensi siswa {user.role==="guru"?`kelas ${user.kelas}`:""}</p>
+          <div className="flex items-start justify-between flex-wrap gap-3">
+            <div>
+              <h1 className="font-heading text-3xl font-extrabold text-slate-900">📋 Rapor Digital</h1>
+              <p className="mt-1 text-sm text-slate-500">Rangkuman nilai tugas, quiz, dan presensi siswa {user.role==="guru"?`kelas ${user.kelas}`:""}</p>
+            </div>
+            {semSelect}
+          </div>
+          <div className="flex flex-wrap gap-2 items-center" data-testid="report-filters">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"/>
+              <input data-testid="report-search-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Cari nama / NISN siswa..." className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:border-sky-500 outline-none"/>
+            </div>
+            {user.role !== "guru" && (
+              <select data-testid="report-kelas-filter" value={kelasF} onChange={e=>setKelasF(e.target.value)} className="px-3 py-2 border-2 border-slate-200 rounded-xl text-sm">
+                <option value="all">Semua Kelas</option>{kelasList.map(k=><option key={k} value={k}>{k}</option>)}
+              </select>
+            )}
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input data-testid="report-incomplete-toggle" type="checkbox" checked={incompleteOnly} onChange={e=>setIncompleteOnly(e.target.checked)} className="accent-sky-600"/>Belum lengkap saja
+            </label>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {students.map(s => (
+            {shown.map(s => (
               <button key={s.id} onClick={()=>loadReport(s.id)}
-                data-testid="open-report-button"
+                data-testid={`open-report-${s.id}`}
                 className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-sky-400 transition-all text-left">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold overflow-hidden">
@@ -71,18 +111,20 @@ export default function Reports() {
                     <p className="text-[10px] text-slate-400 mt-0.5">Ortu: {s.parent_email || "belum diisi"}</p>
                   </div>
                 </div>
+                <Completeness value={summary[s.id]?.completeness ?? 0}/>
               </button>
             ))}
-            {students.length===0 && <p className="text-slate-400 italic">Belum ada siswa.</p>}
+            {shown.length===0 && <p className="text-slate-400 italic">{students.length ? "Tidak ada siswa yang cocok." : "Belum ada siswa."}</p>}
           </div>
         </>
       ) : report && (
         <>
           <div className="flex items-center justify-between flex-wrap gap-3 no-print">
-            <button onClick={()=>{setSelected(null); setReport(null);}} className="inline-flex items-center gap-1.5 text-sm text-sky-600 font-semibold hover:text-sky-800">
+            <button data-testid="report-back-button" onClick={()=>{setSelected(null); setReport(null);}} className="inline-flex items-center gap-1.5 text-sm text-sky-600 font-semibold hover:text-sky-800">
               <ArrowLeft className="w-4 h-4"/>Daftar Siswa
             </button>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              {semSelect}
               <button onClick={()=>window.print()} className="px-3 py-2 bg-slate-100 rounded-lg font-semibold text-sm flex items-center gap-1.5"><Printer className="w-4 h-4"/>Print</button>
               {["guru","super_admin","kepsek"].includes(user.role) && (
                 <>
@@ -92,14 +134,14 @@ export default function Reports() {
               )}
             </div>
           </div>
-          <ReportView report={report}/>
+          <ReportView report={report} canNote onNoteSaved={()=>api.get(`/reports-summary?semester=${encodeURIComponent(semester)}`).then(r=>setSummary(r.data.items)).catch(()=>{})}/>
         </>
       )}
     </div>
   );
 }
 
-function ReportView({report}) {
+function ReportView({report, canNote = false, onNoteSaved}) {
   const { settings } = useSettings();
   const s = report.student;
   return (
@@ -125,6 +167,8 @@ function ReportView({report}) {
           <Stat label="Sakit" value={report.attendance.sakit} color="amber"/>
           <Stat label="Alpa" value={report.attendance.alpa} color="rose"/>
         </Section>
+        <ReportCharts report={report}/>
+        <ReportNote key={`${report.student.id}-${report.semester}`} report={report} canEdit={canNote} onSaved={onNoteSaved}/>
         <div className="pt-6 mt-4 border-t border-slate-200 text-xs text-slate-500 leading-relaxed">
           <p>Dokumen ini digenerasi otomatis oleh sistem <b>{settings.school_full_name}</b> pada {new Date(report.generated_at).toLocaleString("id-ID")}.
           Silakan hubungi wali kelas untuk klarifikasi lebih lanjut.</p>

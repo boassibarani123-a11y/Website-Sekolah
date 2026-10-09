@@ -2769,12 +2769,21 @@ async def add_candidate(body: CandidateIn, user=Depends(require_roles("super_adm
     await db.candidates.insert_one(doc); doc.pop("_id", None)
     return doc
 
+@api.patch("/candidates/{cid}")
+async def edit_candidate(cid: str, body: CandidateIn, user=Depends(require_roles("super_admin", "ketua_osis"))):
+    if body.position not in ("ketua", "wakil"):
+        raise HTTPException(400, "Posisi kandidat hanya Ketua atau Wakil.")
+    r = await db.candidates.update_one({"id": cid, **dscope(user)}, {"$set": {**body.model_dump(), "updated_at": now_iso()}})
+    if not r.matched_count:
+        raise HTTPException(404, "Kandidat tidak ditemukan")
+    return await db.candidates.find_one({"id": cid}, {"_id": 0})
+
 @api.delete("/candidates/{cid}")
 async def del_candidate(cid: str, user=Depends(require_roles("super_admin", "ketua_osis"))):
     await db.candidates.delete_one({"id": cid}); return {"ok": True}
 
 @api.post("/vote/{cid}")
-async def vote(cid: str, user=Depends(require_roles("siswa"))):
+async def vote(cid: str, user=Depends(require_roles("siswa", "ketua_kelas", "ketua_osis"))):
     cand = await db.candidates.find_one({"id": cid})
     if not cand: raise HTTPException(404, "Kandidat tidak ditemukan")
     cfg = await db.election_config.find_one({"_id": "main"})
@@ -2832,18 +2841,55 @@ class FeedbackIn(BaseModel):
     content: str
     anonymous: bool = False
 
+FEEDBACK_STATUSES = ("baru", "diproses", "selesai")
+
+class FeedbackUpdate(BaseModel):
+    status: Optional[str] = None
+    reply: Optional[str] = None
+
 @api.post("/feedback")
 async def add_feedback(body: FeedbackIn, user=Depends(get_current_user)):
+    if not body.content.strip():
+        raise HTTPException(400, "Isi masukan wajib diisi")
     doc = {"id": str(uuid.uuid4()), **body.model_dump(),
            "user_name": "Anonim" if body.anonymous else user["name"],
+           "author_id": user["id"], "status": "baru", "reply": None,
            "created_at": now_iso()}
     dstamp(doc, user)
-    await db.feedback.insert_one(doc); doc.pop("_id", None)
+    await db.feedback.insert_one(doc); doc.pop("_id", None); doc.pop("author_id", None)
     return doc
 
 @api.get("/feedback")
 async def list_feedback(user=Depends(require_roles("super_admin", "kepsek"))):
-    return await db.feedback.find(dscope(user), {"_id": 0}).sort("created_at", -1).to_list(500)
+    items = await db.feedback.find(dscope(user), {"_id": 0, "author_id": 0}).sort("created_at", -1).to_list(500)
+    for it in items:
+        it.setdefault("status", "baru")
+    return items
+
+@api.get("/feedback/mine")
+async def my_feedback(user=Depends(get_current_user)):
+    items = await db.feedback.find({"author_id": user["id"]}, {"_id": 0, "author_id": 0}).sort("created_at", -1).to_list(200)
+    for it in items:
+        it.setdefault("status", "baru")
+    return items
+
+@api.patch("/feedback/{fid}")
+async def update_feedback(fid: str, body: FeedbackUpdate, user=Depends(require_roles("super_admin", "kepsek"))):
+    fb = await db.feedback.find_one({"id": fid, **dscope(user)})
+    if not fb:
+        raise HTTPException(404, "Masukan tidak ditemukan")
+    upd = {"updated_at": now_iso()}
+    if body.status is not None:
+        if body.status not in FEEDBACK_STATUSES:
+            raise HTTPException(400, "Status tidak valid")
+        upd["status"] = body.status
+    if body.reply is not None:
+        upd.update({"reply": body.reply.strip() or None, "replied_by": user["name"], "replied_at": now_iso()})
+    await db.feedback.update_one({"id": fid}, {"$set": upd})
+    if fb.get("author_id") and (body.reply or body.status):
+        await notify([fb["author_id"]], "Tanggapan Kritik & Saran",
+                     (body.reply or f"Status: {body.status}")[:120], "/feedback")
+    return await db.feedback.find_one({"id": fid}, {"_id": 0, "author_id": 0})
 
 @api.delete("/feedback/{fid}")
 async def delete_feedback(fid: str, user=Depends(require_roles("super_admin", "kepsek"))):
@@ -3026,32 +3072,93 @@ async def reset_pw(body: ResetIn):
     return {"ok": True}
 
 # ---------------- REPORTS (Rapor Digital) ----------------
-async def build_report(student_id: str) -> dict:
+def current_semester() -> str:
+    d = datetime.now(timezone.utc) + timedelta(hours=7)
+    return f"Ganjil {d.year}/{d.year+1}" if d.month >= 7 else f"Genap {d.year-1}/{d.year}"
+
+def semester_range(sem: str):
+    m = re.match(r"^(Ganjil|Genap) (\d{4})/(\d{4})$", sem or "")
+    if not m:
+        raise HTTPException(400, "Format semester tidak valid")
+    y1, y2 = int(m.group(2)), int(m.group(3))
+    return (f"{y1}-07-01", f"{y1}-12-31~") if m.group(1) == "Ganjil" else (f"{y2}-01-01", f"{y2}-06-30~")
+
+def _in_range(val, rng):
+    return bool(val) and rng[0] <= str(val) <= rng[1]
+
+async def build_report(student_id: str, semester: Optional[str] = None) -> dict:
     student = await db.users.find_one({"id": student_id, "role": "siswa"}, {"password_hash": 0, "_id": 0})
     if not student: raise HTTPException(404, "Siswa tidak ditemukan")
-    # Assignments
-    subs = await db.submissions.find({"student_id": student_id}, {"_id": 0}).to_list(500)
+    semester = semester or current_semester()
+    rng = semester_range(semester)
+    subs = [s for s in await db.submissions.find({"student_id": student_id}, {"_id": 0}).to_list(500)
+            if _in_range(s.get("submitted_at"), rng)]
     grades = [s["grade"] for s in subs if s.get("grade") is not None]
     assign_avg = round(sum(grades)/len(grades), 2) if grades else None
-    # Quizzes
-    attempts = await db.quiz_attempts.find({"student_id": student_id}, {"_id": 0}).to_list(500)
+    titles = {a["id"]: a.get("title") for a in await db.assignments.find(
+        {"id": {"$in": [s["assignment_id"] for s in subs]}}, {"_id": 0, "id": 1, "title": 1}).to_list(500)}
+    attempts = [a for a in await db.quiz_attempts.find({"student_id": student_id}, {"_id": 0}).to_list(500)
+                if _in_range(a.get("submitted_at"), rng)]
     quiz_avg = round(sum(a["percent"] for a in attempts)/len(attempts), 2) if attempts else None
-    # Attendance
-    pipe = [{"$match": {"student_id": student_id}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
-    agg = await db.attendance.aggregate(pipe).to_list(10)
+    qtitles = {q["id"]: q.get("title") for q in await db.quizzes.find(
+        {"id": {"$in": [a["quiz_id"] for a in attempts]}}, {"_id": 0, "id": 1, "title": 1}).to_list(500)}
     att = {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0}
-    for r in agg: att[r["_id"]] = r["n"]
+    async for r in db.attendance.find({"student_id": student_id, "date": {"$gte": rng[0], "$lte": rng[1]}}, {"status": 1}):
+        if r.get("status") in att: att[r["status"]] += 1
+    note = await db.report_notes.find_one({"student_id": student_id, "semester": semester}, {"_id": 0})
     return {
-        "student": student, "semester": "Genap 2025/2026",
+        "student": student, "semester": semester,
         "assignments": {"count": len(subs), "graded": len(grades), "avg": assign_avg,
-                        "list": [{"title_id": s["assignment_id"], "grade": s.get("grade"), "submitted_at": s["submitted_at"]} for s in subs]},
+                        "list": [{"title_id": s["assignment_id"], "title": titles.get(s["assignment_id"]) or "Tugas",
+                                  "grade": s.get("grade"), "submitted_at": s["submitted_at"]} for s in subs]},
         "quizzes": {"count": len(attempts), "avg_percent": quiz_avg,
-                    "list": [{"quiz_id": a["quiz_id"], "score": a["score"], "total": a["total"], "percent": a["percent"]} for a in attempts]},
-        "attendance": att, "generated_at": now_iso(),
+                    "list": [{"quiz_id": a["quiz_id"], "title": qtitles.get(a["quiz_id"]) or "Quiz", "score": a["score"],
+                              "total": a["total"], "percent": a["percent"]} for a in attempts]},
+        "attendance": att, "note": note, "generated_at": now_iso(),
     }
 
+class ReportNoteIn(BaseModel):
+    semester: str
+    note: str
+
+@api.get("/reports-summary")
+async def reports_summary(semester: Optional[str] = None, user=Depends(require_roles("guru", "kepsek"))):
+    semester = semester or current_semester()
+    rng = semester_range(semester)
+    q = {"role": "siswa", **dscope(user)}
+    if user["role"] == "guru":
+        q["kelas"] = user.get("kelas") or "__none__"
+    students = await db.users.find(q, {"_id": 0, "id": 1}).to_list(3000)
+    ids = [s["id"] for s in students]
+    out = {i: {"submissions": 0, "graded": 0, "quizzes": 0, "attendance": 0, "has_note": False} for i in ids}
+    async for s in db.submissions.find({"student_id": {"$in": ids}}, {"student_id": 1, "grade": 1, "submitted_at": 1}):
+        if _in_range(s.get("submitted_at"), rng):
+            out[s["student_id"]]["submissions"] += 1
+            if s.get("grade") is not None: out[s["student_id"]]["graded"] += 1
+    async for a in db.quiz_attempts.find({"student_id": {"$in": ids}}, {"student_id": 1, "submitted_at": 1}):
+        if _in_range(a.get("submitted_at"), rng): out[a["student_id"]]["quizzes"] += 1
+    async for a in db.attendance.find({"student_id": {"$in": ids}, "date": {"$gte": rng[0], "$lte": rng[1]}}, {"student_id": 1}):
+        out[a["student_id"]]["attendance"] += 1
+    async for n in db.report_notes.find({"student_id": {"$in": ids}, "semester": semester}, {"student_id": 1}):
+        out[n["student_id"]]["has_note"] = True
+    for v in out.values():
+        v["completeness"] = int(sum([v["graded"] > 0, v["quizzes"] > 0, v["attendance"] > 0, v["has_note"]]) * 25)
+    return {"semester": semester, "items": out}
+
+@api.put("/reports/{student_id}/note")
+async def save_report_note(student_id: str, body: ReportNoteIn, user=Depends(require_roles("guru", "kepsek"))):
+    semester_range(body.semester)
+    s = await db.users.find_one({"id": student_id, "role": "siswa"})
+    if not s: raise HTTPException(404, "Siswa tidak ditemukan")
+    if user["role"] == "guru" and s.get("kelas") != user.get("kelas"):
+        raise HTTPException(403, "Bukan wali kelas siswa ini")
+    doc = {"student_id": student_id, "semester": body.semester, "note": body.note.strip(),
+           "author": user["name"], "updated_at": now_iso()}
+    await db.report_notes.update_one({"student_id": student_id, "semester": body.semester}, {"$set": doc}, upsert=True)
+    return doc
+
 @api.get("/reports/{student_id}")
-async def get_report(student_id: str, user=Depends(get_current_user)):
+async def get_report(student_id: str, semester: Optional[str] = None, user=Depends(get_current_user)):
     # Access: super_admin, kepsek, the siswa themselves, wali kelas (guru in same kelas), or linked orang_tua
     if user["role"] in ["super_admin", "kepsek"]: pass
     elif user["role"] == "siswa" and user["id"] == student_id: pass
@@ -3062,7 +3169,7 @@ async def get_report(student_id: str, user=Depends(get_current_user)):
             raise HTTPException(403, "Bukan wali kelas siswa ini")
     else:
         raise HTTPException(403, "Forbidden")
-    return await build_report(student_id)
+    return await build_report(student_id, semester)
 
 def _smtp_send_sync(to_email: str, subject: str, html: str) -> bool:
     import smtplib

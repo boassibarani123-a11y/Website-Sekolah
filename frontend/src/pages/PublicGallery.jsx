@@ -86,7 +86,7 @@ export default function PublicGallery() {
   );
 }
 
-export function GalleryCard({ item, onDelete }) {
+export function GalleryCard({ item, onDelete, onEdit }) {
   const isPrestasi = item.category === "Prestasi";
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow" data-testid="gallery-card">
@@ -97,6 +97,10 @@ export function GalleryCard({ item, onDelete }) {
         <span className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-bold ${isPrestasi ? "bg-amber-400 text-slate-900" : "bg-sky-500 text-white"}`}>
           {item.category}
         </span>
+        {onEdit && (
+          <button data-testid={`gallery-edit-${item.id}`} onClick={() => onEdit(item)}
+            className={`absolute top-3 ${onDelete ? "right-16" : "right-3"} px-2 py-1 rounded-lg bg-white/90 hover:bg-white text-slate-800 text-xs font-semibold`}>Edit</button>
+        )}
         {onDelete && (
           <button data-testid={`gallery-delete-${item.id}`} onClick={() => onDelete(item)}
             className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-semibold">Hapus</button>

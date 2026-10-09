@@ -3,7 +3,7 @@ import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { GalleryCard } from "@/pages/PublicGallery";
-import { Trophy, ClipboardCheck, BrainCircuit, Plus, Camera, X, Upload } from "lucide-react";
+import { Trophy, ClipboardCheck, BrainCircuit, Plus, Camera, X, Upload, Crown, Search } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const MANAGE_ROLES = ["super_admin", "kepsek", "staff_tu", "ketua_osis"];
@@ -11,9 +11,17 @@ const MANAGE_ROLES = ["super_admin", "kepsek", "staff_tu", "ketua_osis"];
 export default function Achievements() {
   const { user } = useAuth();
   const canManage = MANAGE_ROLES.includes(user.role);
+  const canDelete = ["super_admin", "kepsek", "staff_tu"].includes(user.role);
   const [data, setData] = useState({ most_diligent: [], top_academic: [] });
   const [gallery, setGallery] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [cat, setCat] = useState("Semua");
+  const [level, setLevel] = useState("");
+  const [q, setQ] = useState("");
+  const levels = [...new Set(gallery.map(g => g.level).filter(Boolean))];
+  const shownGallery = gallery.filter(g => (cat === "Semua" || g.category === cat) && (!level || g.level === level) &&
+    (!q || `${g.title} ${g.description}`.toLowerCase().includes(q.toLowerCase())));
 
   const loadGallery = () => api.get("/gallery").then(r => setGallery(r.data));
   useEffect(() => { api.get("/achievements").then(r => setData(r.data)); loadGallery(); }, []);
@@ -52,24 +60,44 @@ export default function Achievements() {
         )}
       </div>
 
+      {gallery.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="gallery-filters">
+          {["Semua", "Prestasi", "Kegiatan"].map(c => (
+            <button key={c} data-testid={`gallery-filter-${c}`} onClick={() => setCat(c)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${cat === c ? "bg-slate-900 text-white" : "bg-white border-2 border-slate-200 text-slate-600 hover:border-slate-400"}`}>{c}</button>
+          ))}
+          <select data-testid="gallery-level-filter" value={level} onChange={e => setLevel(e.target.value)} className="px-3 py-1.5 border-2 border-slate-200 rounded-xl text-sm">
+            <option value="">Semua Tingkat</option>{levels.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input data-testid="gallery-search-input" value={q} onChange={e => setQ(e.target.value)} placeholder="Cari prestasi / kegiatan..." className="w-full pl-9 pr-3 py-1.5 border-2 border-slate-200 rounded-xl text-sm focus:border-sky-500 outline-none" />
+          </div>
+        </div>
+      )}
+
       {gallery.length === 0 ? (
         <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center">
           <Camera className="w-9 h-9 text-slate-300 mx-auto" />
           <p className="mt-3 text-slate-500">Belum ada dokumentasi. {canManage && "Klik \"Tambah Dokumentasi\" untuk memulai."}</p>
         </div>
+      ) : shownGallery.length === 0 ? (
+        <p data-testid="gallery-no-result" className="text-center text-slate-400 py-8">Tidak ada item yang cocok dengan filter.</p>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {gallery.map(it => <GalleryCard key={it.id} item={it} onDelete={canManage ? removeItem : undefined} />)}
+          {shownGallery.map(it => <GalleryCard key={it.id} item={it} onDelete={canDelete ? removeItem : undefined} onEdit={canManage ? setEditItem : undefined} />)}
         </div>
       )}
 
       {showForm && <GalleryForm onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); loadGallery(); }} />}
+      {editItem && <GalleryForm initial={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); loadGallery(); }} />}
     </div>
   );
 }
 
-function GalleryForm({ onClose, onSaved }) {
-  const [form, setForm] = useState({ title: "", category: "Prestasi", level: "", date: "", description: "", image_url: "" });
+function GalleryForm({ onClose, onSaved, initial }) {
+  const isEdit = !!initial?.id;
+  const [form, setForm] = useState({ title: initial?.title || "", category: initial?.category || "Prestasi", level: initial?.level || "", date: initial?.date || "", description: initial?.description || "", image_url: initial?.image_url || "" });
   const [busy, setBusy] = useState(false);
   const upd = (k, v) => setForm({ ...form, [k]: v });
 
@@ -83,7 +111,8 @@ function GalleryForm({ onClose, onSaved }) {
   const save = async () => {
     if (!form.title.trim()) return toast.error("Judul wajib diisi");
     setBusy(true);
-    try { await api.post("/gallery", form); toast.success("Dokumentasi ditambahkan"); onSaved(); }
+    try { if (isEdit) await api.patch(`/gallery/${initial.id}`, form); else await api.post("/gallery", form);
+      toast.success(isEdit ? "Dokumentasi diperbarui" : "Dokumentasi ditambahkan"); onSaved(); }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal menyimpan"); }
     finally { setBusy(false); }
   };
@@ -93,7 +122,7 @@ function GalleryForm({ onClose, onSaved }) {
     <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4" data-testid="gallery-form-modal">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-slate-200">
-          <h3 className="font-heading font-bold text-slate-900">Tambah Dokumentasi</h3>
+          <h3 className="font-heading font-bold text-slate-900">{isEdit ? "Edit Dokumentasi" : "Tambah Dokumentasi"}</h3>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 space-y-4">
@@ -141,19 +170,40 @@ function GalleryForm({ onClose, onSaved }) {
 }
 
 function Board({ title, subtitle, icon: Icon, items, field, unit }) {
-  const medal = (i) => i === 0 ? "bg-amber-400 text-slate-900" : i === 1 ? "bg-slate-300 text-slate-900" : i === 2 ? "bg-amber-700 text-white" : "bg-slate-100 text-slate-600";
-  return <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+  const fmt = (it) => field === "avg" ? (it[field] || 0).toFixed(1) : it[field];
+  const podium = [items[1], items[0], items[2]];
+  const style = [
+    { h: "h-20", c: "from-slate-300 to-slate-400", rank: 2 },
+    { h: "h-28", c: "from-amber-300 to-amber-500", rank: 1 },
+    { h: "h-14", c: "from-amber-600 to-amber-800", rank: 3 },
+  ];
+  return <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid={`board-${field}`}>
     <div className="flex items-center gap-3 mb-4">
       <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center"><Icon className="w-5 h-5" /></div>
-      <div><h2 className="font-heading font-bold text-slate-900">{title}</h2><p className="text-xs text-slate-500">{subtitle}</p></div>
+      <div><h2 className="font-heading font-bold text-slate-900">{title}</h2><p className="text-xs text-slate-500">{subtitle} · Top 10</p></div>
     </div>
     {items.length === 0 && <p className="text-slate-400 italic text-sm">Belum ada data.</p>}
+    {items.length > 0 && (
+      <div className="grid grid-cols-3 gap-2 items-end mb-4" data-testid={`podium-${field}`}>
+        {podium.map((it, i) => (
+          <div key={i} className="flex flex-col items-center text-center">
+            {it ? <>
+              {style[i].rank === 1 && <Crown className="w-5 h-5 text-amber-500 mb-0.5" />}
+              <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${style[i].c} text-white font-black flex items-center justify-center shadow`}>{it.name?.[0] || "?"}</div>
+              <p className="mt-1 text-xs font-semibold text-slate-800 line-clamp-1">{it.name}</p>
+              <p className="text-[11px] font-bold text-slate-500">{fmt(it)}{unit}</p>
+            </> : <div className="h-16" />}
+            <div className={`mt-1 w-full ${style[i].h} rounded-t-xl bg-gradient-to-b ${style[i].c} flex items-start justify-center pt-1 text-white font-heading font-black text-lg`}>{style[i].rank}</div>
+          </div>
+        ))}
+      </div>
+    )}
     <div className="space-y-2">
-      {items.map((it, i) => (
+      {items.slice(3, 10).map((it, i) => (
         <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50">
-          <span className={`w-8 h-8 rounded-full font-black text-sm flex items-center justify-center border-2 border-white shadow ${medal(i)}`}>{i + 1}</span>
+          <span className="w-8 h-8 rounded-full font-black text-sm flex items-center justify-center border-2 border-white shadow bg-slate-100 text-slate-600">{i + 4}</span>
           <p className="flex-1 font-semibold text-sm">{it.name}</p>
-          <p className="font-heading font-bold text-slate-900">{field === "avg" ? (it[field] || 0).toFixed(1) : it[field]}<span className="text-xs text-slate-500 ml-1">{unit}</span></p>
+          <p className="font-heading font-bold text-slate-900">{fmt(it)}<span className="text-xs text-slate-500 ml-1">{unit}</span></p>
         </div>
       ))}
     </div>

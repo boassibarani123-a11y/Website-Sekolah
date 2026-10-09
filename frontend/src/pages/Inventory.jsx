@@ -30,6 +30,7 @@ export default function Inventory() {
   const [showAdd, setShowAdd] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [borrowFor, setBorrowFor] = useState(null);
+  const [reqF, setReqF] = useState("Semua");
   const [historyFor, setHistoryFor] = useState(null);
   const [tab, setTab] = useState("items");
   const [search, setSearch] = useState("");
@@ -163,8 +164,15 @@ export default function Inventory() {
 
       {tab==="requests" && (
         <div className="space-y-3">
+          <div className="flex gap-1.5 flex-wrap" data-testid="borrow-status-filter">
+            {["Semua","Menunggu Approval","Disetujui","Dikembalikan","Ditolak"].map(s=>(
+              <button key={s} data-testid={`borrow-filter-${s.replace(/\s/g,"-")}`} onClick={()=>setReqF(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${reqF===s?"bg-slate-900 text-white":"bg-white border-2 border-slate-200 text-slate-600 hover:border-slate-400"}`}>
+                {s==="Disetujui"?"Dipinjam":s} ({s==="Semua"?reqs.length:reqs.filter(r=>r.status===s).length})</button>
+            ))}
+          </div>
           {reqs.length===0 && <p className="text-slate-400 italic">Belum ada permintaan.</p>}
-          {reqs.map(r=>(
+          {reqs.filter(r=>reqF==="Semua"||r.status===reqF).map(r=>(
             <div key={r.id} data-testid={`borrow-request-${r.id}`} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
               <div className="min-w-0">
                 <p className="font-semibold text-slate-900">{r.item_name} <span className="text-slate-400 text-sm">× {r.quantity}</span></p>
@@ -193,12 +201,12 @@ export default function Inventory() {
                 })()}
                 {isStaff && r.status==="Menunggu Approval" && (
                   <>
-                    <button onClick={()=>approve(r.id,"Disetujui")} className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"><Check className="w-4 h-4"/></button>
-                    <button onClick={()=>approve(r.id,"Ditolak")} className="p-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700"><Ban className="w-4 h-4"/></button>
+                    <button data-testid={`borrow-approve-${r.id}`} onClick={()=>approve(r.id,"Disetujui")} className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"><Check className="w-4 h-4"/></button>
+                    <button data-testid={`borrow-reject-${r.id}`} onClick={()=>approve(r.id,"Ditolak")} className="p-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700"><Ban className="w-4 h-4"/></button>
                   </>
                 )}
                 {isStaff && r.status==="Disetujui" && (
-                  <button onClick={()=>approve(r.id,"Dikembalikan")} className="p-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700"><Undo2 className="w-4 h-4"/></button>
+                  <button data-testid={`borrow-return-${r.id}`} onClick={()=>approve(r.id,"Dikembalikan")} className="p-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700"><Undo2 className="w-4 h-4"/></button>
                 )}
               </div>
             </div>

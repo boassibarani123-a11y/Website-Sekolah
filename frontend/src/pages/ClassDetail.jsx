@@ -11,6 +11,7 @@ import { ClassKas } from "@/components/ClassKas";
 import { ClassUnlock } from "@/components/ClassUnlock";
 import { ClassBPH } from "@/components/ClassBPH";
 import { ClassExam } from "@/components/ClassExam";
+import { SafeHtml, stripHtml } from "@/lib/safeHtml";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -339,7 +340,7 @@ function TugasTab({ klass, subject, subjects, teachSubjects, isTeacher, isStuden
               )}
             </div>
             <h3 className="font-heading font-bold text-slate-900 mt-3">{a.title}</h3>
-            <p className="text-xs text-slate-500 mt-1 line-clamp-2 flex-1">{a.description}</p>
+            <p className="text-xs text-slate-500 mt-1 line-clamp-2 flex-1" data-testid={`assignment-desc-preview-${a.id}`}>{stripHtml(a.description) || "—"}</p>
             {(a.attachments||[]).length>0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">{a.attachments.map((att,i)=><AttachmentChip key={i} att={att}/>)}</div>
             )}
@@ -537,7 +538,7 @@ function AssignDetailModal({ assignment, isTeacher, isStudent, onClose }) {
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
         </div>
         <div className="p-5 space-y-4">
-          <p className="text-sm text-slate-700 whitespace-pre-wrap">{assignment.description}</p>
+          <SafeHtml html={assignment.description} className="text-sm text-slate-700" data-testid="assignment-detail-description"/>
           {(assignment.attachments||[]).length>0 && (
             <div>
               <p className="text-xs font-semibold uppercase text-slate-500 mb-1">Materi Tugas</p>

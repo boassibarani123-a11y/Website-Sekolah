@@ -39,6 +39,7 @@
     "cra-template": "1.2.0",
     "date-fns": "4.1.0",
     "dayjs": "1.11.13",
+    "dompurify": "^3.4.16",
     "embla-carousel-react": "8.6.0",
     "framer-motion": "11.18.0",
     "html2canvas": "^1.4.1",

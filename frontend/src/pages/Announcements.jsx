@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Megaphone, Plus, X, Pencil, Trash2, Pin, ImagePlus, Calendar } from "lucide-react";
+import { Megaphone, Plus, X, Pencil, Trash2, Pin, ImagePlus, Calendar, Search } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -24,6 +24,11 @@ export default function Announcements() {
   const isAdmin = user.role === "super_admin";
   const [list, setList] = useState([]);
   const [editing, setEditing] = useState(null); // null | EMPTY(new) | announcement(edit)
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("all");
+  const [scope, setScope] = useState("all");
+  const shown = list.filter(a => (cat === "all" || (a.category || "Umum") === cat) && (scope === "all" || a.scope === scope) &&
+    (!q || `${a.title} ${a.content} ${a.author}`.toLowerCase().includes(q.toLowerCase())));
 
   const load = () => api.get("/announcements").then(r => setList(r.data));
   useEffect(() => { load(); }, []);
@@ -53,15 +58,35 @@ export default function Announcements() {
         )}
       </div>
 
+      <div className="bg-white border border-slate-200 rounded-2xl p-3 flex flex-wrap items-center gap-2" data-testid="announcement-toolbar">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"/>
+          <input data-testid="announcement-search-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Cari judul, isi, atau penulis..."
+            className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:border-sky-500 outline-none"/>
+        </div>
+        <div className="flex gap-1.5 flex-wrap" data-testid="announcement-category-filter">
+          {[{ v: "all", l: "Semua", cls: "bg-slate-100 text-slate-700" }, ...CATEGORIES].map(c => (
+            <button key={c.v} data-testid={`announcement-filter-${c.v}`} onClick={()=>setCat(c.v)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${cat===c.v ? "bg-slate-900 text-white" : `${c.cls} hover:opacity-80`}`}>{c.l}</button>
+          ))}
+        </div>
+        <select data-testid="announcement-scope-filter" value={scope} onChange={e=>setScope(e.target.value)} className="px-3 py-2 border-2 border-slate-200 rounded-xl text-sm">
+          <option value="all">Semua Lingkup</option>{SCOPES.map(s=><option key={s.v} value={s.v}>{s.l}</option>)}
+        </select>
+      </div>
+
       {list.length === 0 && (
         <div className="bg-white p-12 rounded-2xl text-center border border-slate-200">
           <Megaphone className="w-12 h-12 text-slate-300 mx-auto mb-3"/>
           <p className="text-slate-500">Belum ada pengumuman.</p>
         </div>
       )}
+      {list.length > 0 && shown.length === 0 && (
+        <p data-testid="announcement-no-result" className="text-center text-slate-400 py-8">Tidak ada pengumuman yang cocok dengan filter.</p>
+      )}
 
       <div className="grid md:grid-cols-2 gap-5">
-        {list.map(a => (
+        {shown.map(a => (
           <article key={a.id} data-testid={`announcement-${a.id}`}
             className={`bg-white rounded-2xl shadow-sm overflow-hidden border transition-all hover:shadow-md ${a.pinned ? "border-sky-300 ring-1 ring-sky-200" : "border-slate-200"}`}>
             {a.image && (

@@ -3,6 +3,7 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { ClipboardList, Plus, X, Paperclip, Video, LinkIcon, Loader2 } from "lucide-react";
+import { SafeHtml } from "@/lib/safeHtml";
 
 const SUBJECTS = ["Matematika","Bahasa Indonesia","Bahasa Inggris","Fisika","Kimia","Biologi","Ekonomi","Geografi","Sejarah","Sosiologi","PKN","PAI","Seni Budaya","PJOK","Informatika","Prakarya"];
 
@@ -100,7 +101,7 @@ export default function Assignments() {
             <div className="flex items-center justify-between p-5 border-b"><h3 className="font-heading font-bold text-lg">{openFor.title}</h3>
               <button onClick={()=>setOpenFor(null)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button></div>
             <div className="p-5 space-y-4">
-              <div className="text-sm text-slate-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: openFor.description || "<i>Tidak ada keterangan.</i>" }} />
+              <SafeHtml html={openFor.description} className="text-sm text-slate-700" data-testid="assignment-open-description"/>
               <div className="flex flex-wrap gap-2 text-xs">
                 {openFor.subject && <span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 font-semibold">{openFor.subject}</span>}
                 {openFor.guru_name && <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">Guru: {openFor.guru_name}</span>}
