@@ -141,3 +141,6 @@ html.dark body { background-color: #0b1220; color: #e2e8f0; }
 .dark .hover\:bg-slate-50:hover { background-color: #1e293b !important; }
 .dark .hover\:bg-slate-100:hover { background-color: #334155 !important; }
 .dark input, .dark textarea, .dark select { background-color: #0f172a !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+
+@keyframes gateScan { 0%, 100% { top: 18%; } 50% { top: 82%; } }
+.gate-full { min-height: 100vh; border-radius: 0 !important; overflow-y: auto; }

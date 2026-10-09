@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash, ShieldAlert } from "lucide-react";
-import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { useAuth } from "@/context/AuthContext";
+import { GateDisplay } from "@/components/attendance/GateDisplay";
+import { StationPanel } from "@/components/attendance/StationPanel";
+import { useScannerInput, beep, getStation, todayWib } from "@/components/attendance/scannerUtils";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
-const ATTENDANCE_ROLES = ["siswa", "ketua_kelas", "ketua_osis", "super_admin"];
+const ATTENDANCE_ROLES = ["admin_absensi", "super_admin", "staff_tu", "kepsek"];
 
 export default function Attendance() {
   const { user } = useAuth();
@@ -19,13 +21,20 @@ export default function Attendance() {
   const [status, setStatus] = useState("hadir");
   const [scanning, setScanning] = useState(false);
   const [newId, setNewId] = useState(null);
+  const [station, setStation] = useState(getStation);
+  const [current, setCurrent] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [isFull, setIsFull] = useState(false);
   const scannerRef = useRef(null);
   const lockRef = useRef(false);
   const topRef = useRef(null);
+  const gateRef = useRef(null);
+  const clearRef = useRef(null);
 
   const load = () => {
-    api.get("/attendance/stats").then(r=>setStats(r.data)).catch(()=>{});
-    api.get("/attendance").then(r=>{
+    const d = todayWib();
+    api.get(`/attendance/stats?date=${d}`).then(r=>setStats(r.data)).catch(()=>{});
+    api.get(`/attendance?date=${d}`).then(r=>{
       setRows(r.data);
       const top = r.data[0]?.id;
       if (top && topRef.current && top !== topRef.current) {
@@ -44,13 +53,41 @@ export default function Attendance() {
 
   const submit = async (payload) => {
     try {
-      const r = await api.post("/attendance/scan", { ...payload, status });
+      const r = await api.post("/attendance/scan", { ...payload, status, station_id: station.id, station_name: station.name });
       setLastScan({ ...r.data.student, status, at: new Date(), proof: payload.photo || null });
       toast.success(`${r.data.student.name} - ${status.toUpperCase()}`);
       load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal absen");
     }
+  };
+
+  const gateScan = useCallback(async (code) => {
+    let res;
+    try {
+      const r = await api.post("/attendance/scan", { nisn: code, method: "barcode", status: "hadir", station_id: station.id, station_name: station.name });
+      res = { kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code };
+    } catch (e) {
+      res = { kind: "err", code, at: new Date().toISOString(), message: e.response?.data?.detail || "Gagal terhubung ke server" };
+    }
+    res.key = `${Date.now()}-${Math.random()}`;
+    beep(res.kind !== "err");
+    setCurrent(res);
+    setHistory(h => [res, ...h].slice(0, 8));
+    clearTimeout(clearRef.current);
+    clearRef.current = setTimeout(() => setCurrent(null), 4000);
+    if (res.kind === "ok") load();
+  }, [station]); // eslint-disable-line
+  useScannerInput(gateScan, !!isOperator);
+
+  useEffect(() => {
+    const onFs = () => setIsFull(document.fullscreenElement === gateRef.current);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => { document.removeEventListener("fullscreenchange", onFs); clearTimeout(clearRef.current); };
+  }, []);
+  const toggleFull = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else gateRef.current?.requestFullscreen?.().catch(() => toast.error("Layar penuh tidak didukung browser ini"));
   };
 
   // Capture a JPEG frame from the live scanner video (anti buddy-punching proof)
@@ -119,8 +156,8 @@ export default function Attendance() {
           </div>
           <h1 className="font-heading text-2xl font-extrabold text-slate-900 mt-4">Akses Presensi Tidak Tersedia</h1>
           <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-            Fitur presensi QR/Barcode hanya dapat digunakan oleh <b>siswa</b>.
-            Silakan masuk dengan akun siswa untuk melakukan absensi.
+            Halaman presensi gerbang hanya dapat dibuka oleh <b>Admin Absensi</b> atau admin sekolah.
+            Siswa melakukan presensi dengan men-scan barcode NISN di Kartu Pelajar pada alat scanner di gerbang.
           </p>
         </div>
       </div>
@@ -131,8 +168,8 @@ export default function Attendance() {
     <div className="space-y-6" data-testid="attendance-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi Barcode</h1>
-          <p className="mt-1 text-sm text-slate-500">Scan barcode NISN di Kartu Pelajar dengan alat USB atau input manual NISN · {stats?.date}</p>
+          <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi Gerbang</h1>
+          <p className="mt-1 text-sm text-slate-500">Scanner barcode di gerbang langsung mencatat kehadiran siswa · {stats?.date}</p>
         </div>
         {user?.role !== "siswa" && (
         <button data-testid="attendance-export-excel-button" onClick={exportXlsx}
@@ -140,6 +177,10 @@ export default function Attendance() {
           <Download className="w-4 h-4"/>Export Excel
         </button>
         )}
+      </div>
+
+      <div ref={gateRef} className={isFull ? "gate-full bg-slate-950" : ""}>
+        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull}/>
       </div>
 
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -193,7 +234,7 @@ export default function Attendance() {
             </div>
           )}
         </div>
-        <BarcodeScanner onScan={(code)=>submit({ nisn: code, method: "barcode" })}/>
+        <StationPanel station={station} setStation={setStation}/>
         </div>
       </div>
 
@@ -218,11 +259,11 @@ function LiveLog({ rows, newId }) {
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
               <th className="px-4 py-3">No</th><th className="px-4 py-3">Nama</th><th className="px-4 py-3">Kelas</th>
-              <th className="px-4 py-3">Waktu Scan</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Metode</th><th className="px-4 py-3">Bukti</th>
+              <th className="px-4 py-3">Waktu Scan</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Metode</th><th className="px-4 py-3">Perangkat</th><th className="px-4 py-3">Bukti</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length===0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400 italic" data-testid="attendance-log-empty">Belum ada absensi hari ini. Scan barcode NISN untuk mulai.</td></tr>}
+            {rows.length===0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400 italic" data-testid="attendance-log-empty">Belum ada absensi hari ini. Scan barcode NISN untuk mulai.</td></tr>}
             {rows.map((r,i)=>{
               const mb = methodBadge(r.method);
               return (
@@ -234,6 +275,7 @@ function LiveLog({ rows, newId }) {
                   <td className="px-4 py-3 font-mono-alt text-slate-600">{new Date(r.scanned_at).toLocaleTimeString("id-ID")}</td>
                   <td className="px-4 py-3"><span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full ${statusBadge(r.status)}`}>{r.status}</span></td>
                   <td className="px-4 py-3"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${mb.c}`}>{mb.t}</span></td>
+                  <td className="px-4 py-3 text-xs text-slate-600">{r.station_name || "—"}</td>
                   <td className="px-4 py-3">{r.photo ? <a href={r.photo} target="_blank" rel="noreferrer" data-testid={`attendance-photo-${r.id}`}><img src={r.photo} alt="bukti" className="w-9 h-9 rounded-lg object-cover border border-slate-200"/></a> : <span className="text-slate-300">—</span>}</td>
                 </tr>
               );

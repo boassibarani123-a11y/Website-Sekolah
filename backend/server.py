@@ -36,6 +36,7 @@ import hmac
 import random
 import bcrypt
 import jwt
+from pymongo.errors import DuplicateKeyError
 import httpx
 import requests
 import pandas as pd
@@ -1123,9 +1124,17 @@ class ScanIn(BaseModel):
     status: str = "hadir"  # hadir | izin | sakit | alpa
     photo: Optional[str] = None  # URL of webcam snapshot for anti-titip proof
     method: str = "qr"  # qr | barcode | manual
+    station_id: Optional[str] = Field(default=None, max_length=64)
+    station_name: Optional[str] = Field(default=None, max_length=40)
+
+class StationIn(BaseModel):
+    station_id: str = Field(min_length=4, max_length=64)
+    name: str = Field(min_length=1, max_length=40)
+
+SCAN_ROLES = ("staff_tu", "super_admin", "kepsek", "admin_absensi")
 
 @api.post("/attendance/scan")
-async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "super_admin", "kepsek", "admin_absensi"))):
+async def scan(body: ScanIn, user=Depends(require_roles(*SCAN_ROLES))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
     if body.method not in ("qr", "barcode", "manual"):
@@ -1140,18 +1149,46 @@ async def scan(body: ScanIn, user=Depends(require_roles("staff_tu", "super_admin
     student = await db.users.find_one(q)
     if not student:
         raise HTTPException(404, "NISN tidak dikenali" if body.nisn else "QR tidak dikenali")
-    today = datetime.now(timezone.utc).date().isoformat()
-    existing = await db.attendance.find_one({"student_id": student["id"], "date": today})
-    if existing:
-        upd = {"status": body.status, "scanned_at": now_iso(), "method": body.method}
-        if body.photo: upd["photo"] = body.photo
-        await db.attendance.update_one({"id": existing["id"]}, {"$set": upd})
-        return {"ok": True, "student": strip(student), "status": body.status, "updated": True}
+    if student.get("is_active") is False:
+        raise HTTPException(403, "Akun siswa dinonaktifkan")
+    today = _today_wib()
+    station = {"station_id": body.station_id, "station_name": (body.station_name or "").strip() or None}
     rec = {"id": str(uuid.uuid4()), "student_id": student["id"], "student_name": student["name"],
            "kelas": student.get("kelas"), "date": today, "status": body.status, "scanned_at": now_iso(),
-           "scanned_by": user["name"], "photo": body.photo, "method": body.method, "is_demo": bool(user.get("is_demo"))}
-    await db.attendance.insert_one(rec)
-    return {"ok": True, "student": strip(student), "status": body.status}
+           "scanned_by": user["name"], "photo": body.photo, "method": body.method, "is_demo": bool(user.get("is_demo")), **station}
+    # Atomic upsert so simultaneous scans from multiple gate scanners never create duplicates
+    try:
+        prev = await db.attendance.find_one_and_update(
+            {"student_id": student["id"], "date": today}, {"$setOnInsert": rec}, upsert=True)
+    except DuplicateKeyError:
+        prev = await db.attendance.find_one({"student_id": student["id"], "date": today})
+    if prev is None:
+        return {"ok": True, "student": strip(student), "status": body.status, "scanned_at": rec["scanned_at"]}
+    if prev.get("status") == body.status:
+        return {"ok": True, "student": strip(student), "status": body.status, "duplicate": True, "scanned_at": prev.get("scanned_at")}
+    upd = {"status": body.status, "scanned_at": now_iso(), "method": body.method, **station}
+    if body.photo: upd["photo"] = body.photo
+    await db.attendance.update_one({"id": prev["id"]}, {"$set": upd})
+    return {"ok": True, "student": strip(student), "status": body.status, "updated": True, "scanned_at": upd["scanned_at"]}
+
+@api.post("/attendance/stations/heartbeat")
+async def station_heartbeat(body: StationIn, user=Depends(require_roles(*SCAN_ROLES))):
+    await db.attendance_stations.update_one({"station_id": body.station_id}, {"$set": {
+        "station_id": body.station_id, "name": body.name.strip(), "operator": user["name"],
+        "last_seen": now_iso(), "is_demo": bool(user.get("is_demo"))}}, upsert=True)
+    return {"ok": True}
+
+@api.get("/attendance/stations")
+async def list_stations(user=Depends(require_roles(*SCAN_ROLES))):
+    today = _today_wib()
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
+    rows = await db.attendance_stations.find(dscope(user), {"_id": 0}).sort("name", 1).to_list(50)
+    counts = {r["_id"]: r["n"] for r in await db.attendance.aggregate([
+        {"$match": {"date": today, **dscope(user)}}, {"$group": {"_id": "$station_id", "n": {"$sum": 1}}}]).to_list(100)}
+    for r in rows:
+        r["online"] = r.get("last_seen", "") > cutoff
+        r["scans_today"] = counts.get(r["station_id"], 0)
+    return rows
 
 @api.get("/attendance")
 async def list_attendance(date: Optional[str] = None, kelas: Optional[str] = None, user=Depends(get_current_user)):
@@ -1163,7 +1200,7 @@ async def list_attendance(date: Optional[str] = None, kelas: Optional[str] = Non
 
 @api.get("/attendance/stats")
 async def att_stats(date: Optional[str] = None, user=Depends(get_current_user)):
-    date = date or datetime.now(timezone.utc).date().isoformat()
+    date = date or _today_wib()
     pipeline = [{"$match": {"date": date, **dscope(user)}}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
     total_siswa = await db.users.count_documents({"role": "siswa", **dscope(user)})
     agg = await db.attendance.aggregate(pipeline).to_list(100)
@@ -4135,7 +4172,23 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
     await db.users.create_index("qr_code")
-    await db.attendance.create_index([("student_id", 1), ("date", 1)])
+    await db.attendance_stations.create_index("station_id", unique=True)
+    # Migration: make (student_id, date) unique only when no duplicates exist (never deletes data)
+    try:
+        info = await db.attendance.index_information()
+        if "student_id_1_date_1" not in info:
+            await db.attendance.create_index([("student_id", 1), ("date", 1)])
+            info = await db.attendance.index_information()
+        if not info["student_id_1_date_1"].get("unique"):
+            dup = await db.attendance.aggregate([{"$group": {"_id": {"s": "$student_id", "d": "$date"}, "n": {"$sum": 1}}},
+                                                 {"$match": {"n": {"$gt": 1}}}, {"$limit": 1}]).to_list(1)
+            if not dup:
+                await db.attendance.drop_index("student_id_1_date_1")
+                await db.attendance.create_index([("student_id", 1), ("date", 1)], unique=True)
+            else:
+                logger.warning("attendance has duplicate (student_id,date) rows; unique index not applied")
+    except Exception as e:
+        logger.warning(f"attendance unique index migration skipped: {e}")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.password_reset_tokens.create_index("token_hash", unique=True)
     await db.password_reset_requests.create_index("created_at", expireAfterSeconds=900)
