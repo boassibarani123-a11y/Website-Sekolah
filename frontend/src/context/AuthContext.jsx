@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
     const r = await api.post("/auth/login", { email, password });
     setUser(r.data.user);
     return r.data.user;
+    return r.data.user;
   };
   const logout = async () => { await api.post("/auth/logout"); setUser(false); };
   return <AuthContext.Provider value={{ user, setUser, login, logout }}>{children}</AuthContext.Provider>;

@@ -48,7 +48,7 @@ export default function Reports() {
     (!incompleteOnly || (summary[s.id]?.completeness ?? 0) < 100));
   const emailIt = async () => {
     try {
-      const r = await api.post(`/reports/${selected}/email`);
+      const r = await api.post(`/reports/${selected}/email?semester=${encodeURIComponent(semester)}`);
       toast.success(`Rapor dikirim ke ${r.data.sent_to}`);
     } catch (e) { toast.error(e.response?.data?.detail || "Gagal kirim"); }
   };

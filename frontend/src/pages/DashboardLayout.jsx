@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 import AiAssistant from "@/components/AiAssistant";
@@ -16,6 +16,7 @@ const MENU = [
   { to: "/org-structure", label: "Struktur Organisasi", icon: Network, roles: "*" },
   { to: "/my-card", label: "Kartu Saya", icon: IdCard, roles: ["siswa","ketua_kelas","ketua_osis"] },
   { to: "/accounts", label: "Kelola Akun", icon: UsersRound, roles: ["super_admin"] },
+  { to: "/reset-requests", label: "Permintaan Reset", icon: KeyRound, roles: ["super_admin"] },
   { to: "/guru-staff", label: "Guru & Staff", icon: GraduationCap, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, roles: ["super_admin"] },
   { to: "/presentasi", label: "Presentasi", icon: PresentationIcon, roles: ["super_admin"] },

@@ -22,7 +22,8 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
-      await login(email, password);
+      const u = await login(email, password);
+      if (u?.must_change_password) { toast.info("Silakan ganti password sementara Anda"); nav("/change-password"); return; }
       toast.success("Selamat datang kembali!");
       nav("/");
     } catch (err) {

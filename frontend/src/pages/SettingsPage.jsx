@@ -5,6 +5,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { Settings as SettingsIcon, Save, Upload, Plus, Trash2, RotateCcw } from "lucide-react";
 import StudentIdCard from "@/components/StudentIdCard";
 import ImageCropDialog from "@/components/ImageCropDialog";
+import { EmailStatusCard } from "@/components/EmailStatusCard";
 
 export default function SettingsPage() {
   const { settings, refresh } = useSettings();
@@ -61,6 +62,8 @@ export default function SettingsPage() {
           <Save className="w-4 h-4"/>{busy ? "Menyimpan..." : "Simpan Perubahan"}
         </button>
       </div>
+
+      <EmailStatusCard/>
 
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="space-y-6">

@@ -24,7 +24,8 @@ import Announcements from "@/pages/Announcements";
 import Feedback from "@/pages/Feedback";
 import Analytics from "@/pages/Analytics";
 import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
+import ChangePassword from "@/pages/ChangePassword";
+import ResetRequests from "@/pages/ResetRequests";
 import PrintCards from "@/pages/PrintCards";
 import Reports from "@/pages/Reports";
 import Calendar from "@/pages/Calendar";
@@ -50,6 +51,7 @@ function Protected({ children }) {
   const { user } = useAuth();
   if (user === null) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="text-slate-400">Memuat...</div></div>;
   if (user === false) return <Navigate to="/login" replace />;
+  if (user.must_change_password) return <Navigate to="/change-password" replace />;
   return children;
 }
 
@@ -60,7 +62,8 @@ function AppInner() {
       <Routes>
         <Route path="/login" element={<Login/>}/>
         <Route path="/forgot-password" element={<ForgotPassword/>}/>
-        <Route path="/reset-password" element={<ResetPassword/>}/>
+        <Route path="/reset-password" element={<Navigate to="/forgot-password" replace/>}/>
+        <Route path="/change-password" element={<ChangePassword/>}/>
         <Route path="/ppdb" element={<PpdbPublic/>}/>
         <Route path="/struktur-organisasi" element={<PublicOrg/>}/>
         <Route path="/dokumentasi" element={<Documentation/>}/>
@@ -92,6 +95,7 @@ function AppInner() {
           <Route path="calendar" element={<Calendar/>}/>
           <Route path="admin-ppdb" element={<AdminPpdb/>}/>
           <Route path="settings" element={<SettingsPage/>}/>
+          <Route path="reset-requests" element={<ResetRequests/>}/>
           <Route path="my-card" element={<MyCard/>}/>
           <Route path="library" element={<Library/>}/>
           <Route path="attendance-recap" element={<AttendanceRecap/>}/>

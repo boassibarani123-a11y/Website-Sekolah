@@ -448,10 +448,17 @@ def verify_pw(pw: str, h: str) -> bool:
     except Exception:
         return False
 
-def create_token(user_id: str, email: str, role: str, minutes=60*24*7) -> str:
-    payload = {"sub": user_id, "email": email, "role": role,
+def create_token(user_id: str, email: str, role: str, minutes=60*24*7, tv: int = 0) -> str:
+    payload = {"sub": user_id, "email": email, "role": role, "tv": tv,
                "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes), "type": "access"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+# Paths a user with a pending forced password change may still call
+MUST_CHANGE_ALLOWED = ("/api/auth/me", "/api/auth/logout", "/api/auth/change-password", "/api/settings")
+
+def client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")) or "unknown"
 
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
@@ -470,6 +477,10 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"id": payload["sub"]}, {"password_hash": 0})
     if not user:
         raise HTTPException(401, "User not found")
+    if payload.get("tv", 0) != user.get("token_version", 0):
+        raise HTTPException(401, "Sesi berakhir karena password diubah. Silakan login kembali.")
+    if user.get("must_change_password") and not request.url.path.startswith(MUST_CHANGE_ALLOWED):
+        raise HTTPException(403, "Anda wajib mengganti password sementara terlebih dahulu.")
     user.pop("_id", None)
     return user
 
@@ -535,18 +546,64 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 # ---------------- AUTH ----------------
-@api.post("/auth/login")
-async def login(body: LoginIn, response: Response):
-    email = body.email.lower()
-    user = await db.users.find_one({"email": email})
-    if not user or not verify_pw(body.password, user["password_hash"]):
-        raise HTTPException(401, "Email atau password salah")
-    if user.get("is_active") is False:
-        raise HTTPException(403, "Akun Anda dinonaktifkan. Hubungi administrator sekolah.")
-    token = create_token(user["id"], user["email"], user["role"])
+LOGIN_MAX_FAILS, LOGIN_LOCK_MIN = 5, 15
+
+def set_auth_cookie(response: Response, user: dict) -> str:
+    token = create_token(user["id"], user["email"], user["role"], tv=user.get("token_version", 0))
     response.set_cookie("access_token", token, httponly=True, secure=True,
                         samesite="none", max_age=60*60*24*7, path="/")
+    return token
+
+@api.post("/auth/login")
+async def login(body: LoginIn, request: Request, response: Response):
+    email = body.email.lower()
+    ident = f"{client_ip(request)}:{email}"
+    now = datetime.now(timezone.utc)
+    att = await db.login_attempts.find_one({"identifier": ident})
+    if att and att.get("locked_until") and att["locked_until"] > now.isoformat():
+        raise HTTPException(429, f"Terlalu banyak percobaan login gagal. Coba lagi dalam {LOGIN_LOCK_MIN} menit.")
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_pw(body.password, user["password_hash"]):
+        fails = (att or {}).get("count", 0) + 1
+        upd = {"count": fails, "updated_at": now}
+        if fails >= LOGIN_MAX_FAILS:
+            upd.update({"count": 0, "locked_until": (now + timedelta(minutes=LOGIN_LOCK_MIN)).isoformat()})
+            await audit("login_locked", None, user["id"] if user else None, request, {"email": email})
+        await db.login_attempts.update_one({"identifier": ident}, {"$set": upd}, upsert=True)
+        raise HTTPException(401, "Email atau password salah")
+    await db.login_attempts.delete_one({"identifier": ident})
+    if user.get("is_active") is False:
+        raise HTTPException(403, "Akun Anda dinonaktifkan. Hubungi administrator sekolah.")
+    if user.get("must_change_password") and (user.get("temp_password_expires_at") or "") < now.isoformat():
+        raise HTTPException(403, "Password sementara sudah kedaluwarsa. Ajukan permintaan reset baru melalui halaman Lupa Password.")
+    token = set_auth_cookie(response, user)
     return {"token": token, "user": strip(user)}
+
+class ChangePwIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+def password_policy_error(pw: str) -> Optional[str]:
+    if len(pw) < 8: return "Password minimal 8 karakter"
+    if not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw): return "Password harus mengandung huruf dan angka"
+    return None
+
+@api.post("/auth/change-password")
+async def change_password(body: ChangePwIn, request: Request, response: Response, user=Depends(get_current_user)):
+    full = await db.users.find_one({"id": user["id"]})
+    if not verify_pw(body.current_password, full["password_hash"]):
+        raise HTTPException(400, "Password saat ini salah")
+    err = password_policy_error(body.new_password)
+    if err: raise HTTPException(400, err)
+    if verify_pw(body.new_password, full["password_hash"]):
+        raise HTTPException(400, "Password baru tidak boleh sama dengan password lama")
+    await db.users.update_one({"id": user["id"]}, {
+        "$set": {"password_hash": hash_pw(body.new_password), "must_change_password": False, "password_changed_at": now_iso()},
+        "$unset": {"temp_password_expires_at": ""}, "$inc": {"token_version": 1}})
+    await audit("password_changed", user["id"], user["id"], request, {"forced": bool(full.get("must_change_password"))})
+    fresh = await db.users.find_one({"id": user["id"]})
+    set_auth_cookie(response, fresh)
+    return {"ok": True, "user": strip(fresh)}
 
 @api.post("/auth/logout")
 async def logout(response: Response):
@@ -598,11 +655,12 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
 @api.patch("/users/{uid}")
 async def update_user(uid: str, body: UserUpdate, user=Depends(require_roles("super_admin"))):
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
-    if "password" in upd:
+    pw_changed = "password" in upd
+    if pw_changed:
         upd["password_hash"] = hash_pw(upd.pop("password"))
     if "role" in upd and upd["role"] not in ROLES:
         raise HTTPException(400, "Role tidak valid")
-    await db.users.update_one({"id": uid}, {"$set": upd})
+    await db.users.update_one({"id": uid}, {"$set": upd, **({"$inc": {"token_version": 1}} if pw_changed and uid != user["id"] else {})})
     doc = await db.users.find_one({"id": uid}, {"password_hash": 0, "_id": 0})
     return doc
 
@@ -1770,13 +1828,20 @@ async def submissions_status(assignment_id: str, user=Depends(get_current_user))
     }
 
 @api.patch("/submissions/{sid}/grade")
-async def grade_sub(sid: str, grade: float, user=Depends(require_roles("guru", "super_admin"))):
+async def grade_sub(sid: str, grade: float, bg: BackgroundTasks, user=Depends(require_roles("guru", "super_admin"))):
     await db.submissions.update_one({"id": sid}, {"$set": {"grade": grade}})
     sub = await db.submissions.find_one({"id": sid})
     if sub and sub.get("student_id"):
         assign = await db.assignments.find_one({"id": sub["assignment_id"]})
+        title = assign["title"] if assign else ""
         await notify([sub["student_id"]], "Tugas dinilai",
-                     f"Tugas '{assign['title'] if assign else ''}' mendapat nilai {grade}", "/assignments")
+                     f"Tugas '{title}' mendapat nilai {grade}", "/assignments")
+        st = await db.users.find_one({"id": sub["student_id"]}, {"name": 1, "parent_email": 1, "parent_name": 1})
+        if st and st.get("parent_email"):
+            bg.add_task(send_email, st["parent_email"], f"Nilai Baru - {st['name']}", email_card(
+                "Pemberitahuan Nilai", escape(title) or "Tugas",
+                f"<p>Yth. {escape(st.get('parent_name') or 'Orang Tua/Wali')},</p><p>Tugas <b>{escape(title)}</b> milik "
+                f"<b>{escape(st['name'])}</b> telah dinilai oleh {escape(user['name'])} dengan nilai <b style=\"font-size:18px\">{grade:g}</b>.</p>"))
     return {"ok": True}
 
 # ---------------- SUBJECTS (Master Mapel) ----------------
@@ -3015,61 +3080,121 @@ async def analytics(user=Depends(require_roles("kepsek", "super_admin"))):
     return {"trend": trend, "quiz_distribution": buckets, "class_ranking": ranking}
 
 # ---------------- PASSWORD RESET ----------------
+# Admin-approved flow (no email): request -> pending -> admin verifies identity
+# -> approve issues a one-time temporary password (30 min) that must be changed on login.
+TEMP_PW_MINUTES = 30
+RESET_GENERIC_MSG = ("Permintaan reset telah dicatat. Silakan hubungi admin/TU sekolah dengan membawa "
+                     "identitas diri untuk verifikasi. Admin akan memberikan password sementara secara langsung.")
+
 class ForgotIn(BaseModel):
     email: EmailStr
+    identifier: str = Field(min_length=4, max_length=30)
+    note: str = Field(default="", max_length=300)
 
-class ResetIn(BaseModel):
-    token: str
-    password: str
+class ResetApproveIn(BaseModel):
+    identity_verified: bool
+    verification_method: str = Field(min_length=3, max_length=100)
 
-async def send_reset_email(to_email: str, token: str):
-    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
-    link = f"{base}/reset-password?token={token}"
-    from_name = os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU")
-    brand = escape(from_name)
-    html = (f'<div style="font-family:Arial;padding:24px;max-width:560px;margin:auto">'
-            f'<h2 style="color:#0284C7">Reset Password {brand}</h2>'
-            f'<p>Halo, kami menerima permintaan reset password untuk akun Anda di <b>{brand}</b>.</p>'
-            f'<p><a href="{escape(link)}" style="display:inline-block;padding:12px 24px;background:#0F172A;color:white;text-decoration:none;border-radius:8px">Reset Password Saya</a></p>'
-            f'<p style="color:#64748B;font-size:12px">Link berlaku 1 jam dan hanya bisa dipakai sekali. '
-            f'Abaikan email ini jika Anda tidak meminta reset — password Anda tetap aman.</p>'
-            f'<p style="color:#94A3B8;font-size:11px;margin-top:24px">— Tim {brand}. Kami tidak pernah meminta password lewat email.</p></div>')
-    return await send_email(to_email, f"Reset password {from_name}", html)
+class ResetRejectIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=300)
+
+async def audit(action: str, actor_id: Optional[str], target_id: Optional[str], request: Optional[Request], meta: Optional[dict] = None):
+    await db.audit_logs.insert_one({"id": str(uuid.uuid4()), "action": action, "actor_id": actor_id, "target_user_id": target_id,
+                                    "ip": client_ip(request) if request else None, "meta": meta or {}, "created_at": now_iso()})
+
+def _norm_ident(v: Optional[str]) -> str:
+    d = re.sub(r"[^0-9A-Za-z]", "", v or "").lower()
+    return "0" + d[2:] if d.startswith("62") and d.isdigit() else d
+
+def _mask(v: str) -> str:
+    return ("*" * max(len(v) - 3, 0)) + v[-3:]
+
+def gen_temp_password() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    while True:
+        pw = "".join(secrets.choice(alphabet) for _ in range(12))
+        if re.search(r"[A-Za-z]", pw) and re.search(r"\d", pw):
+            return pw
 
 @api.post("/auth/forgot-password")
-async def forgot(body: ForgotIn, bg: BackgroundTasks):
+async def forgot(body: ForgotIn, request: Request):
     email = body.email.lower()
+    ip = client_ip(request)
     now = datetime.now(timezone.utc)
-    recent = await db.password_reset_requests.count_documents(
-        {"email": email, "created_at": {"$gt": (now - timedelta(minutes=15)).isoformat()}})
-    await db.password_reset_requests.insert_one({"email": email, "created_at": now.isoformat()})
-    if recent >= 5:
-        return {"message": "Jika email terdaftar, tautan reset telah dikirim."}
+    since = now - timedelta(minutes=15)
+    by_email = await db.password_reset_requests.count_documents({"email": email, "ts": {"$gt": since}})
+    by_ip = await db.password_reset_requests.count_documents({"ip": ip, "ts": {"$gt": now - timedelta(hours=1)}})
+    if by_email >= 3 or by_ip >= 10:
+        raise HTTPException(429, "Terlalu banyak permintaan. Coba lagi beberapa saat lagi.")
+    await db.password_reset_requests.insert_one({"email": email, "ip": ip, "ts": now})
     user = await db.users.find_one({"email": email})
-    if user:
-        raw = secrets.token_urlsafe(32)
-        h = hashlib.sha256(raw.encode()).hexdigest()
-        await db.password_reset_tokens.insert_one({
-            "token_hash": h, "user_id": user["id"], "email": user["email"],
-            "expires_at": (now + timedelta(hours=1)).isoformat(), "used": False})
-        bg.add_task(send_reset_email, user["email"], raw)
-    return {"message": "Jika email terdaftar, tautan reset telah dikirim."}
+    if not user or user.get("is_active") is False:
+        return {"message": RESET_GENERIC_MSG}
+    given = _norm_ident(body.identifier)
+    match = bool(given) and given in {_norm_ident(user.get(k)) for k in ("nisn", "nip", "phone") if user.get(k)}
+    fields = {"identity_match": match, "identifier_hint": _mask(given), "note": body.note.strip(),
+              "ip": ip, "updated_at": now_iso()}
+    existing = await db.reset_requests.find_one({"user_id": user["id"], "status": "pending"})
+    if existing:
+        await db.reset_requests.update_one({"id": existing["id"]}, {"$set": fields})
+        rid = existing["id"]
+    else:
+        rid = str(uuid.uuid4())
+        await db.reset_requests.insert_one({"id": rid, "user_id": user["id"], "email": user["email"], "name": user["name"],
+                                            "role": user["role"], "kelas": user.get("kelas"), "status": "pending",
+                                            "created_at": now_iso(), "is_demo": bool(user.get("is_demo")), **fields})
+        admins = [u["id"] for u in await db.users.find({"role": "super_admin"}, {"id": 1}).to_list(20)]
+        await notify(admins, "🔑 Permintaan Reset Password", f"{user['name']} ({user['email']}) meminta reset password", "/reset-requests")
+    await audit("reset_requested", None, user["id"], request, {"request_id": rid, "identity_match": match})
+    return {"message": RESET_GENERIC_MSG}
 
-@api.post("/auth/reset-password")
-async def reset_pw(body: ResetIn):
-    h = hashlib.sha256(body.token.encode()).hexdigest()
-    now = datetime.now(timezone.utc).isoformat()
-    rec = await db.password_reset_tokens.find_one_and_update(
-        {"token_hash": h, "used": False, "expires_at": {"$gt": now}},
-        {"$set": {"used": True}})
-    if not rec:
-        raise HTTPException(400, "Token tidak valid atau sudah kedaluwarsa")
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password minimal 6 karakter")
-    await db.users.update_one({"id": rec["user_id"]},
-                              {"$set": {"password_hash": hash_pw(body.password)}})
-    await db.password_reset_tokens.delete_many({"user_id": rec["user_id"], "used": False})
+@api.get("/admin/reset-requests")
+async def list_reset_requests(status: Optional[str] = None, user=Depends(require_roles("super_admin"))):
+    q = {**dscope(user)}
+    if status: q["status"] = status
+    return await db.reset_requests.find(q, {"_id": 0, "ip": 0}).sort("created_at", -1).to_list(500)
+
+@api.post("/admin/reset-requests/{rid}/approve")
+async def approve_reset(rid: str, body: ResetApproveIn, request: Request, user=Depends(require_roles("super_admin"))):
+    if not body.identity_verified:
+        raise HTTPException(400, "Konfirmasi bahwa identitas pengguna sudah diverifikasi")
+    req = await db.reset_requests.find_one({"id": rid, **dscope(user)})
+    if not req: raise HTTPException(404, "Permintaan tidak ditemukan")
+    if req["user_id"] == user["id"]:
+        raise HTTPException(403, "Tidak dapat menyetujui permintaan reset akun sendiri")
+    req = await db.reset_requests.find_one_and_update(
+        {"id": rid, "status": "pending"},
+        {"$set": {"status": "approved", "processed_by": user["name"], "processed_by_id": user["id"],
+                  "verification_method": body.verification_method.strip(), "processed_at": now_iso()}})
+    if not req: raise HTTPException(409, "Permintaan sudah diproses sebelumnya")
+    temp = gen_temp_password()
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=TEMP_PW_MINUTES)).isoformat()
+    await db.users.update_one({"id": req["user_id"]}, {
+        "$set": {"password_hash": hash_pw(temp), "must_change_password": True, "temp_password_expires_at": expires},
+        "$inc": {"token_version": 1}})
+    await audit("reset_approved", user["id"], req["user_id"], request,
+                {"request_id": rid, "verification_method": body.verification_method.strip()})
+    return {"ok": True, "temp_password": temp, "expires_at": expires, "email": req["email"]}
+
+@api.post("/admin/reset-requests/{rid}/reject")
+async def reject_reset(rid: str, body: ResetRejectIn, request: Request, user=Depends(require_roles("super_admin"))):
+    req = await db.reset_requests.find_one_and_update(
+        {"id": rid, "status": "pending", **dscope(user)},
+        {"$set": {"status": "rejected", "reject_reason": body.reason.strip(), "processed_by": user["name"],
+                  "processed_by_id": user["id"], "processed_at": now_iso()}})
+    if not req: raise HTTPException(409, "Permintaan tidak ditemukan atau sudah diproses")
+    await audit("reset_rejected", user["id"], req["user_id"], request, {"request_id": rid})
     return {"ok": True}
+
+@api.get("/admin/audit-logs")
+async def list_audit_logs(limit: int = 100, user=Depends(require_roles("super_admin"))):
+    logs = await db.audit_logs.find({}, {"_id": 0}).sort("created_at", -1).to_list(min(max(limit, 1), 500))
+    ids = {i for lg in logs for i in (lg.get("actor_id"), lg.get("target_user_id")) if i}
+    names = {u["id"]: u["name"] for u in await db.users.find({"id": {"$in": list(ids)}}, {"id": 1, "name": 1}).to_list(1000)}
+    for lg in logs:
+        lg["actor_name"] = names.get(lg.get("actor_id"))
+        lg["target_name"] = names.get(lg.get("target_user_id"))
+    return logs
 
 # ---------------- REPORTS (Rapor Digital) ----------------
 def current_semester() -> str:
@@ -3202,6 +3327,39 @@ def _smtp_send_sync(to_email: str, subject: str, html: str) -> bool:
             srv.sendmail(from_email, [to_email], msg.as_string())
     return True
 
+def email_card(title: str, subtitle: str, body_html: str) -> str:
+    brand = escape(os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU"))
+    return (f'<div style="font-family:Arial;padding:24px;max-width:600px;margin:auto;background:#F8FAFC">'
+            f'<div style="background:#0284C7;color:white;padding:24px;border-radius:16px 16px 0 0">'
+            f'<h2 style="margin:0">{brand} - {escape(title)}</h2>'
+            f'<p style="margin:4px 0 0;opacity:.85;font-size:13px">{escape(subtitle)}</p></div>'
+            f'<div style="background:white;padding:24px;border-radius:0 0 16px 16px;border:1px solid #E2E8F0;font-size:14px;color:#0F172A">'
+            f'{body_html}<p style="margin-top:20px;color:#64748B;font-size:12px">Email ini dikirim otomatis oleh sistem {brand}. '
+            f'Mohon tidak membalas email ini.</p></div></div>')
+
+PPDB_STATUS_LABEL = {"pending": "Menunggu Verifikasi", "review": "Sedang Direview", "lolos": "LOLOS SELEKSI", "tidak_lolos": "Tidak Lolos"}
+
+class EmailTestIn(BaseModel):
+    to: EmailStr
+
+@api.get("/email/status")
+async def email_status(user=Depends(require_roles("super_admin"))):
+    host = os.environ.get("SMTP_HOST", "").strip()
+    return {"configured": bool(host), "host": host or None,
+            "from": os.environ.get("SMTP_FROM", "").strip() or os.environ.get("SMTP_USER", "").strip() or None,
+            "from_name": os.environ.get("EMAIL_FROM_NAME", "SEKOLAHKU")}
+
+@api.post("/email/test")
+async def email_test(body: EmailTestIn, user=Depends(require_roles("super_admin"))):
+    if not os.environ.get("SMTP_HOST", "").strip():
+        raise HTTPException(400, "SMTP belum dikonfigurasi")
+    html = email_card("Tes Email", "Konfigurasi SMTP", "<p>Selamat! Pengaturan email server sudah berfungsi dengan baik.</p>")
+    try:
+        await asyncio.to_thread(_smtp_send_sync, body.to, "Tes Email Sistem Sekolah", html)
+    except Exception as e:
+        raise HTTPException(400, f"Gagal mengirim: {e}")
+    return {"ok": True, "sent_to": body.to}
+
 async def send_email(to_email: str, subject: str, html: str) -> bool:
     """Send email via standard SMTP (set SMTP_HOST/PORT/USER/PASSWORD/SMTP_FROM).
     Returns False (logs a warning) when SMTP is not configured, so core
@@ -3224,8 +3382,8 @@ async def send_email(to_email: str, subject: str, html: str) -> bool:
         return False
 
 @api.post("/reports/{student_id}/email")
-async def email_report(student_id: str, bg: BackgroundTasks, user=Depends(require_roles("guru", "kepsek", "super_admin"))):
-    report = await build_report(student_id)
+async def email_report(student_id: str, bg: BackgroundTasks, semester: Optional[str] = None, user=Depends(require_roles("guru", "kepsek", "super_admin"))):
+    report = await build_report(student_id, semester)
     s = report["student"]
     to = s.get("parent_email")
     if not to: raise HTTPException(400, "Email orang tua belum diisi pada profil siswa")
@@ -3237,6 +3395,8 @@ async def email_report(student_id: str, bg: BackgroundTasks, user=Depends(requir
         rows_html += f'<tr><td style="padding:8px;border-bottom:1px solid #E2E8F0">Rata-rata Mini-Quiz</td><td style="padding:8px;border-bottom:1px solid #E2E8F0;text-align:right;font-weight:700">{report["quizzes"]["avg_percent"]}%</td></tr>'
     for k, v in report["attendance"].items():
         rows_html += f'<tr><td style="padding:8px;border-bottom:1px solid #E2E8F0;text-transform:capitalize">{k}</td><td style="padding:8px;border-bottom:1px solid #E2E8F0;text-align:right">{v} hari</td></tr>'
+    note_html = (f'<p style="margin-top:16px;padding:12px;background:#FFFBEB;border-radius:8px"><b>Catatan Wali Kelas:</b><br>{escape(report["note"]["note"])}</p>'
+                 if report.get("note") and report["note"].get("note") else "")
     html = (f'<div style="font-family:Arial;padding:24px;max-width:600px;margin:auto;background:#F8FAFC">'
             f'<div style="background:linear-gradient(135deg,#0284C7,#0F172A);color:white;padding:24px;border-radius:16px 16px 0 0">'
             f'<h2 style="margin:0">{brand} - Rapor Digital</h2>'
@@ -3244,7 +3404,7 @@ async def email_report(student_id: str, bg: BackgroundTasks, user=Depends(requir
             f'<div style="background:white;padding:24px;border-radius:0 0 16px 16px;border:1px solid #E2E8F0">'
             f'<h3 style="margin:0 0 4px">{escape(s["name"])}</h3>'
             f'<p style="color:#64748B;margin:0 0 16px;font-size:13px">NISN: {escape(s.get("nisn") or "-")} · Kelas: {escape(s.get("kelas") or "-")}</p>'
-            f'<table style="width:100%;border-collapse:collapse;font-size:14px">{rows_html}</table>'
+            f'<table style="width:100%;border-collapse:collapse;font-size:14px">{rows_html}</table>{note_html}'
             f'<p style="margin-top:20px;color:#64748B;font-size:12px">Rapor ini digenerasi otomatis oleh sistem SMA NEGERI 1 LAGUBOTI. '
             f'Silakan hubungi wali kelas untuk klarifikasi lebih lanjut.</p></div></div>')
     bg.add_task(send_email, to, f"Rapor Digital - {s['name']}", html)
@@ -3499,7 +3659,7 @@ async def public_download(path: str):
     return Response(content=data, media_type=rec.get("content_type", ct))
 
 @api.post("/ppdb/register")
-async def ppdb_register(body: PpdbIn):
+async def ppdb_register(body: PpdbIn, bg: BackgroundTasks):
     doc = {"id": str(uuid.uuid4()), **body.model_dump(),
            "status": "pending", "score": None, "notes": None,
            "created_at": now_iso()}
@@ -3507,7 +3667,12 @@ async def ppdb_register(body: PpdbIn):
     # Notify all admin/kepsek
     admins = [u["id"] for u in await db.users.find({"role": {"$in": ["super_admin","kepsek","staff_tu"]}}, {"id": 1}).to_list(50)]
     await notify(admins, f"📥 Pendaftar PPDB Baru", f"{body.full_name} dari {body.prev_school} (NEM {body.nem_avg})", "/admin-ppdb")
-    return {"ok": True, "id": doc["id"], "message": "Pendaftaran berhasil! Nomor pendaftaran: " + doc["id"][:8].upper()}
+    no = doc["id"][:8].upper()
+    bg.add_task(send_email, body.parent_email, f"Pendaftaran PPDB Diterima - {body.full_name}", email_card(
+        "Pendaftaran PPDB", f"No. Pendaftaran {no}",
+        f"<p>Yth. {escape(body.parent_name)},</p><p>Pendaftaran atas nama <b>{escape(body.full_name)}</b> telah kami terima "
+        f"dengan nomor <b>{no}</b>. Status saat ini: <b>Menunggu Verifikasi</b>. Kami akan mengabarkan setiap perubahan status melalui email ini.</p>"))
+    return {"ok": True, "id": doc["id"], "message": "Pendaftaran berhasil! Nomor pendaftaran: " + no}
 
 @api.get("/ppdb")
 async def list_ppdb(user=Depends(require_roles("super_admin","kepsek","staff_tu"))):
@@ -3520,14 +3685,24 @@ async def get_ppdb(pid: str, user=Depends(require_roles("super_admin","kepsek","
     return doc
 
 @api.patch("/ppdb/{pid}")
-async def update_ppdb(pid: str, status: Optional[str] = None, notes: Optional[str] = None, score: Optional[float] = None,
+async def update_ppdb(pid: str, bg: BackgroundTasks, status: Optional[str] = None, notes: Optional[str] = None, score: Optional[float] = None,
                      user=Depends(require_roles("super_admin","kepsek","staff_tu"))):
+    prev = await db.ppdb.find_one({"id": pid}, {"_id": 0})
+    if not prev: raise HTTPException(404, "Tidak ditemukan")
     upd = {}
     if status: upd["status"] = status
     if notes is not None: upd["notes"] = notes
     if score is not None: upd["score"] = score
     upd["updated_at"] = now_iso()
     await db.ppdb.update_one({"id": pid}, {"$set": upd})
+    if status and status != prev.get("status") and prev.get("parent_email"):
+        note = notes if notes is not None else prev.get("notes")
+        note_html = f'<p style="padding:12px;background:#F1F5F9;border-radius:8px"><b>Catatan panitia:</b><br>{escape(note)}</p>' if note else ""
+        label = PPDB_STATUS_LABEL.get(status, status)
+        bg.add_task(send_email, prev["parent_email"], f"Status PPDB: {label} - {prev.get('full_name', '')}", email_card(
+            "Status PPDB", f"No. Pendaftaran {pid[:8].upper()}",
+            f"<p>Yth. {escape(prev.get('parent_name') or 'Orang Tua/Wali')},</p><p>Status pendaftaran <b>{escape(prev.get('full_name', ''))}</b> "
+            f"telah diperbarui menjadi: <b>{label}</b>.</p>{note_html}"))
     return {"ok": True}
 
 @api.put("/ppdb/{pid}")
@@ -3964,6 +4139,14 @@ async def startup():
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.password_reset_tokens.create_index("token_hash", unique=True)
     await db.password_reset_requests.create_index("created_at", expireAfterSeconds=900)
+    # Migration (idempotent, additive): admin-approved reset + security collections
+    await db.password_reset_requests.create_index("ts", expireAfterSeconds=3600)
+    await db.reset_requests.create_index("id", unique=True)
+    await db.reset_requests.create_index([("status", 1), ("created_at", -1)])
+    await db.reset_requests.create_index("user_id")
+    await db.audit_logs.create_index([("created_at", -1)])
+    await db.login_attempts.create_index("identifier", unique=True)
+    await db.login_attempts.create_index("updated_at", expireAfterSeconds=86400)
     await get_settings()  # ensure default settings row exists
     await _seed()
 
