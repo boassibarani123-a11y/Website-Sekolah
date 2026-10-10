@@ -31,6 +31,11 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 - Piket Gerbang (/piket): CRUD shift (ulang mingguan, cek bentrok), status berbasis waktu WIB, check-in/out (dibuka 30 menit sebelum), hero live + countdown, grid mingguan
 - Face recognition: /face-enroll (5 pose otomatis, tolak wajah duplikat) & /face-attendance (deteksi otomatis, mode kedip anti-foto, tabel live); backend matching numpy (threshold 0.5) di /api/attendance/face-scan; model face-api di /frontend/public/models
 
+## Implemented (2026-10-10, iterasi 4)
+- Fix: hapus akun siswa ikut menghapus data wajah; data wajah yatim (orphan) otomatis dibersihkan sebelum pencocokan & daftar
+- Daftar wajah "Mode Per Kelas": otomatis pindah & mulai rekam siswa berikutnya yang belum terdaftar
+- Laporan Piket Bulanan per guru (hadir, tepat, telat, menit telat, absen, jam jaga, %) + ekspor Excel
+
 ## Backlog
 - P0: Jalankan setup-vps.sh di VPS, isi kredensial Brevo SMTP, uji kirim email
 - P1: Integrasi WhatsApp (nanti)
