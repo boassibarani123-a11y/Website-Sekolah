@@ -45,6 +45,9 @@ import Jadwal from "@/pages/Jadwal";
 import Leaderboard from "@/pages/Leaderboard";
 import GuruStaff from "@/pages/GuruStaff";
 import Profile from "@/pages/Profile";
+import Piket from "@/pages/Piket";
+import FaceAttendance from "@/pages/FaceAttendance";
+import FaceEnroll from "@/pages/FaceEnroll";
 import "@/index.css";
 
 function Protected({ children }) {
@@ -103,6 +106,9 @@ function AppInner() {
           <Route path="leaderboard" element={<Leaderboard/>}/>
           <Route path="guru-staff" element={<GuruStaff/>}/>
           <Route path="profile" element={<Profile/>}/>
+          <Route path="piket" element={<Piket/>}/>
+          <Route path="face-attendance" element={<FaceAttendance/>}/>
+          <Route path="face-enroll" element={<FaceEnroll/>}/>
         </Route>
         <Route path="/print-cards" element={<Protected><PrintCards/></Protected>}/>
       </Routes>

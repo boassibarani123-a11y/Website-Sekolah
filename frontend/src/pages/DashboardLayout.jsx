@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound, ScanFace, ShieldCheck, UserCheck } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 import AiAssistant from "@/components/AiAssistant";
@@ -24,6 +24,9 @@ const MENU = [
   { to: "/admin-ppdb", label: "Admin PPDB", icon: UserPlus2, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/analytics", label: "Analitik", icon: BarChart3, roles: ["kepsek","super_admin"] },
   { to: "/attendance", label: "Presensi Barcode", icon: QrCode, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/face-attendance", label: "Presensi Wajah", icon: ScanFace, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/face-enroll", label: "Daftar Wajah Siswa", icon: UserCheck, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/piket", label: "Piket Gerbang", icon: ShieldCheck, roles: ["super_admin","kepsek","staff_tu","guru","admin_absensi"] },
   { to: "/attendance-recap", label: "Rekap Absensi", icon: CalendarCheck, roles: ["super_admin","kepsek","guru","staff_tu","admin_absensi"] },
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },
   { to: "/jadwal", label: "Jadwal Pelajaran", icon: CalendarRange, roles: "*" },
@@ -57,7 +60,7 @@ export default function DashboardLayout() {
   const setBrand = async (c) => { try { await api.patch("/settings", { primary_color: c }); refresh(); setThemeMenu(false); } catch {} };
   if (!user) return null;
 
-  const ADMIN_ABSENSI_PATHS = ["/", "/attendance", "/attendance-recap"];
+  const ADMIN_ABSENSI_PATHS = ["/", "/attendance", "/attendance-recap", "/face-attendance", "/face-enroll", "/piket"];
   const visible = MENU
     .filter(m => m.roles === "*" || m.roles.includes(user.role))
     .filter(m => user.role !== "admin_absensi" || ADMIN_ABSENSI_PATHS.includes(m.to));

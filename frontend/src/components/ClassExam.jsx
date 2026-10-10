@@ -179,6 +179,8 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
   const [left, setLeft] = useState(null);
   const [violations, setViolations] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const lastViolationRef = useRef(0);
   const maxV = exam.max_violations || 3;
 
   const answersRef = useRef(answers); answersRef.current = answers;
@@ -188,7 +190,12 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
   const timerRef = useRef(null);
 
   const exitFullscreen = () => {
+    try { navigator.keyboard?.unlock?.(); } catch (e) { /* noop */ }
     try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* noop */ }
+  };
+  const enterFullscreen = () => {
+    const p = document.documentElement.requestFullscreen?.({ navigationUI: "hide" });
+    return Promise.resolve(p).then(() => navigator.keyboard?.lock?.().catch(() => {})).catch(() => {});
   };
 
   const submit = useCallback(async (auto = false) => {
@@ -217,6 +224,8 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
 
   const registerViolation = useCallback(async (reason) => {
     if (finishedRef.current || sentRef.current) return;
+    if (Date.now() - lastViolationRef.current < 1500) return; // blur + hidden fire together
+    lastViolationRef.current = Date.now();
     try {
       const r = await api.post(`/exams/${exam.id}/violation`);
       violationsRef.current = r.data.violations;
@@ -238,23 +247,37 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
   // Anti-cheat listeners (only while running)
   useEffect(() => {
     if (phase !== "running") return;
-    const onVisibility = () => { if (document.hidden) registerViolation("berpindah tab / meminimalkan jendela"); };
-    const onBlur = () => { if (!document.hasFocus()) registerViolation("jendela ujian kehilangan fokus"); };
+    const onVisibility = () => { if (document.hidden) { setLocked(true); registerViolation("berpindah tab / meminimalkan jendela"); } };
+    const onBlur = () => { if (!document.hasFocus()) { setLocked(true); registerViolation("jendela ujian kehilangan fokus"); } };
     const onFsChange = () => {
-      if (!document.fullscreenElement && !finishedRef.current) registerViolation("keluar dari mode layar penuh");
+      if (finishedRef.current) return;
+      if (!document.fullscreenElement) { setLocked(true); registerViolation("keluar dari mode layar penuh"); }
+      else if (document.hasFocus()) setLocked(false);
     };
-    const blockCtx = (e) => e.preventDefault();
+    const block = (e) => e.preventDefault();
+    const onKey = (e) => {
+      const k = e.key || "";
+      if (e.ctrlKey || e.metaKey || e.altKey || /^F\d+$/.test(k) || k === "Escape" || k === "PrintScreen" || k === "ContextMenu") {
+        e.preventDefault(); e.stopPropagation();
+      }
+    };
+    const onPop = () => { window.history.pushState(null, "", window.location.href); registerViolation("mencoba kembali ke halaman sebelumnya"); };
     const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.history.pushState(null, "", window.location.href);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
     document.addEventListener("fullscreenchange", onFsChange);
-    document.addEventListener("contextmenu", blockCtx);
+    ["contextmenu", "copy", "cut", "paste", "dragstart", "selectstart"].forEach(ev => document.addEventListener(ev, block));
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("popstate", onPop);
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("fullscreenchange", onFsChange);
-      document.removeEventListener("contextmenu", blockCtx);
+      ["contextmenu", "copy", "cut", "paste", "dragstart", "selectstart"].forEach(ev => document.removeEventListener(ev, block));
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("popstate", onPop);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [phase, registerViolation]);
@@ -264,10 +287,12 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
   const start = async () => {
     if (!password.trim()) return toast.error("Masukkan password ujian");
     setStarting(true);
+    // Request fullscreen synchronously inside the click/Enter gesture (before any await), otherwise browsers block it
+    const fs = enterFullscreen();
     try {
       const r = await api.post(`/exams/${exam.id}/start`, { password: password.trim() });
-      // Enter fullscreen (triggered by this user gesture)
-      try { await document.documentElement.requestFullscreen(); } catch (e) { /* some browsers block */ }
+      await fs;
+      if (!document.fullscreenElement) setLocked(true);
       setQuestions(r.data.questions || []);
       setAnswers(Array((r.data.questions || []).length).fill(-1));
       setViolations(r.data.violations || 0);
@@ -284,6 +309,7 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
         tick(); timerRef.current = setInterval(tick, 1000);
       }
     } catch (e) {
+      exitFullscreen();
       toast.error(e.response?.data?.detail || "Gagal memulai ujian");
     } finally { setStarting(false); }
   };
@@ -342,7 +368,16 @@ export function ExamTakeModal({ exam, onClose, onDone }) {
 
   // Running (fullscreen) — fixed cover, no close button
   return (
-    <div className="fixed inset-0 bg-slate-100 z-[60] overflow-y-auto" data-testid="exam-running">
+    <div className="fixed inset-0 bg-slate-100 z-[60] overflow-y-auto select-none" data-testid="exam-running">
+      {locked && (
+        <div data-testid="exam-lock-overlay" className="fixed inset-0 z-[70] bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center text-center text-white p-6">
+          <div className="w-20 h-20 rounded-full bg-rose-600 flex items-center justify-center animate-pulse"><Lock className="w-10 h-10" /></div>
+          <p className="mt-5 font-heading text-3xl font-black">Ujian Terkunci</p>
+          <p className="mt-2 text-slate-300 max-w-md">Anda keluar dari layar penuh atau berpindah jendela. Pelanggaran tercatat <b className="text-rose-400">{violations}/{maxV}</b>. Soal disembunyikan sampai Anda kembali ke layar penuh.</p>
+          <button data-testid="exam-resume-fullscreen" onClick={() => enterFullscreen().then(() => { if (document.fullscreenElement) setLocked(false); })}
+            className="mt-6 px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold flex items-center gap-2 transition-colors"><Maximize className="w-5 h-5" />Kembali ke Layar Penuh</button>
+        </div>
+      )}
       <div className="sticky top-0 bg-indigo-700 text-white z-10 flex items-center justify-between gap-3 px-5 py-3 shadow">
         <h3 className="font-heading font-bold truncate flex items-center gap-2"><ShieldCheck className="w-5 h-5" />{exam.title}</h3>
         <div className="flex items-center gap-3 shrink-0">

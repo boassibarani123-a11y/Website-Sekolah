@@ -1137,7 +1137,7 @@ SCAN_ROLES = ("staff_tu", "super_admin", "kepsek", "admin_absensi")
 async def scan(body: ScanIn, user=Depends(require_roles(*SCAN_ROLES))):
     if body.status not in ["hadir", "izin", "sakit", "alpa"]:
         raise HTTPException(400, "Status tidak valid")
-    if body.method not in ("qr", "barcode", "manual"):
+    if body.method not in ("qr", "barcode", "manual", "face"):
         raise HTTPException(400, "Metode tidak valid")
     q = {"role": "siswa", **dscope(user)}
     if body.qr_code and body.qr_code.strip():
@@ -5252,6 +5252,278 @@ async def public_gallery_file(path: str):
     data, ct = get_object(path)
     return Response(content=data, media_type=ct,
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ---------------- PIKET GERBANG (shift guru penjaga) ----------------
+WIB = timezone(timedelta(hours=7))
+PIKET_ADMIN = ("super_admin", "kepsek", "staff_tu")
+PIKET_VIEW = ("super_admin", "kepsek", "staff_tu", "guru", "admin_absensi")
+PIKET_STAFF = ["guru", "staff_tu", "kepsek", "admin_absensi"]
+PIKET_LATE_MIN = 10
+HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+class PiketIn(BaseModel):
+    teacher_id: str
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    start_time: str = Field(pattern=HHMM)
+    end_time: str = Field(pattern=HHMM)
+    gate: str = Field(default="Gerbang 1", min_length=1, max_length=40)
+    notes: Optional[str] = Field(default=None, max_length=300)
+    repeat_weeks: int = Field(default=1, ge=1, le=26)
+
+class PiketUpdate(BaseModel):
+    teacher_id: Optional[str] = None
+    date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    start_time: Optional[str] = Field(default=None, pattern=HHMM)
+    end_time: Optional[str] = Field(default=None, pattern=HHMM)
+    gate: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    notes: Optional[str] = Field(default=None, max_length=300)
+
+def _piket_dt(d: str, t: str) -> datetime:
+    return datetime.fromisoformat(f"{d}T{t}:00").replace(tzinfo=WIB)
+
+def piket_out(s: dict) -> dict:
+    s.pop("_id", None)
+    now = datetime.now(WIB)
+    start, end = _piket_dt(s["date"], s["start_time"]), _piket_dt(s["date"], s["end_time"])
+    if s.get("checked_out_at"):
+        st = "selesai"
+    elif now < start:
+        st = "terjadwal"
+    elif now <= end:
+        st = "bertugas" if s.get("checked_in_at") else ("terlambat" if now > start + timedelta(minutes=PIKET_LATE_MIN) else "menunggu")
+    else:
+        st = "selesai" if s.get("checked_in_at") else "tidak_hadir"
+    s["status"] = st
+    s["start_iso"], s["end_iso"] = start.isoformat(), end.isoformat()
+    return s
+
+async def _piket_conflict(teacher_id: str, d: str, st: str, et: str, exclude: Optional[str] = None):
+    q = {"teacher_id": teacher_id, "date": d, "start_time": {"$lt": et}, "end_time": {"$gt": st}}
+    if exclude:
+        q["id"] = {"$ne": exclude}
+    return await db.piket_shifts.find_one(q, {"_id": 0})
+
+@api.get("/piket/teachers")
+async def piket_teachers(user=Depends(require_roles(*PIKET_ADMIN))):
+    return await db.users.find({"role": {"$in": PIKET_STAFF}, **dscope(user)},
+                               {"_id": 0, "id": 1, "name": 1, "role": 1, "photo": 1}).sort("name", 1).to_list(1000)
+
+@api.get("/piket/shifts")
+async def list_piket(start: Optional[str] = None, end: Optional[str] = None, mine: bool = False,
+                     user=Depends(require_roles(*PIKET_VIEW))):
+    q = dict(dscope(user))
+    if start or end:
+        q["date"] = {k: v for k, v in (("$gte", start), ("$lte", end)) if v}
+    if mine:
+        q["teacher_id"] = user["id"]
+    rows = await db.piket_shifts.find(q, {"_id": 0}).sort([("date", 1), ("start_time", 1)]).to_list(2000)
+    return [piket_out(r) for r in rows]
+
+@api.get("/piket/now")
+async def piket_now(user=Depends(require_roles(*PIKET_VIEW))):
+    today = datetime.now(WIB).date().isoformat()
+    rows = [piket_out(r) for r in await db.piket_shifts.find(
+        {"date": {"$gte": today}, **dscope(user)}, {"_id": 0}).sort([("date", 1), ("start_time", 1)]).to_list(500)]
+    active = [r for r in rows if r["status"] in ("bertugas", "menunggu", "terlambat")]
+    upcoming = [r for r in rows if r["status"] == "terjadwal"]
+    mine = next((r for r in rows if r["teacher_id"] == user["id"] and r["status"] not in ("selesai", "tidak_hadir")), None)
+    return {"active": active, "next": upcoming[0] if upcoming else None, "mine": mine, "server_now": datetime.now(WIB).isoformat()}
+
+@api.post("/piket/shifts")
+async def create_piket(body: PiketIn, user=Depends(require_roles(*PIKET_ADMIN))):
+    if body.end_time <= body.start_time:
+        raise HTTPException(400, "Jam selesai harus setelah jam mulai")
+    t = await db.users.find_one({"id": body.teacher_id, "role": {"$in": PIKET_STAFF}}, {"_id": 0, "id": 1, "name": 1, "photo": 1})
+    if not t:
+        raise HTTPException(404, "Guru/staf tidak ditemukan")
+    base = date.fromisoformat(body.date)
+    created, skipped = [], []
+    for w in range(body.repeat_weeks):
+        d = (base + timedelta(weeks=w)).isoformat()
+        if await _piket_conflict(t["id"], d, body.start_time, body.end_time):
+            skipped.append(d); continue
+        doc = {"id": str(uuid.uuid4()), "teacher_id": t["id"], "teacher_name": t["name"], "teacher_photo": t.get("photo"),
+               "date": d, "start_time": body.start_time, "end_time": body.end_time, "gate": body.gate.strip(),
+               "notes": body.notes, "created_by": user["name"], "created_at": now_iso(),
+               "checked_in_at": None, "checked_out_at": None, "late_minutes": None}
+        dstamp(doc, user)
+        await db.piket_shifts.insert_one(doc)
+        created.append(piket_out(doc))
+    if not created:
+        raise HTTPException(409, "Jadwal bentrok dengan shift lain milik guru ini")
+    await notify([t["id"]], "Jadwal Piket Gerbang",
+                 f"Anda dijadwalkan piket {body.gate} pukul {body.start_time}-{body.end_time} mulai {body.date}"
+                 + (f" ({len(created)} minggu)" if len(created) > 1 else ""), "/piket")
+    return {"created": created, "skipped": skipped}
+
+@api.patch("/piket/shifts/{sid}")
+async def edit_piket(sid: str, body: PiketUpdate, user=Depends(require_roles(*PIKET_ADMIN))):
+    s = await db.piket_shifts.find_one({"id": sid}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Shift tidak ditemukan")
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "teacher_id" in upd:
+        t = await db.users.find_one({"id": upd["teacher_id"], "role": {"$in": PIKET_STAFF}}, {"_id": 0, "name": 1, "photo": 1})
+        if not t:
+            raise HTTPException(404, "Guru/staf tidak ditemukan")
+        upd["teacher_name"], upd["teacher_photo"] = t["name"], t.get("photo")
+    m = {**s, **upd}
+    if m["end_time"] <= m["start_time"]:
+        raise HTTPException(400, "Jam selesai harus setelah jam mulai")
+    if await _piket_conflict(m["teacher_id"], m["date"], m["start_time"], m["end_time"], exclude=sid):
+        raise HTTPException(409, "Jadwal bentrok dengan shift lain milik guru ini")
+    await db.piket_shifts.update_one({"id": sid}, {"$set": upd})
+    return piket_out(await db.piket_shifts.find_one({"id": sid}, {"_id": 0}))
+
+@api.delete("/piket/shifts/{sid}")
+async def delete_piket(sid: str, user=Depends(require_roles(*PIKET_ADMIN))):
+    r = await db.piket_shifts.delete_one({"id": sid})
+    if not r.deleted_count:
+        raise HTTPException(404, "Shift tidak ditemukan")
+    return {"ok": True}
+
+@api.post("/piket/shifts/{sid}/{action}")
+async def piket_presence(sid: str, action: str, user=Depends(require_roles(*PIKET_VIEW))):
+    if action not in ("checkin", "checkout"):
+        raise HTTPException(404, "Aksi tidak dikenal")
+    s = await db.piket_shifts.find_one({"id": sid}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Shift tidak ditemukan")
+    if s["teacher_id"] != user["id"] and user["role"] not in PIKET_ADMIN:
+        raise HTTPException(403, "Hanya guru yang bertugas yang dapat absen piket")
+    now = datetime.now(WIB)
+    start, end = _piket_dt(s["date"], s["start_time"]), _piket_dt(s["date"], s["end_time"])
+    if action == "checkin":
+        if s.get("checked_in_at"):
+            raise HTTPException(400, "Sudah check-in")
+        if now < start - timedelta(minutes=30):
+            raise HTTPException(400, "Check-in dibuka 30 menit sebelum shift dimulai")
+        if now > end:
+            raise HTTPException(400, "Shift sudah berakhir")
+        late = max(0, int((now - start).total_seconds() // 60))
+        upd = {"checked_in_at": now_iso(), "late_minutes": late}
+    else:
+        if not s.get("checked_in_at"):
+            raise HTTPException(400, "Belum check-in")
+        if s.get("checked_out_at"):
+            raise HTTPException(400, "Sudah check-out")
+        upd = {"checked_out_at": now_iso()}
+    await db.piket_shifts.update_one({"id": sid}, {"$set": upd})
+    return piket_out(await db.piket_shifts.find_one({"id": sid}, {"_id": 0}))
+
+# ---------------- FACE RECOGNITION (presensi cadangan) ----------------
+FACE_MATCH_THRESHOLD = 0.5
+FACE_DUP_THRESHOLD = 0.42
+FACE_AMBIGUITY_GAP = 0.04
+_face_cache = {"at": 0.0, "data": None}
+
+def _face_vec(v: List[float]):
+    import numpy as np
+    if len(v) != 128:
+        raise HTTPException(400, "Descriptor wajah tidak valid")
+    return np.asarray(v, dtype=np.float32)
+
+async def _face_matrix(force: bool = False):
+    import numpy as np, time
+    if not force and _face_cache["data"] is not None and time.time() - _face_cache["at"] < 20:
+        return _face_cache["data"]
+    ids, vecs = [], []
+    async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "descriptors": 1}):
+        for d in p.get("descriptors") or []:
+            if len(d) == 128:
+                ids.append(p["student_id"]); vecs.append(d)
+    data = (ids, np.asarray(vecs, dtype=np.float32) if vecs else None)
+    _face_cache.update(at=time.time(), data=data)
+    return data
+
+async def _face_best(vec, force: bool = False):
+    import numpy as np
+    ids, mat = await _face_matrix(force)
+    if mat is None:
+        return None, None, None
+    dist = np.linalg.norm(mat - vec, axis=1)
+    best = {}
+    for sid, dd in zip(ids, dist.tolist()):
+        if dd < best.get(sid, 9):
+            best[sid] = dd
+    ranked = sorted(best.items(), key=lambda x: x[1])
+    second = ranked[1][1] if len(ranked) > 1 else None
+    return ranked[0][0], ranked[0][1], second
+
+class FaceEnrollIn(BaseModel):
+    student_id: str
+    descriptors: List[List[float]] = Field(min_length=3, max_length=10)
+    photo: Optional[str] = None
+
+class FaceScanIn(BaseModel):
+    descriptor: List[float]
+    station_id: Optional[str] = Field(default=None, max_length=64)
+    station_name: Optional[str] = Field(default=None, max_length=40)
+
+@api.get("/face/students")
+async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, user=Depends(require_roles(*SCAN_ROLES))):
+    mq = {"role": "siswa", **dscope(user)}
+    if kelas:
+        mq["kelas"] = kelas
+    if q:
+        mq["$or"] = [{"name": {"$regex": re.escape(q), "$options": "i"}}, {"nisn": {"$regex": re.escape(q)}}]
+    students = await db.users.find(mq, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "photo": 1}).sort([("kelas", 1), ("name", 1)]).to_list(2000)
+    prof = {p["student_id"]: p async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "samples": 1, "updated_at": 1, "photo": 1})}
+    for s in students:
+        p = prof.get(s["id"])
+        s["enrolled"] = bool(p)
+        s["samples"] = p.get("samples", 0) if p else 0
+        s["face_updated_at"] = p.get("updated_at") if p else None
+        s["face_photo"] = p.get("photo") if p else None
+    total = await db.users.count_documents({"role": "siswa", **dscope(user)})
+    return {"students": students, "total": total, "enrolled": len(prof)}
+
+@api.post("/face/enroll")
+async def face_enroll(body: FaceEnrollIn, user=Depends(require_roles(*SCAN_ROLES))):
+    import numpy as np
+    st = await db.users.find_one({"id": body.student_id, "role": "siswa"}, {"_id": 0, "id": 1, "name": 1})
+    if not st:
+        raise HTTPException(404, "Siswa tidak ditemukan")
+    vecs = [_face_vec(d) for d in body.descriptors]
+    mean = np.mean(vecs, axis=0)
+    if max(float(np.linalg.norm(v - mean)) for v in vecs) > 0.45:
+        raise HTTPException(400, "Sampel wajah tidak konsisten. Pastikan hanya satu orang di depan kamera lalu ulangi.")
+    sid, dist, _ = await _face_best(mean, force=True)
+    if sid and sid != st["id"] and dist < FACE_DUP_THRESHOLD:
+        other = await db.users.find_one({"id": sid}, {"_id": 0, "name": 1, "kelas": 1})
+        raise HTTPException(409, f"Wajah ini sangat mirip dengan {(other or {}).get('name', 'siswa lain')} yang sudah terdaftar. Periksa kembali siswa yang dipilih.")
+    await db.face_profiles.update_one({"student_id": st["id"]}, {"$set": {
+        "student_id": st["id"], "descriptors": [v.round(5).tolist() for v in vecs], "samples": len(vecs),
+        "photo": body.photo, "enrolled_by": user["name"], "updated_at": now_iso()}}, upsert=True)
+    await _face_matrix(force=True)
+    return {"ok": True, "student": st, "samples": len(vecs)}
+
+@api.delete("/face/enroll/{student_id}")
+async def face_unenroll(student_id: str, user=Depends(require_roles(*SCAN_ROLES))):
+    r = await db.face_profiles.delete_one({"student_id": student_id})
+    await _face_matrix(force=True)
+    if not r.deleted_count:
+        raise HTTPException(404, "Data wajah tidak ditemukan")
+    return {"ok": True}
+
+@api.post("/attendance/face-scan")
+async def face_scan(body: FaceScanIn, user=Depends(require_roles(*SCAN_ROLES))):
+    vec = _face_vec(body.descriptor)
+    sid, dist, second = await _face_best(vec)
+    if sid is None:
+        raise HTTPException(404, "Belum ada wajah siswa yang terdaftar")
+    if dist > FACE_MATCH_THRESHOLD:
+        raise HTTPException(404, "Wajah tidak dikenali")
+    if second is not None and second - dist < FACE_AMBIGUITY_GAP:
+        raise HTTPException(409, "Wajah kurang jelas, mohon hadap lurus ke kamera")
+    st = await db.users.find_one({"id": sid, "role": "siswa"}, {"_id": 0, "qr_code": 1, "nisn": 1})
+    if not st:
+        raise HTTPException(404, "Siswa tidak ditemukan")
+    res = await scan(ScanIn(qr_code=st.get("qr_code"), nisn=st.get("nisn"), method="face",
+                            station_id=body.station_id, station_name=body.station_name), user)
+    res["confidence"] = round(max(0.0, 1 - dist) * 100, 1)
+    return res
 
 
 app.include_router(api)

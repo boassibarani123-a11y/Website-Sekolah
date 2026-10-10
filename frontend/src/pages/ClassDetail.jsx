@@ -11,6 +11,7 @@ import { ClassKas } from "@/components/ClassKas";
 import { ClassUnlock } from "@/components/ClassUnlock";
 import { ClassBPH } from "@/components/ClassBPH";
 import { ClassExam } from "@/components/ClassExam";
+import { ClassHero, ClassTabs, useClassCounts } from "@/components/class/ClassHero";
 import { SafeHtml, stripHtml } from "@/lib/safeHtml";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -93,6 +94,7 @@ export default function ClassDetail() {
   const [subject, setSubject] = useState("all");
   const [reschedules, setReschedules] = useState([]);
   const [showResched, setShowResched] = useState(false);
+  const counts = useClassCounts(id);
 
   const loadReschedules = useCallback(() => {
     api.get(`/reschedules?class_id=${id}`).then(r => setReschedules(r.data)).catch(()=>{});
@@ -125,16 +127,7 @@ export default function ClassDetail() {
       <Link to="/classes" className="inline-flex items-center gap-1.5 text-sm text-sky-600 font-semibold hover:text-sky-800">
         <ArrowLeft className="w-4 h-4"/>Semua Kelas
       </Link>
-      <div className="bg-gradient-to-br from-sky-600 via-sky-700 to-slate-900 rounded-2xl p-6 text-white relative overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-48 h-48 rounded-full bg-sky-400/20 blur-3xl"/>
-        <div className="relative flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center border border-white/20"><School className="w-6 h-6"/></div>
-          <div>
-            <h1 className="font-heading text-2xl font-extrabold">{klass.name}</h1>
-            <p className="text-sm text-sky-100/80">{klass.description || `${subjects.length} mata pelajaran`}</p>
-          </div>
-        </div>
-      </div>
+      <ClassHero klass={klass} counts={counts} isTeacher={isTeacher} onReschedule={()=>setShowResched(true)}/>
 
       {/* Reschedule / ketidakhadiran guru */}
       {reschedules.length > 0 && (
@@ -160,49 +153,24 @@ export default function ClassDetail() {
         </div>
       )}
 
-      {isTeacher && (
-        <button data-testid="open-reschedule-button" onClick={()=>setShowResched(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/30 transition-all">
-          <CalendarClock className="w-4 h-4"/>Reschedule / Berhalangan
-        </button>
-      )}
+      <ClassTabs tab={tab} setTab={setTab} counts={counts}/>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2" data-testid="subject-filters">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Filter Mapel</span>
         <button onClick={()=>setSubject("all")} data-testid="subject-filter-all"
-          className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${subject==="all"?"bg-sky-600 text-white":"bg-white border border-slate-200 text-slate-600 hover:border-sky-400"}`}>
+          className={`px-3.5 py-1.5 rounded-full text-sm font-semibold transition-colors ${subject==="all"?"bg-slate-900 text-white shadow":"bg-white border border-slate-200 text-slate-600 hover:border-sky-400"}`}>
           Semua Mapel
         </button>
         {subjects.map(s=>(
           <button key={s} onClick={()=>setSubject(s)} data-testid={`subject-filter-${s}`}
-            className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${subject===s?"bg-sky-600 text-white":"bg-white border border-slate-200 text-slate-600 hover:border-sky-400"}`}>
+            className={`px-3.5 py-1.5 rounded-full text-sm font-semibold transition-colors ${subject===s?"bg-sky-600 text-white shadow":"bg-white border border-slate-200 text-slate-600 hover:border-sky-400"}`}>
             {s}
           </button>
         ))}
+        {subjects.length===0 && <span className="text-xs text-slate-400 italic">Belum ada mapel di kelas ini</span>}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200">
-        <button data-testid="tab-tugas" onClick={()=>setTab("tugas")}
-          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="tugas"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
-          <ClipboardList className="w-4 h-4"/>Tugas
-        </button>
-        <button data-testid="tab-quiz" onClick={()=>setTab("quiz")}
-          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="quiz"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
-          <BrainCircuit className="w-4 h-4"/>Mini-Quiz
-        </button>
-        <button data-testid="tab-ujian" onClick={()=>setTab("ujian")}
-          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="ujian"?"border-indigo-600 text-indigo-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
-          <ShieldCheck className="w-4 h-4"/>Ujian
-        </button>
-        <button data-testid="tab-kas" onClick={()=>setTab("kas")}
-          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="kas"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
-          <PiggyBank className="w-4 h-4"/>Uang Kas
-        </button>
-        <button data-testid="tab-bph" onClick={()=>setTab("bph")}
-          className={`px-4 py-2.5 font-semibold text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab==="bph"?"border-sky-600 text-sky-700":"border-transparent text-slate-500 hover:text-slate-800"}`}>
-          <Network className="w-4 h-4"/>BPH
-        </button>
-      </div>
+      <div key={tab} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
 
       {isTeacher && !canManage && (
         <div data-testid="readonly-badge" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800 font-medium">
@@ -215,6 +183,7 @@ export default function ClassDetail() {
         : tab === "tugas"
         ? <TugasTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
         : <QuizTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
+      </div>
 
       {showResched && <RescheduleModal klass={klass} teachSubjects={teachSubjects} onClose={()=>setShowResched(false)} onDone={()=>{loadReschedules(); setShowResched(false);}}/>}
     </div>

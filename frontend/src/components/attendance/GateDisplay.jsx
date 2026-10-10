@@ -21,14 +21,14 @@ function Clock() {
   );
 }
 
-function ResultCard({ r }) {
+export function ResultCard({ r, idleTitle = "Silakan Scan Kartu Pelajar", idleSub = "Arahkan barcode NISN ke alat scanner" }) {
   if (!r) {
     return (
       <div data-testid="gate-idle" className="h-full min-h-[320px] rounded-3xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
         <div className="absolute inset-x-10 h-0.5 bg-sky-400/70 shadow-[0_0_20px_#38bdf8] animate-[gateScan_2.4s_ease-in-out_infinite]"/>
         <ScanBarcode className="w-20 h-20 text-sky-400"/>
-        <p className="mt-4 font-heading text-3xl font-extrabold">Silakan Scan Kartu Pelajar</p>
-        <p className="mt-2 text-slate-400">Arahkan barcode NISN ke alat scanner</p>
+        <p className="mt-4 font-heading text-3xl font-extrabold">{idleTitle}</p>
+        <p className="mt-2 text-slate-400">{idleSub}</p>
       </div>
     );
   }
@@ -42,7 +42,7 @@ function ResultCard({ r }) {
       {r.student ? (
         <>
           <p data-testid="gate-result-name" className="mt-3 font-heading text-3xl font-extrabold">{r.student.name}</p>
-          <p className="mt-1 text-lg text-white/85">{r.student.kelas ? `Kelas ${r.student.kelas} · ` : ""}NISN {r.student.nisn || r.code}</p>
+          <p className="mt-1 text-lg text-white/85">{r.student.kelas ? `Kelas ${r.student.kelas} · ` : ""}{r.code?.endsWith?.("%") ? `Kecocokan ${r.code}` : `NISN ${r.student.nisn || r.code}`}</p>
           <p className="mt-3 px-4 py-1.5 rounded-full bg-black/20 font-semibold">{r.kind === "dup" ? `Sudah tercatat pukul ${fmt(r.at)}` : `Tercatat pukul ${fmt(r.at)}`}</p>
         </>
       ) : (

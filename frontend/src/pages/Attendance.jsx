@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash, ShieldAlert } from "lucide-react";
+import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash, ShieldAlert, ScanFace } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GateDisplay } from "@/components/attendance/GateDisplay";
 import { StationPanel } from "@/components/attendance/StationPanel";
@@ -171,12 +172,18 @@ export default function Attendance() {
           <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi Gerbang</h1>
           <p className="mt-1 text-sm text-slate-500">Scanner barcode di gerbang langsung mencatat kehadiran siswa · {stats?.date}</p>
         </div>
+        <div className="flex gap-2 flex-wrap">
+        <Link to="/face-attendance" data-testid="attendance-face-mode-button"
+          className="px-4 py-2.5 bg-slate-900 hover:bg-sky-600 text-white font-semibold rounded-xl flex items-center gap-2 transition-colors">
+          <ScanFace className="w-4 h-4"/>Scanner Down? Pakai Wajah
+        </Link>
         {user?.role !== "siswa" && (
         <button data-testid="attendance-export-excel-button" onClick={exportXlsx}
           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-2">
           <Download className="w-4 h-4"/>Export Excel
         </button>
         )}
+        </div>
       </div>
 
       <div ref={gateRef} className={isFull ? "gate-full bg-slate-950" : ""}>
