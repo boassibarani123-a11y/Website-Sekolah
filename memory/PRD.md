@@ -54,3 +54,15 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 ### Next
 - P1: Add Brevo SMTP credentials; verify crons
 - P2: Full module test (face, piket, ujian, rapor, chat) and deploy
+
+## Iterasi 2 — Jun 2026
+- Cron pengingat absen 08:00 WIB & piket (tiap 15 mnt) diverifikasi (auth + idempotensi)
+- Grafik kehadiran mingguan per kelas di dashboard kepsek/super admin (/api/attendance/weekly-by-class)
+- Hapus riwayat absensi hari ini (per siswa & semua), hanya super_admin/admin_absensi, tercatat audit
+- Wajah mirip/kembar: skor rata-rata 3 sampel, ambang 0.45, tanda similar_to, konfirmasi NISN (face-confirm) yang juga menambah sampel; tambah sampel saat daftar
+- Mode offline hybrid: antrean localStorage + cache GET + service worker, sinkron otomatis
+- Jadwal: TimeSelect jam/menit (5 mnt) + tombol cepat
+- Schoolgram: profil baru (avatar lingkaran ber-ring, ganti sampul, bio, tab Post/Reels/Ditandai), double-tap like, story viewer progress, tag kelas
+- Kamera wajah gaya Face ID
+### Backlog
+- P1: SMTP Brevo; uji manual kamera nyata & story viewer di HP
