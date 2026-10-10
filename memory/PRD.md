@@ -20,6 +20,11 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 - Testing smoke: 17/17 backend lolos; login, dashboard, upload file, cron, degradasi SMTP/AI kosong OK
 - scripts/setup-vps.sh dibuat
 
+## Implemented (2026-10-10, iterasi 2)
+- Redesign kartu Ruang Kelas (header gradien, statistik siswa/mapel, avatar wali kelas)
+- Presensi Gerbang layar penuh: tabel riwayat scan real-time (LiveScanTable: filter status, cari, highlight baris baru, refresh 3 detik)
+- Dokumen: /app/PANDUAN_DEPLOY_VPS.md (untuk Gemini), /app/DOKUMEN_SISTEM_NOTEBOOKLM.md (untuk NotebookLM)
+
 ## Backlog
 - P0: Jalankan setup-vps.sh di VPS, isi kredensial Brevo SMTP, uji kirim email
 - P1: Integrasi WhatsApp (nanti)

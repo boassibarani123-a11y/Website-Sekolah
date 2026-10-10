@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ScanBarcode, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { LiveScanTable } from "./LiveScanTable";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "");
 
@@ -34,7 +35,7 @@ function ResultCard({ r }) {
   const s = STYLE[r.kind];
   return (
     <div data-testid="gate-result" data-kind={r.kind} className={`${s.bg} h-full min-h-[320px] rounded-3xl p-8 flex flex-col items-center justify-center text-center animate-in zoom-in-95 fade-in duration-200`}>
-      <div className={`w-32 h-32 rounded-full bg-white/20 ring-8 ${s.ring} overflow-hidden flex items-center justify-center text-5xl font-extrabold`}>
+      <div className={`w-32 h-32 shrink-0 aspect-square rounded-full bg-white/20 ring-8 ${s.ring} overflow-hidden flex items-center justify-center text-5xl font-extrabold`}>
         {r.student?.photo ? <img src={r.student.photo} alt="" className="w-full h-full object-cover"/> : r.student ? (r.student.name || "?")[0].toUpperCase() : <s.Icon className="w-16 h-16"/>}
       </div>
       <p data-testid="gate-result-label" className="mt-5 font-heading text-5xl font-black tracking-wide flex items-center gap-3"><s.Icon className="w-10 h-10"/>{s.label}</p>
@@ -51,7 +52,26 @@ function ResultCard({ r }) {
   );
 }
 
-export function GateDisplay({ current, history, station, onFullscreen, isFull }) {
+export function GateDisplay({ current, history, station, onFullscreen, isFull, rows = [], stats, newId }) {
+  if (isFull) {
+    return (
+      <div data-testid="gate-display" className="bg-slate-950 text-white p-6 h-screen flex flex-col">
+        <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-400">Presensi Gerbang</p>
+            <p data-testid="gate-station-name" className="font-heading text-2xl font-extrabold">{station.name}</p>
+            <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-bold uppercase text-emerald-400"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"/>Scanner siap · Live</span>
+          </div>
+          <div className="flex items-start gap-3">
+            <Clock/>
+            <button data-testid="gate-fullscreen-button" onClick={onFullscreen} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold transition-colors">Keluar Layar Penuh</button>
+          </div>
+        </div>
+        <div className="h-[38vh] min-h-[280px] shrink-0"><ResultCard r={current}/></div>
+        <LiveScanTable rows={rows} stats={stats} newId={newId}/>
+      </div>
+    );
+  }
   return (
     <div data-testid="gate-display" className="bg-slate-950 text-white rounded-3xl p-6 shadow-2xl">
       <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">

@@ -47,9 +47,9 @@ export default function Attendance() {
   useEffect(() => {
     if (!isOperator) return;
     load();
-    const t = setInterval(load, 5000); // live auto-refresh
+    const t = setInterval(load, isFull ? 3000 : 5000); // live auto-refresh (faster in fullscreen)
     return () => clearInterval(t);
-  }, [isOperator]);
+  }, [isOperator, isFull]);
 
   const submit = async (payload) => {
     try {
@@ -180,7 +180,7 @@ export default function Attendance() {
       </div>
 
       <div ref={gateRef} className={isFull ? "gate-full bg-slate-950" : ""}>
-        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull}/>
+        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull} rows={rows} stats={stats} newId={newId}/>
       </div>
 
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
