@@ -144,3 +144,31 @@ html.dark body { background-color: #0b1220; color: #e2e8f0; }
 
 @keyframes gateScan { 0%, 100% { top: 18%; } 50% { top: 82%; } }
 .gate-full { min-height: 100vh; border-radius: 0 !important; overflow-y: auto; }
+
+/* Face ID style */
+@keyframes faceidSpin { to { transform: rotate(360deg); } }
+.faceid-spin { animation: faceidSpin 6s linear infinite; transform-origin: 50% 50%; }
+@keyframes faceidShake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } }
+.faceid-shake { animation: faceidShake 0.45s ease-in-out 2; }
+@keyframes faceidBreathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.015); } }
+.faceid-breathe { animation: faceidBreathe 1.6s ease-in-out infinite; }
+@keyframes faceidSweep { 0% { top: -33%; } 100% { top: 100%; } }
+.faceid-sweep { animation: faceidSweep 1.8s ease-in-out infinite; }
+@keyframes faceidPop { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+.faceid-pop { animation: faceidPop 0.45s cubic-bezier(.2,.9,.3,1.3) both; }
+.faceid-check { stroke-dasharray: 70; stroke-dashoffset: 70; animation: faceidCheck 0.45s 0.2s ease-out forwards; }
+@keyframes faceidCheck { to { stroke-dashoffset: 0; } }
+
+/* Schoolgram */
+@keyframes sgHeart { 0% { transform: scale(0); opacity: 0; } 15% { transform: scale(1.25); opacity: 1; } 30% { transform: scale(0.95); } 45%,80% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.3); opacity: 0; } }
+.sg-heart-burst { animation: sgHeart 0.9s ease-out forwards; }
+@keyframes sgLikePop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.sg-like-pop { animation: sgLikePop 0.35s ease-out; }
+@keyframes sgStoryBar { from { width: 0%; } to { width: 100%; } }
+.sg-ring { background: conic-gradient(from 210deg, #f59e0b, #ef4444, #d946ef, #6366f1, #f59e0b); }
+.sg-ring-seen { background: #cbd5e1; }
+@keyframes sgRingSpin { to { transform: rotate(360deg); } }
+.sg-ring-anim { animation: sgRingSpin 4s linear infinite; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+

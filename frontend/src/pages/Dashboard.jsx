@@ -3,6 +3,7 @@ import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket, CalendarRange, Award, Star, MapPin, Megaphone, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
+import { WeeklyClassChart } from "@/components/WeeklyClassChart";
 
 const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas", admin_perpus:"Admin Perpustakaan"};
 const STUDENT_ROLES = ["siswa", "ketua_kelas", "ketua_osis"];
@@ -140,6 +141,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {["kepsek", "super_admin"].includes(user.role) && <WeeklyClassChart/>}
 
       <DashboardExtras role={user.role}/>
     </div>

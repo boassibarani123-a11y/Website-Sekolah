@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash, ShieldAlert, ScanFace } from "lucide-react";
+import { QrCode, Download, Camera as CamIcon, Users, Check, UserCheck, Hash, ShieldAlert, ScanFace, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GateDisplay } from "@/components/attendance/GateDisplay";
 import { StationPanel } from "@/components/attendance/StationPanel";
 import { useScannerInput, beep, getStation, todayWib } from "@/components/attendance/scannerUtils";
+import { useAttendanceDelete } from "@/components/attendance/useAttendanceDelete";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const ATTENDANCE_ROLES = ["admin_absensi", "super_admin", "staff_tu", "kepsek"];
@@ -32,7 +33,7 @@ export default function Attendance() {
   const gateRef = useRef(null);
   const clearRef = useRef(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     const d = todayWib();
     api.get(`/attendance/stats?date=${d}`).then(r=>setStats(r.data)).catch(()=>{});
     api.get(`/attendance?date=${d}`).then(r=>{
@@ -44,17 +45,20 @@ export default function Attendance() {
       }
       topRef.current = top;
     }).catch(()=>{});
-  };
+  }, []);
+  const del = useAttendanceDelete(load);
+  useEffect(() => { window.addEventListener("offline-synced", load); return () => window.removeEventListener("offline-synced", load); }, [load]);
   useEffect(() => {
     if (!isOperator) return;
     load();
     const t = setInterval(load, isFull ? 3000 : 5000); // live auto-refresh (faster in fullscreen)
     return () => clearInterval(t);
-  }, [isOperator, isFull]);
+  }, [isOperator, isFull, load]);
 
   const submit = async (payload) => {
     try {
       const r = await api.post("/attendance/scan", { ...payload, status, station_id: station.id, station_name: station.name });
+      if (r.data.offline) { toast.info("Tersimpan offline — dikirim otomatis saat online"); return; }
       setLastScan({ ...r.data.student, status, at: new Date(), proof: payload.photo || null });
       toast.success(`${r.data.student.name} - ${status.toUpperCase()}`);
       load();
@@ -67,7 +71,9 @@ export default function Attendance() {
     let res;
     try {
       const r = await api.post("/attendance/scan", { nisn: code, method: "barcode", status: "hadir", station_id: station.id, station_name: station.name });
-      res = { kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code };
+      res = r.data.offline
+        ? { kind: "off", code, at: new Date().toISOString(), message: "Akan dikirim otomatis saat online" }
+        : { kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code };
     } catch (e) {
       res = { kind: "err", code, at: new Date().toISOString(), message: e.response?.data?.detail || "Gagal terhubung ke server" };
     }
@@ -187,7 +193,7 @@ export default function Attendance() {
       </div>
 
       <div ref={gateRef} className={isFull ? "gate-full bg-slate-950" : ""}>
-        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull} rows={rows} stats={stats} newId={newId}/>
+        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull} rows={rows} stats={stats} newId={newId} del={del}/>
       </div>
 
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -245,32 +251,35 @@ export default function Attendance() {
         </div>
       </div>
 
-      <LiveLog rows={rows} newId={newId}/>
+      <LiveLog rows={rows} newId={newId} del={del}/>
     </div>
   );
 }
 
-function LiveLog({ rows, newId }) {
-  const methodBadge = (m)=> m==="barcode"?{t:"Barcode",c:"bg-violet-100 text-violet-700"}:m==="manual"?{t:"Manual",c:"bg-slate-200 text-slate-600"}:{t:"QR",c:"bg-sky-100 text-sky-700"};
+function LiveLog({ rows, newId, del }) {
+  const methodBadge = (m)=> m==="barcode"?{t:"Barcode",c:"bg-violet-100 text-violet-700"}:m==="manual"?{t:"Manual",c:"bg-slate-200 text-slate-600"}:m==="face"?{t:"Wajah",c:"bg-emerald-100 text-emerald-700"}:m==="sistem"?{t:"Sistem",c:"bg-slate-100 text-slate-500"}:{t:"QR",c:"bg-sky-100 text-sky-700"};
   const statusBadge = (s)=> ({hadir:"bg-emerald-100 text-emerald-700",izin:"bg-sky-100 text-sky-700",sakit:"bg-amber-100 text-amber-700",alpa:"bg-rose-100 text-rose-700"}[s]||"bg-slate-100 text-slate-600");
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden" data-testid="attendance-live-log">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <h2 className="font-heading text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5 text-sky-600"/>Log Presensi Real-time <span className="text-xs font-normal text-slate-400">({rows.length})</span></h2>
+        <div className="flex items-center gap-2">
+        {del && <button data-testid="attendance-delete-all" onClick={() => del.removeAll(rows.length)} className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors"><Trash2 className="w-3.5 h-3.5"/>Hapus Semua Hari Ini</button>}
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-rose-50 text-rose-600" data-testid="live-indicator">
           <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"/>Live
         </span>
+        </div>
       </div>
       <div className="max-h-[460px] overflow-y-auto">
         <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
               <th className="px-4 py-3">No</th><th className="px-4 py-3">Nama</th><th className="px-4 py-3">Kelas</th>
-              <th className="px-4 py-3">Waktu Scan</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Metode</th><th className="px-4 py-3">Perangkat</th><th className="px-4 py-3">Bukti</th>
+              <th className="px-4 py-3">Waktu Scan</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Metode</th><th className="px-4 py-3">Perangkat</th><th className="px-4 py-3">Bukti</th>{del && <th className="px-4 py-3"/>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length===0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400 italic" data-testid="attendance-log-empty">Belum ada absensi hari ini. Scan barcode NISN untuk mulai.</td></tr>}
+            {rows.length===0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400 italic" data-testid="attendance-log-empty">Belum ada absensi hari ini. Scan barcode NISN untuk mulai.</td></tr>}
             {rows.map((r,i)=>{
               const mb = methodBadge(r.method);
               return (
@@ -284,6 +293,7 @@ function LiveLog({ rows, newId }) {
                   <td className="px-4 py-3"><span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${mb.c}`}>{mb.t}</span></td>
                   <td className="px-4 py-3 text-xs text-slate-600">{r.station_name || "—"}</td>
                   <td className="px-4 py-3">{r.photo ? <a href={r.photo} target="_blank" rel="noreferrer" data-testid={`attendance-photo-${r.id}`}><img src={r.photo} alt="bukti" className="w-9 h-9 rounded-lg object-cover border border-slate-200"/></a> : <span className="text-slate-300">—</span>}</td>
+                  {del && <td className="px-4 py-3"><button data-testid={`attendance-delete-${r.id}`} onClick={() => del.removeOne(r)} title="Hapus riwayat" className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-rose-600 transition-colors"><Trash2 className="w-4 h-4"/></button></td>}
                 </tr>
               );
             })}

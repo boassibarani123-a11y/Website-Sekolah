@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "@/lib/apiClient";
+import { clearOfflineCache } from "@/lib/offlineQueue";
 
 const AuthContext = createContext(null);
 
@@ -14,7 +15,7 @@ export function AuthProvider({ children }) {
     return r.data.user;
     return r.data.user;
   };
-  const logout = async () => { await api.post("/auth/logout"); setUser(false); };
+  const logout = async () => { await api.post("/auth/logout"); clearOfflineCache(); setUser(false); };
   return <AuthContext.Provider value={{ user, setUser, login, logout }}>{children}</AuthContext.Provider>;
 }
 export const useAuth = () => useContext(AuthContext);

@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { TimeSelect } from "@/components/TimeSelect";
 import { CalendarRange, Plus, Trash2, Pencil, Clock, MapPin, User, X, LayoutGrid, Table2, Radio } from "lucide-react";
 
 const DAYS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 const EDIT_ROLES = ["super_admin", "guru", "kepsek", "staff_tu"];
 const STUDENT_ROLES = ["siswa", "ketua_kelas", "ketua_osis"];
 
+const QUICK_START = ["07:00", "07:45", "08:30", "09:15", "10:15", "11:00", "11:45", "13:00"];
+const QUICK_END = ["07:45", "08:30", "09:15", "10:00", "11:00", "11:45", "12:30", "13:45"];
 const EMPTY = { day: "Senin", start_time: "07:00", end_time: "08:30", subject: "", teacher_id: "", room: "" };
 
 export default function Jadwal() {
@@ -66,6 +69,7 @@ export default function Jadwal() {
   const save = async () => {
     const d = modal.data;
     if (!d.subject.trim()) { toast.error("Mata pelajaran wajib diisi"); return; }
+    if (d.end_time <= d.start_time) { toast.error("Jam selesai harus setelah jam mulai"); return; }
     try {
       if (modal.mode === "add") {
         await api.post("/timetable", { class_id: classId, day: d.day, start_time: d.start_time, end_time: d.end_time, subject: d.subject, teacher_id: d.teacher_id || null, room: d.room });
@@ -165,19 +169,20 @@ export default function Jadwal() {
                 <input data-testid="jadwal-subject" value={modal.data.subject} onChange={(e) => setModal({ ...modal, data: { ...modal.data, subject: e.target.value } })}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm" placeholder="Matematika" />
               </Field>
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Hari">
+              <Field label="Hari">
                   <select data-testid="jadwal-day" value={modal.data.day} onChange={(e) => setModal({ ...modal, data: { ...modal.data, day: e.target.value } })} className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm">
                     {DAYS.map((d) => <option key={d}>{d}</option>)}
                   </select>
                 </Field>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Mulai">
-                  <input type="time" data-testid="jadwal-start" value={modal.data.start_time} onChange={(e) => setModal({ ...modal, data: { ...modal.data, start_time: e.target.value } })} className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm" />
+                  <TimeSelect testid="jadwal-start" value={modal.data.start_time} quick={QUICK_START} onChange={(v) => setModal((md) => ({ ...md, data: { ...md.data, start_time: v } }))} />
                 </Field>
                 <Field label="Selesai">
-                  <input type="time" data-testid="jadwal-end" value={modal.data.end_time} onChange={(e) => setModal({ ...modal, data: { ...modal.data, end_time: e.target.value } })} className="w-full px-2 py-2 rounded-lg border border-slate-300 text-sm" />
+                  <TimeSelect testid="jadwal-end" value={modal.data.end_time} quick={QUICK_END} onChange={(v) => setModal((md) => ({ ...md, data: { ...md.data, end_time: v } }))} />
                 </Field>
               </div>
+              {modal.data.end_time <= modal.data.start_time && <p data-testid="jadwal-time-error" className="text-xs text-rose-600 font-semibold">Jam selesai harus setelah jam mulai.</p>}
               <Field label="Guru (opsional)">
                 <select data-testid="jadwal-teacher" value={modal.data.teacher_id} onChange={(e) => setModal({ ...modal, data: { ...modal.data, teacher_id: e.target.value } })} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
                   <option value="">— Tidak ada —</option>

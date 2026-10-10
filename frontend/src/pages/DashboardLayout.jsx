@@ -6,6 +6,7 @@ import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardLis
   LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound, ScanFace, ShieldCheck, UserCheck } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
+import OfflineStatus from "@/components/OfflineStatus";
 import AiAssistant from "@/components/AiAssistant";
 import { useTheme } from "@/context/ThemeContext";
 import api from "@/lib/apiClient";
@@ -121,6 +122,7 @@ export default function DashboardLayout() {
                 )}
               </div>
             )}
+            <OfflineStatus/>
             <NotificationBell/>
             <button data-testid="profile-button" onClick={()=>nav("/profile")} title="Profil Saya"
               className="flex items-center gap-2 pl-1 pr-1 sm:pr-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors">

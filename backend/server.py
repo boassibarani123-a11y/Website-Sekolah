@@ -1128,6 +1128,22 @@ class ScanIn(BaseModel):
     method: str = "qr"  # qr | barcode | manual
     station_id: Optional[str] = Field(default=None, max_length=64)
     station_name: Optional[str] = Field(default=None, max_length=40)
+    client_at: Optional[str] = None  # waktu scan asli di perangkat (antrean offline)
+
+def _offline_time(client_at: Optional[str]):
+    # Waktu scan offline dipakai hanya jika valid, tidak di masa depan, dan <= 7 hari
+    if not client_at:
+        return None
+    try:
+        t = datetime.fromisoformat(client_at.replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+    now = datetime.now(timezone.utc)
+    if t > now + timedelta(minutes=2) or now - t > timedelta(days=7):
+        return None
+    return t
 
 class StationIn(BaseModel):
     station_id: str = Field(min_length=4, max_length=64)
@@ -1153,11 +1169,14 @@ async def scan(body: ScanIn, user=Depends(require_roles(*SCAN_ROLES))):
         raise HTTPException(404, "NISN tidak dikenali" if body.nisn else "QR tidak dikenali")
     if student.get("is_active") is False:
         raise HTTPException(403, "Akun siswa dinonaktifkan")
-    today = _today_wib()
+    off_t = _offline_time(body.client_at)
+    today = off_t.astimezone(WIB).date().isoformat() if off_t else _today_wib()
+    scanned_at = off_t.isoformat() if off_t else now_iso()
     station = {"station_id": body.station_id, "station_name": (body.station_name or "").strip() or None}
     rec = {"id": str(uuid.uuid4()), "student_id": student["id"], "student_name": student["name"],
-           "kelas": student.get("kelas"), "date": today, "status": body.status, "scanned_at": now_iso(),
-           "scanned_by": user["name"], "photo": body.photo, "method": body.method, "is_demo": bool(user.get("is_demo")), **station}
+           "kelas": student.get("kelas"), "date": today, "status": body.status, "scanned_at": scanned_at,
+           "scanned_by": user["name"], "photo": body.photo, "method": body.method, "is_demo": bool(user.get("is_demo")),
+           "synced_offline": bool(off_t), **station}
     # Atomic upsert so simultaneous scans from multiple gate scanners never create duplicates
     try:
         prev = await db.attendance.find_one_and_update(
@@ -1168,10 +1187,63 @@ async def scan(body: ScanIn, user=Depends(require_roles(*SCAN_ROLES))):
         return {"ok": True, "student": strip(student), "status": body.status, "scanned_at": rec["scanned_at"]}
     if prev.get("status") == body.status:
         return {"ok": True, "student": strip(student), "status": body.status, "duplicate": True, "scanned_at": prev.get("scanned_at")}
-    upd = {"status": body.status, "scanned_at": now_iso(), "method": body.method, **station}
+    upd = {"status": body.status, "scanned_at": scanned_at, "method": body.method, **station}
     if body.photo: upd["photo"] = body.photo
     await db.attendance.update_one({"id": prev["id"]}, {"$set": upd})
     return {"ok": True, "student": strip(student), "status": body.status, "updated": True, "scanned_at": upd["scanned_at"]}
+
+ATT_DELETE_ROLES = ("super_admin", "admin_absensi")
+
+@api.delete("/attendance/today/all")
+async def delete_attendance_today(request: Request, user=Depends(require_roles(*ATT_DELETE_ROLES))):
+    today = _today_wib()
+    r = await db.attendance.delete_many({"date": today, **dscope(user)})
+    await audit("attendance_cleared_day", user["id"], None, request, {"date": today, "count": r.deleted_count, "by": user["name"]})
+    return {"ok": True, "deleted": r.deleted_count, "date": today}
+
+@api.delete("/attendance/{aid}")
+async def delete_attendance(aid: str, request: Request, user=Depends(require_roles(*ATT_DELETE_ROLES))):
+    rec = await db.attendance.find_one({"id": aid, **dscope(user)}, {"_id": 0})
+    if not rec:
+        raise HTTPException(404, "Riwayat absensi tidak ditemukan")
+    if rec.get("date") != _today_wib():
+        raise HTTPException(400, "Hanya riwayat absensi hari ini yang dapat dihapus")
+    await db.attendance.delete_one({"id": aid})
+    await audit("attendance_deleted", user["id"], rec.get("student_id"), request,
+                {"date": rec.get("date"), "student_name": rec.get("student_name"), "method": rec.get("method"), "by": user["name"]})
+    return {"ok": True}
+
+@api.get("/attendance/weekly-by-class")
+async def attendance_weekly_by_class(start: Optional[str] = None, user=Depends(require_roles("kepsek", "staff_tu", "admin_absensi"))):
+    try:
+        mon = _monday_of(_date.fromisoformat(start)) if start else _monday_of(datetime.now(WIB).date())
+    except Exception:
+        raise HTTPException(400, "Tanggal tidak valid")
+    days = _week_dates(mon)[:6]
+    totals = {r["_id"]: r["n"] for r in await db.users.aggregate([
+        {"$match": {"role": {"$in": ["siswa", "ketua_kelas"]}, "kelas": {"$nin": [None, ""]}, **dscope(user)}},
+        {"$group": {"_id": "$kelas", "n": {"$sum": 1}}}]).to_list(500)}
+    agg = await db.attendance.aggregate([
+        {"$match": {"date": {"$gte": days[0], "$lte": days[-1]}, "kelas": {"$nin": [None, ""]}, **dscope(user)}},
+        {"$group": {"_id": {"k": "$kelas", "d": "$date", "s": "$status"}, "n": {"$sum": 1}}}]).to_list(20000)
+    cell = {}
+    for r in agg:
+        c = cell.setdefault((r["_id"]["k"], r["_id"]["d"]), {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0})
+        c[r["_id"]["s"]] = c.get(r["_id"]["s"], 0) + r["n"]
+    today = _today_wib()
+    out = []
+    for kelas in sorted(set(totals) | {k for k, _ in cell}):
+        total = totals.get(kelas, 0)
+        series, pcts = [], []
+        for d in days:
+            c = cell.get((kelas, d), {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0})
+            pct = round(c["hadir"] / total * 100, 1) if total and d <= today else None
+            if pct is not None and sum(c.values()):
+                pcts.append(pct)
+            series.append({"date": d, **c, "pct": pct})
+        out.append({"kelas": kelas, "total": total, "series": series,
+                    "avg": round(sum(pcts) / len(pcts), 1) if pcts else 0})
+    return {"days": days, "day_labels": DAY_LABELS[:6], "label": _fmt_range(days[0], days[-1]), "classes": out}
 
 @api.post("/attendance/stations/heartbeat")
 async def station_heartbeat(body: StationIn, user=Depends(require_roles(*SCAN_ROLES))):
@@ -4840,7 +4912,8 @@ async def schoolgram_classes(user=Depends(get_current_user)):
             "id": c["id"], "name": c["name"],
             "post_count": await db.posts.count_documents({"class_id": c["id"]}),
             "student_count": await db.users.count_documents({"role": {"$in": ["siswa", "ketua_kelas"]}, "kelas": c["name"], **dscope(user)}),
-            "cover": (latest[0]["image"] if latest else None),
+            "cover": c.get("cover") or (latest[0]["image"] if latest else None),
+            "avatar": c.get("avatar"),
             "has_story": (await db.stories.count_documents({"class_id": c["id"], "$or": [{"highlighted": True}, {"expires_at": {"$gte": now}}]})) > 0,
             "can_manage": can_manage_schoolgram(user, c),
         })
@@ -4853,12 +4926,12 @@ async def schoolgram_class(cid: str, user=Depends(get_current_user)):
     c = await db.classes.find_one({"id": cid}, {"_id": 0})
     if not c:
         raise HTTPException(404, "Kelas tidak ditemukan")
-    posts = await db.posts.find({"class_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    for p in posts:
-        p["like_count"] = len(p.get("likes", []))
-        p["liked"] = user["id"] in p.get("likes", [])
+    posts = [_enrich_post(p, user["id"]) for p in await db.posts.find({"class_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(200)]
+    tagged = [_enrich_post(p, user["id"]) for p in await db.posts.find({"tags": c["name"], "class_id": {"$ne": cid}}, {"_id": 0}).sort("created_at", -1).to_list(200)]
     now = now_iso()
     return {
+        "tagged": tagged,
+        "like_total": sum(p["like_count"] for p in posts),
         "class": {"id": c["id"], "name": c["name"], "description": c.get("description", ""), "avatar": c.get("avatar"), "cover": c.get("cover")},
         "posts": posts,
         "stories": await db.stories.find({"class_id": cid, "expires_at": {"$gte": now}}, {"_id": 0}).sort("created_at", -1).to_list(100),
@@ -4879,6 +4952,7 @@ class SgPostIn(BaseModel):
     image: str
     caption: Optional[str] = ""
     media_type: Optional[str] = "image"  # image | video
+    tags: List[str] = Field(default_factory=list, max_length=20)
 
 @api.post("/schoolgram/class/{cid}/post")
 async def sg_create_post(cid: str, body: SgPostIn, user=Depends(get_current_user)):
@@ -4887,6 +4961,7 @@ async def sg_create_post(cid: str, body: SgPostIn, user=Depends(get_current_user
            "media_type": body.media_type or "image",
            "author_id": user["id"], "author_name": user["name"], "author_role": user["role"],
            "class_id": cid, "kelas": c["name"], "likes": [], "comments": [], "created_at": now_iso(),
+           "tags": sorted({t.strip() for t in body.tags if t.strip() and t.strip() != c["name"]}),
            "is_demo": bool(user.get("is_demo"))}
     await db.posts.insert_one(doc)
     doc.pop("_id", None)
@@ -4962,16 +5037,18 @@ def _enrich_post(p, uid):
 async def sg_feed(user=Depends(get_current_user)):
     await _story_cleanup()
     posts = await db.posts.find({}, {"_id": 0}).sort("created_at", -1).to_list(300)
-    return [_enrich_post(p, user["id"]) for p in posts]
+    av = {c["id"]: c.get("avatar") async for c in db.classes.find({}, {"_id": 0, "id": 1, "avatar": 1})}
+    return [{**_enrich_post(p, user["id"]), "class_avatar": av.get(p.get("class_id"))} for p in posts]
 
 @api.get("/schoolgram/stories")
 async def sg_all_stories(user=Depends(get_current_user)):
     await _story_cleanup()
     now = now_iso()
     stories = await db.stories.find({"expires_at": {"$gte": now}}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    av = {c["id"]: c.get("avatar") async for c in db.classes.find({}, {"_id": 0, "id": 1, "avatar": 1})}
     groups = {}
     for s in stories:
-        g = groups.setdefault(s["class_id"], {"class_id": s["class_id"], "class_name": s.get("class_name"), "items": []})
+        g = groups.setdefault(s["class_id"], {"class_id": s["class_id"], "class_name": s.get("class_name"), "avatar": av.get(s["class_id"]), "items": []})
         g["items"].append(s)
     return list(groups.values())
 
@@ -5509,9 +5586,11 @@ async def piket_report_export(month: str, user=Depends(require_roles(*PIKET_ADMI
     return xlsx_response(data, f"Laporan_Piket_{month}.xlsx")
 
 # ---------------- FACE RECOGNITION (presensi cadangan) ----------------
-FACE_MATCH_THRESHOLD = 0.5
-FACE_DUP_THRESHOLD = 0.42
-FACE_AMBIGUITY_GAP = 0.04
+FACE_MATCH_THRESHOLD = 0.45   # jarak maksimum agar dianggap cocok (lebih ketat)
+FACE_DUP_THRESHOLD = 0.42     # saat daftar: lebih dekat dari ini = sangat mirip siswa lain
+FACE_AMBIGUITY_GAP = 0.06     # selisih kandidat #1 dan #2 di bawah ini = minta konfirmasi NISN
+FACE_TWIN_GAP = 0.10          # siswa yang ditandai "mirip" butuh selisih lebih besar
+FACE_MAX_SAMPLES = 30
 _face_cache = {"at": 0.0, "data": None}
 
 def _face_vec(v: List[float]):
@@ -5534,39 +5613,57 @@ async def _face_matrix(force: bool = False):
     import numpy as np, time
     if not force and _face_cache["data"] is not None and time.time() - _face_cache["at"] < 20:
         return _face_cache["data"]
-    ids, vecs = [], []
+    ids, vecs, similar = [], [], {}
     await _face_purge_orphans()
-    async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "descriptors": 1}):
+    async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "descriptors": 1, "similar_to": 1}):
+        similar[p["student_id"]] = set(p.get("similar_to") or [])
         for d in p.get("descriptors") or []:
             if len(d) == 128:
                 ids.append(p["student_id"]); vecs.append(d)
-    data = (ids, np.asarray(vecs, dtype=np.float32) if vecs else None)
+    data = (ids, np.asarray(vecs, dtype=np.float32) if vecs else None, similar)
     _face_cache.update(at=time.time(), data=data)
     return data
 
-async def _face_best(vec, force: bool = False):
+async def _face_rank(vec, force: bool = False, exclude: Optional[str] = None):
+    """Skor per siswa = rata-rata 3 jarak sampel terdekat (lebih stabil dari 1 sampel)."""
     import numpy as np
-    ids, mat = await _face_matrix(force)
+    ids, mat, similar = await _face_matrix(force)
     if mat is None:
-        return None, None, None
+        return [], similar
     dist = np.linalg.norm(mat - vec, axis=1)
-    best = {}
+    per = {}
     for sid, dd in zip(ids, dist.tolist()):
-        if dd < best.get(sid, float("inf")):
-            best[sid] = dd
-    ranked = sorted(best.items(), key=lambda x: x[1])
-    second = ranked[1][1] if len(ranked) > 1 else None
-    return ranked[0][0], ranked[0][1], second
+        if sid != exclude:
+            per.setdefault(sid, []).append(dd)
+    ranked = sorted(((sid, float(np.mean(sorted(v)[:3]))) for sid, v in per.items()), key=lambda x: x[1])
+    return ranked, similar
+
+async def _face_best(vec, force: bool = False):
+    ranked, _ = await _face_rank(vec, force)
+    if not ranked:
+        return None, None, None
+    return ranked[0][0], ranked[0][1], (ranked[1][1] if len(ranked) > 1 else None)
 
 class FaceEnrollIn(BaseModel):
     student_id: str
-    descriptors: List[List[float]] = Field(min_length=3, max_length=10)
+    descriptors: List[List[float]] = Field(min_length=3, max_length=20)
     photo: Optional[str] = None
+    append: bool = False            # tambah sampel ke profil yang sudah ada
+    confirm_similar: bool = False   # tetap daftarkan walau mirip siswa lain (mis. kembar)
 
 class FaceScanIn(BaseModel):
     descriptor: List[float]
     station_id: Optional[str] = Field(default=None, max_length=64)
     station_name: Optional[str] = Field(default=None, max_length=40)
+    client_at: Optional[str] = None
+
+class FaceConfirmIn(BaseModel):
+    nisn: str = Field(min_length=1, max_length=40)
+    candidate_ids: List[str] = Field(min_length=1, max_length=5)
+    descriptor: Optional[List[float]] = None
+    station_id: Optional[str] = Field(default=None, max_length=64)
+    station_name: Optional[str] = Field(default=None, max_length=40)
+    client_at: Optional[str] = None
 
 @api.get("/face/students")
 async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, user=Depends(require_roles(*SCAN_ROLES))):
@@ -5577,13 +5674,14 @@ async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, us
         mq["$or"] = [{"name": {"$regex": re.escape(q), "$options": "i"}}, {"nisn": {"$regex": re.escape(q)}}]
     await _face_purge_orphans()
     students = await db.users.find(mq, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "photo": 1}).sort([("kelas", 1), ("name", 1)]).to_list(2000)
-    prof = {p["student_id"]: p async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "samples": 1, "updated_at": 1, "photo": 1})}
+    prof = {p["student_id"]: p async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "samples": 1, "updated_at": 1, "photo": 1, "similar_to": 1})}
     for s in students:
         p = prof.get(s["id"])
         s["enrolled"] = bool(p)
         s["samples"] = p.get("samples", 0) if p else 0
         s["face_updated_at"] = p.get("updated_at") if p else None
         s["face_photo"] = p.get("photo") if p else None
+        s["similar_count"] = len(p.get("similar_to") or []) if p else 0
     total = await db.users.count_documents({"role": "siswa", **dscope(user)})
     return {"students": students, "total": total, "enrolled": len(prof)}
 
@@ -5597,41 +5695,88 @@ async def face_enroll(body: FaceEnrollIn, user=Depends(require_roles(*SCAN_ROLES
     mean = np.mean(vecs, axis=0)
     if max(float(np.linalg.norm(v - mean)) for v in vecs) > 0.45:
         raise HTTPException(400, "Sampel wajah tidak konsisten. Pastikan hanya satu orang di depan kamera lalu ulangi.")
-    sid, dist, _ = await _face_best(mean, force=True)
-    if sid and sid != st["id"] and dist < FACE_DUP_THRESHOLD:
-        other = await db.users.find_one({"id": sid}, {"_id": 0, "name": 1, "kelas": 1})
-        raise HTTPException(409, f"Wajah ini sangat mirip dengan {(other or {}).get('name', 'siswa lain')} yang sudah terdaftar. Periksa kembali siswa yang dipilih.")
-    await db.face_profiles.update_one({"student_id": st["id"]}, {"$set": {
-        "student_id": st["id"], "descriptors": [v.round(5).tolist() for v in vecs], "samples": len(vecs),
-        "photo": body.photo, "enrolled_by": user["name"], "updated_at": now_iso()}}, upsert=True)
+    existing = await db.face_profiles.find_one({"student_id": st["id"]}, {"_id": 0})
+    if body.append and existing:
+        old = np.asarray(existing.get("descriptors") or [], dtype=np.float32)
+        if len(old) and float(np.linalg.norm(old.mean(axis=0) - mean)) > 0.5:
+            raise HTTPException(400, "Sampel baru tidak cocok dengan wajah yang sudah terdaftar untuk siswa ini.")
+    ranked, _ = await _face_rank(mean, force=True, exclude=st["id"])
+    similar = [sid for sid, d in ranked if d < FACE_DUP_THRESHOLD]
+    if similar and not body.confirm_similar:
+        others = await db.users.find({"id": {"$in": similar[:3]}}, {"_id": 0, "id": 1, "name": 1, "kelas": 1}).to_list(3)
+        names = ", ".join(f"{o['name']} ({o.get('kelas') or '-'})" for o in others) or "siswa lain"
+        raise HTTPException(409, f"Wajah ini sangat mirip dengan {names}. Jika memang siswa berbeda (mis. kembar), konfirmasi untuk tetap mendaftarkan. Sistem akan meminta NISN saat wajah mereka sulit dibedakan.")
+    descs = [v.round(5).tolist() for v in vecs]
+    if body.append and existing:
+        descs = ((existing.get("descriptors") or []) + descs)[-FACE_MAX_SAMPLES:]
+    prev_sim = set((existing or {}).get("similar_to") or [])
+    upd = {"student_id": st["id"], "descriptors": descs, "samples": len(descs),
+           "similar_to": sorted(prev_sim | set(similar)), "enrolled_by": user["name"], "updated_at": now_iso()}
+    if body.photo or not existing:
+        upd["photo"] = body.photo
+    await db.face_profiles.update_one({"student_id": st["id"]}, {"$set": upd}, upsert=True)
+    if similar:
+        await db.face_profiles.update_many({"student_id": {"$in": similar}}, {"$addToSet": {"similar_to": st["id"]}})
     await _face_matrix(force=True)
-    return {"ok": True, "student": st, "samples": len(vecs)}
+    return {"ok": True, "student": st, "samples": len(descs), "similar_marked": len(similar)}
 
 @api.delete("/face/enroll/{student_id}")
 async def face_unenroll(student_id: str, user=Depends(require_roles(*SCAN_ROLES))):
     r = await db.face_profiles.delete_one({"student_id": student_id})
+    await db.face_profiles.update_many({"similar_to": student_id}, {"$pull": {"similar_to": student_id}})
     await _face_matrix(force=True)
     if not r.deleted_count:
         raise HTTPException(404, "Data wajah tidak ditemukan")
     return {"ok": True}
 
+async def _face_candidates(ids: List[str]):
+    rows = await db.users.find({"id": {"$in": ids}, "role": "siswa"}, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "photo": 1}).to_list(5)
+    photos = {p["student_id"]: p.get("photo") async for p in db.face_profiles.find({"student_id": {"$in": ids}}, {"_id": 0, "student_id": 1, "photo": 1})}
+    order = {sid: i for i, sid in enumerate(ids)}
+    for r in rows:
+        r["face_photo"] = photos.get(r["id"])
+    return sorted(rows, key=lambda r: order.get(r["id"], 99))
+
 @api.post("/attendance/face-scan")
 async def face_scan(body: FaceScanIn, user=Depends(require_roles(*SCAN_ROLES))):
     vec = _face_vec(body.descriptor)
-    sid, dist, second = await _face_best(vec)
-    if sid is None:
+    ranked, similar = await _face_rank(vec)
+    if not ranked:
         raise HTTPException(404, "Belum ada wajah siswa yang terdaftar")
+    sid, dist = ranked[0]
     if dist > FACE_MATCH_THRESHOLD:
         raise HTTPException(404, "Wajah tidak dikenali")
-    if second is not None and second - dist < FACE_AMBIGUITY_GAP:
-        raise HTTPException(409, "Wajah kurang jelas, mohon hadap lurus ke kamera")
+    twins = similar.get(sid) or set()
+    close = [s for s, d in ranked[1:4] if d <= FACE_MATCH_THRESHOLD + 0.05 and
+             (d - dist < FACE_AMBIGUITY_GAP or (s in twins and d - dist < FACE_TWIN_GAP))]
+    if close:
+        return {"ok": False, "need_confirm": True, "candidates": await _face_candidates([sid] + close),
+                "message": "Wajah mirip dengan siswa lain. Scan barcode / ketik NISN untuk konfirmasi."}
     st = await db.users.find_one({"id": sid, "role": "siswa"}, {"_id": 0, "qr_code": 1, "nisn": 1})
     if not st:
         await _face_matrix(force=True)
         raise HTTPException(404, "Wajah tidak dikenali")
-    res = await scan(ScanIn(qr_code=st.get("qr_code"), nisn=st.get("nisn"), method="face",
+    res = await scan(ScanIn(qr_code=st.get("qr_code"), nisn=st.get("nisn"), method="face", client_at=body.client_at,
                             station_id=body.station_id, station_name=body.station_name), user)
     res["confidence"] = round(max(0.0, 1 - dist) * 100, 1)
+    return res
+
+@api.post("/attendance/face-confirm")
+async def face_confirm(body: FaceConfirmIn, user=Depends(require_roles(*SCAN_ROLES))):
+    st = await db.users.find_one({"nisn": body.nisn.strip(), "role": "siswa", **dscope(user)}, {"_id": 0, "id": 1, "qr_code": 1, "nisn": 1})
+    if not st or st["id"] not in body.candidate_ids:
+        raise HTTPException(400, "NISN tidak cocok dengan kandidat wajah. Coba lagi atau gunakan scanner barcode.")
+    if body.descriptor and len(body.descriptor) == 128:
+        # Belajar: simpan sampel terkonfirmasi agar ke depan lebih mudah dibedakan
+        await db.face_profiles.update_one({"student_id": st["id"]}, {"$push": {"descriptors": {
+            "$each": [[round(x, 5) for x in body.descriptor]], "$slice": -FACE_MAX_SAMPLES}}, "$set": {"updated_at": now_iso()}})
+        p = await db.face_profiles.find_one({"student_id": st["id"]}, {"_id": 0, "descriptors": 1})
+        if p:
+            await db.face_profiles.update_one({"student_id": st["id"]}, {"$set": {"samples": len(p.get("descriptors") or [])}})
+        await _face_matrix(force=True)
+    res = await scan(ScanIn(qr_code=st.get("qr_code"), nisn=st.get("nisn"), method="face", client_at=body.client_at,
+                            station_id=body.station_id, station_name=body.station_name), user)
+    res["confirmed"] = True
     return res
 
 

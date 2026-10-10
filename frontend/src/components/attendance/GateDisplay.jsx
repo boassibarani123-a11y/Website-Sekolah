@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScanBarcode, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { ScanBarcode, CheckCircle2, AlertTriangle, XCircle, CloudOff } from "lucide-react";
 import { LiveScanTable } from "./LiveScanTable";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -8,6 +8,7 @@ const STYLE = {
   ok: { bg: "bg-emerald-600", ring: "ring-emerald-300", label: "MASUK", Icon: CheckCircle2 },
   dup: { bg: "bg-amber-500", ring: "ring-amber-200", label: "SUDAH ABSEN", Icon: AlertTriangle },
   err: { bg: "bg-rose-600", ring: "ring-rose-300", label: "DITOLAK", Icon: XCircle },
+  off: { bg: "bg-indigo-600", ring: "ring-indigo-300", label: "TERSIMPAN OFFLINE", Icon: CloudOff },
 };
 
 function Clock() {
@@ -52,7 +53,7 @@ export function ResultCard({ r, idleTitle = "Silakan Scan Kartu Pelajar", idleSu
   );
 }
 
-export function GateDisplay({ current, history, station, onFullscreen, isFull, rows = [], stats, newId }) {
+export function GateDisplay({ current, history, station, onFullscreen, isFull, rows = [], stats, newId, del }) {
   if (isFull) {
     return (
       <div data-testid="gate-display" className="bg-slate-950 text-white p-6 h-screen flex flex-col">
@@ -68,7 +69,7 @@ export function GateDisplay({ current, history, station, onFullscreen, isFull, r
           </div>
         </div>
         <div className="h-[38vh] min-h-[280px] shrink-0"><ResultCard r={current}/></div>
-        <LiveScanTable rows={rows} stats={stats} newId={newId}/>
+        <LiveScanTable rows={rows} stats={stats} newId={newId} del={del}/>
       </div>
     );
   }
@@ -93,7 +94,7 @@ export function GateDisplay({ current, history, station, onFullscreen, isFull, r
           <ul className="space-y-2">
             {history.map(h => (
               <li key={h.key} className="flex items-center gap-3 p-2 rounded-xl bg-white/5">
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${h.kind === "ok" ? "bg-emerald-400" : h.kind === "dup" ? "bg-amber-400" : "bg-rose-500"}`}/>
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${h.kind === "ok" ? "bg-emerald-400" : h.kind === "dup" ? "bg-amber-400" : h.kind === "off" ? "bg-indigo-400" : "bg-rose-500"}`}/>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{h.student?.name || h.code}</p>
                   <p className="text-[11px] text-slate-400 truncate">{h.student?.kelas || h.message}</p>

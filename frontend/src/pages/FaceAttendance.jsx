@@ -10,6 +10,8 @@ import { beep, getStation, todayWib } from "@/components/attendance/scannerUtils
 import { CameraStage } from "@/components/face/CameraStage";
 import { useFaceCamera } from "@/components/face/useFaceCamera";
 import { detectFaces, drawBoxes, eyeAspect, meanDescriptor, listCameras } from "@/components/face/faceUtils";
+import { FaceConfirmPanel } from "@/components/face/FaceConfirmPanel";
+import { useAttendanceDelete } from "@/components/attendance/useAttendanceDelete";
 
 const OPS = ["admin_absensi", "super_admin", "staff_tu", "kepsek"];
 const STABLE_FRAMES = 3;
@@ -26,6 +28,8 @@ export default function FaceAttendance() {
   const [newId, setNewId] = useState(null);
   const [liveness, setLiveness] = useState(false);
   const [isFull, setIsFull] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [confirm, setConfirm] = useState(null);
   const station = useRef(getStation()).current;
   const wrapRef = useRef(null);
   const busy = useRef(false);
@@ -45,6 +49,7 @@ export default function FaceAttendance() {
     }).catch(() => {});
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
+  const del = useAttendanceDelete(load);
   useEffect(() => { listCameras().then(setCams); }, [state]);
   useEffect(() => {
     const onFs = () => setIsFull(document.fullscreenElement === wrapRef.current);
@@ -63,14 +68,37 @@ export default function FaceAttendance() {
     busy.current = true;
     try {
       const r = await api.post("/attendance/face-scan", { descriptor, station_id: station.id, station_name: station.name });
-      show({ kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code: `${r.data.confidence}%` });
+      if (r.data.need_confirm) {
+        beep(false);
+        setConfirm({ candidates: r.data.candidates, descriptor });
+        buf.current = []; blink.current = { open: false, blinked: false }; setProgress(0);
+        return; // busy tetap true sampai konfirmasi selesai
+      }
+      if (r.data.offline) show({ kind: "off", code: "wajah", at: new Date().toISOString(), message: "Akan dicocokkan & dikirim saat online" });
+      else show({ kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code: `${r.data.confidence}%` });
       load();
     } catch (e) {
       show({ kind: "err", code: "wajah", at: new Date().toISOString(), message: e.response?.data?.detail || "Gagal terhubung ke server" });
     }
-    buf.current = []; blink.current = { open: false, blinked: false };
+    buf.current = []; blink.current = { open: false, blinked: false }; setProgress(0);
     setTimeout(() => { busy.current = false; }, 2500);
   }, [station, load]);
+
+  const confirmNisn = async (nisn) => {
+    try {
+      const r = await api.post("/attendance/face-confirm", { nisn, candidate_ids: confirm.candidates.map(c => c.id), descriptor: confirm.descriptor, station_id: station.id, station_name: station.name });
+      setConfirm(null);
+      if (r.data.offline) show({ kind: "off", code: nisn, at: new Date().toISOString(), message: "Akan dikirim saat online" });
+      else show({ kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code: nisn });
+      load();
+      setTimeout(() => { busy.current = false; }, 2500);
+    } catch (e) {
+      beep(false);
+      toast.error(e.response?.data?.detail || "Konfirmasi gagal");
+    }
+  };
+  const cancelConfirm = () => { setConfirm(null); setTimeout(() => { busy.current = false; }, 800); };
+  const faceStatus = confirm ? "confirm" : current ? (current.kind === "err" ? "error" : "success") : progress > 0 ? "scanning" : "idle";
 
   useEffect(() => {
     if (state !== "ready") return;
@@ -82,6 +110,7 @@ export default function FaceAttendance() {
         try {
           const dets = await detectFaces(apiRef.current, video);
           drawBoxes(canvasRef.current, video, dets, dets.length === 1 ? "#34d399" : "#38bdf8");
+          if (dets.length !== 1 || dets[0].detection.box.width < video.videoWidth * 0.18) setProgress(0);
           if (dets.length === 0) { buf.current = []; setHint({ text: "Arahkan wajah ke kamera", tone: "sky" }); }
           else if (dets.length > 1) { buf.current = []; setHint({ text: "Satu orang saja di depan kamera", tone: "amber" }); }
           else if (dets[0].detection.box.width < video.videoWidth * 0.18) { buf.current = []; setHint({ text: "Mendekat ke kamera", tone: "amber" }); }
@@ -90,6 +119,7 @@ export default function FaceAttendance() {
             if (ear > 0.27) blink.current.open = true;
             if (blink.current.open && ear < 0.21) blink.current.blinked = true;
             buf.current = [...buf.current, Array.from(dets[0].descriptor)].slice(-STABLE_FRAMES);
+            setProgress(liveness && !blink.current.blinked ? 0.45 : buf.current.length / STABLE_FRAMES);
             if (liveness && !blink.current.blinked) setHint({ text: "Kedipkan mata untuk verifikasi", tone: "amber" });
             else if (buf.current.length >= STABLE_FRAMES) { setHint({ text: "Mencocokkan wajah…", tone: "emerald" }); await submit(meanDescriptor(buf.current)); }
             else setHint({ text: "Tahan sebentar…", tone: "emerald" });
@@ -153,14 +183,17 @@ export default function FaceAttendance() {
         </div>
         <div className={`grid lg:grid-cols-5 gap-5 ${isFull ? "shrink-0" : ""}`}>
           <div className={`lg:col-span-3 ${isFull ? "max-h-[46vh] [&>div]:max-h-[46vh]" : ""}`}>
-            <CameraStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} hint={hint.text} hintTone={hint.tone} onRetry={retry} />
+            <CameraStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} hint={confirm ? "Konfirmasi NISN →" : hint.text} hintTone={confirm ? "amber" : hint.tone} onRetry={retry} progress={progress} status={faceStatus} />
           </div>
-          <div className={`lg:col-span-2 ${isFull ? "h-[46vh]" : "min-h-[320px]"}`}><ResultCard r={current} idleTitle="Lihat ke Kamera" idleSub="Wajah dikenali otomatis dalam ±1 detik" /></div>
+          <div className={`lg:col-span-2 ${isFull ? "h-[46vh]" : "min-h-[320px]"}`}>
+            {confirm ? <FaceConfirmPanel candidates={confirm.candidates} onSubmit={confirmNisn} onCancel={cancelConfirm} />
+              : <ResultCard r={current} idleTitle="Lihat ke Kamera" idleSub="Wajah dikenali otomatis dalam ±1 detik" />}
+          </div>
         </div>
-        {isFull && <LiveScanTable rows={rows} stats={stats} newId={newId} />}
+        {isFull && <LiveScanTable rows={rows} stats={stats} newId={newId} del={del} />}
       </div>
 
-      {!isFull && <div className="bg-slate-950 text-white rounded-3xl p-1 flex flex-col max-h-[520px]"><LiveScanTable rows={rows} stats={stats} newId={newId} /></div>}
+      {!isFull && <div className="bg-slate-950 text-white rounded-3xl p-1 flex flex-col max-h-[520px]"><LiveScanTable rows={rows} stats={stats} newId={newId} del={del} /></div>}
     </div>
   );
 }

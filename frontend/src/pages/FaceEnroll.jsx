@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { ScanFace, Search, CheckCircle2, Circle, Trash2, RotateCcw, Save, Loader2, ArrowLeft, UserRound, ShieldCheck, ListOrdered } from "lucide-react";
+import { ScanFace, Search, CheckCircle2, Circle, Trash2, RotateCcw, Save, Loader2, ArrowLeft, UserRound, ShieldCheck, ListOrdered, PlusCircle, Users } from "lucide-react";
 import { CameraStage } from "@/components/face/CameraStage";
 import { useFaceCamera } from "@/components/face/useFaceCamera";
 import { detectFaces, drawBoxes, snapshotFace } from "@/components/face/faceUtils";
@@ -57,6 +57,7 @@ function Enroller({ student, onDone, autoStart }) {
   const { videoRef, canvasRef, apiRef, state, error, retry } = useFaceCamera("");
   const [phase, setPhase] = useState("idle"); // idle | capturing | review | saving
   const [samples, setSamples] = useState([]);
+  const [append, setAppend] = useState(false);
   const [hint, setHint] = useState({ text: "Tekan Mulai Rekam", tone: "sky" });
   const shot = useRef(null);
   const phaseRef = useRef(phase); phaseRef.current = phase;
@@ -101,17 +102,27 @@ function Enroller({ student, onDone, autoStart }) {
     return () => { alive = false; clearTimeout(timer); };
   }, [state, videoRef, canvasRef, apiRef]);
 
-  const begin = () => { setSamples([]); shot.current = null; setPhase("capturing"); setHint({ text: POSES[0], tone: "sky" }); };
+  const begin = (more = false) => { setAppend(more === true); setSamples([]); shot.current = null; setPhase("capturing"); setHint({ text: POSES[0], tone: "sky" }); };
   const save = async () => {
     setPhase("saving");
+    let photo = null;
     try {
-      let photo = null;
-      if (shot.current) {
+      if (shot.current && !append) {
         const fd = new FormData(); fd.append("file", shot.current, "face.jpg");
         const up = await api.post("/upload", fd); photo = `${BACKEND}${up.data.url}`;
       }
-      await api.post("/face/enroll", { student_id: student.id, descriptors: samples, photo });
-      toast.success(`Wajah ${student.name} berhasil didaftarkan`);
+    } catch { /* foto opsional */ }
+    const body = { student_id: student.id, descriptors: samples, photo, append };
+    try {
+      let r;
+      try { r = await api.post("/face/enroll", body); }
+      catch (e) {
+        if (e.response?.status !== 409) throw e;
+        if (!window.confirm(`${e.response.data.detail}\n\nTetap daftarkan ${student.name} sebagai siswa berbeda?`)) { setPhase("review"); return; }
+        r = await api.post("/face/enroll", { ...body, confirm_similar: true });
+      }
+      toast.success(append ? `Sampel ditambahkan · total ${r.data.samples} sampel` : `Wajah ${student.name} berhasil didaftarkan`,
+        { description: r.data.similar_marked ? "Ditandai mirip siswa lain — sistem akan minta NISN bila ragu." : undefined });
       onDone(true);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal menyimpan data wajah");
@@ -130,12 +141,14 @@ function Enroller({ student, onDone, autoStart }) {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-400">Pendaftaran Wajah</p>
           <p data-testid="face-enroll-student-name" className="font-heading text-2xl font-extrabold">{student.name}</p>
-          <p className="text-sm text-slate-400">{student.kelas || "—"} · NISN {student.nisn || "—"} {student.enrolled && <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase">Sudah terdaftar</span>}</p>
+          <p className="text-sm text-slate-400">{student.kelas || "—"} · NISN {student.nisn || "—"} {student.enrolled && <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase">Terdaftar · {student.samples} sampel</span>}
+            {student.similar_count > 0 && <span data-testid="face-similar-badge" className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-bold uppercase inline-flex items-center gap-1"><Users className="w-3 h-3" />Mirip {student.similar_count} siswa</span>}</p>
         </div>
         {student.enrolled && <button data-testid="face-delete-button" onClick={remove} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-rose-600 text-sm font-semibold flex items-center gap-2 transition-colors"><Trash2 className="w-4 h-4" />Hapus Data Wajah</button>}
       </div>
       <div className="grid md:grid-cols-5 gap-5">
-        <div className="md:col-span-3"><CameraStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} hint={phase === "idle" ? "" : hint.text} hintTone={hint.tone} onRetry={retry} /></div>
+        <div className="md:col-span-3"><CameraStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} hint={phase === "idle" ? "" : hint.text} hintTone={hint.tone} onRetry={retry}
+          progress={samples.length / POSES.length} status={phase === "review" || phase === "saving" ? "success" : phase === "capturing" ? "scanning" : "idle"} /></div>
         <div className="md:col-span-2 space-y-3">
           {POSES.map((p, i) => {
             const done = i < samples.length, active = phase === "capturing" && i === samples.length;
@@ -146,15 +159,16 @@ function Enroller({ student, onDone, autoStart }) {
               </div>
             );
           })}
-          {phase === "idle" && <button data-testid="face-start-capture" disabled={state !== "ready"} onClick={begin} className="w-full py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"><ScanFace className="w-5 h-5" />{student.enrolled ? "Rekam Ulang Wajah" : "Mulai Rekam Wajah"}</button>}
+          {phase === "idle" && student.enrolled && <button data-testid="face-add-samples" disabled={state !== "ready"} onClick={() => begin(true)} className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-400 font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"><PlusCircle className="w-5 h-5" />Tambah Sampel (lebih akurat)</button>}
+          {phase === "idle" && <button data-testid="face-start-capture" disabled={state !== "ready"} onClick={() => begin(false)} className="w-full py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"><ScanFace className="w-5 h-5" />{student.enrolled ? "Rekam Ulang Wajah" : "Mulai Rekam Wajah"}</button>}
           {phase === "capturing" && <button data-testid="face-cancel-capture" onClick={() => setPhase("idle")} className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 font-semibold transition-colors">Batal</button>}
           {(phase === "review" || phase === "saving") && (
             <div className="grid grid-cols-2 gap-2">
-              <button data-testid="face-retake" onClick={begin} disabled={phase === "saving"} className="py-3 rounded-2xl bg-white/10 hover:bg-white/20 font-semibold flex items-center justify-center gap-2 transition-colors"><RotateCcw className="w-4 h-4" />Ulangi</button>
+              <button data-testid="face-retake" onClick={() => begin(append)} disabled={phase === "saving"} className="py-3 rounded-2xl bg-white/10 hover:bg-white/20 font-semibold flex items-center justify-center gap-2 transition-colors"><RotateCcw className="w-4 h-4" />Ulangi</button>
               <button data-testid="face-save" onClick={save} disabled={phase === "saving"} className="py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 font-bold flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">{phase === "saving" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Simpan</button>
             </div>
           )}
-          <p className="text-[11px] text-slate-400 leading-relaxed flex gap-1.5"><ShieldCheck className="w-4 h-4 shrink-0 text-sky-400" />Yang disimpan hanya kode numerik wajah (128 angka) + 1 foto kecil, bukan video. Sistem menolak jika wajah mirip siswa lain yang sudah terdaftar.</p>
+          <p className="text-[11px] text-slate-400 leading-relaxed flex gap-1.5"><ShieldCheck className="w-4 h-4 shrink-0 text-sky-400" />Yang disimpan hanya kode numerik wajah (128 angka) + 1 foto kecil. Untuk siswa yang sangat mirip (mis. kembar): tambah sampel di cahaya/pose berbeda; sistem memakai ambang ketat dan meminta NISN bila dua kandidat terlalu mirip.</p>
         </div>
       </div>
     </div>
