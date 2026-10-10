@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle, ScanFace } from "lucide-react";
 import StudentIdCard from "@/components/StudentIdCard";
 
 const ROLES = [
@@ -29,7 +30,12 @@ export default function MasterAccounts() {
   const [filter, setFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const load = () => api.get("/users").then(r=>setUsers(r.data));
+  const [faces, setFaces] = useState({});
+  const navigate = useNavigate();
+  const load = () => {
+    api.get("/users").then(r=>setUsers(r.data));
+    api.get("/face/students").then(r=>setFaces(Object.fromEntries(r.data.students.map(s=>[s.id, s.enrolled])))).catch(()=>{});
+  };
   useEffect(() => { load(); }, []);
 
   const filtered = users.filter(u => {
@@ -94,7 +100,7 @@ export default function MasterAccounts() {
               <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 <th className="px-4 py-3">Nama</th><th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Role</th><th className="px-4 py-3">Kelas</th>
-                <th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Aksi</th>
+                <th className="px-4 py-3">Status</th><th className="px-4 py-3">Wajah</th><th className="px-4 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -118,6 +124,12 @@ export default function MasterAccounts() {
                       ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3"/>Aktif</span>
                       : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-200 text-slate-600"><XCircle className="w-3 h-3"/>Nonaktif</span>}
                   </td>
+                  <td className="px-4 py-3" data-testid={`face-status-${u.id}`}>
+                    {u.role !== "siswa" ? <span className="text-slate-300">—</span> : faces[u.id]
+                      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700"><ScanFace className="w-3 h-3"/>Terdaftar</span>
+                      : <button data-testid={`face-enroll-${u.id}`} onClick={()=>navigate(`/face-enroll?student=${u.id}`)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-500 hover:text-white transition-colors"><ScanFace className="w-3 h-3"/>Daftarkan</button>}
+                  </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5">
                     {u.role === "siswa" && (
                       <button data-testid="student-id-card-modal-trigger" onClick={()=>setCardFor(u)}
@@ -137,7 +149,7 @@ export default function MasterAccounts() {
                 </tr>
               );})}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400" data-testid="accounts-empty">Tidak ada akun yang cocok dengan filter.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400" data-testid="accounts-empty">Tidak ada akun yang cocok dengan filter.</td></tr>
               )}
             </tbody>
           </table>

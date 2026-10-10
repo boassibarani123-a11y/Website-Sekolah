@@ -5348,7 +5348,7 @@ async def create_piket(body: PiketIn, user=Depends(require_roles(*PIKET_ADMIN)))
         doc = {"id": str(uuid.uuid4()), "teacher_id": t["id"], "teacher_name": t["name"], "teacher_photo": t.get("photo"),
                "date": d, "start_time": body.start_time, "end_time": body.end_time, "gate": body.gate.strip(),
                "notes": body.notes, "created_by": user["name"], "created_at": now_iso(),
-               "checked_in_at": None, "checked_out_at": None, "late_minutes": None}
+               "checked_in_at": None, "checked_out_at": None, "late_minutes": None, "reminded_at": None}
         dstamp(doc, user)
         await db.piket_shifts.insert_one(doc)
         created.append(piket_out(doc))
@@ -5373,6 +5373,8 @@ async def edit_piket(sid: str, body: PiketUpdate, user=Depends(require_roles(*PI
     m = {**s, **upd}
     if m["end_time"] <= m["start_time"]:
         raise HTTPException(400, "Jam selesai harus setelah jam mulai")
+    if any(k in upd for k in ("date", "start_time", "teacher_id")):
+        upd["reminded_at"] = None
     if await _piket_conflict(m["teacher_id"], m["date"], m["start_time"], m["end_time"], exclude=sid):
         raise HTTPException(409, "Jadwal bentrok dengan shift lain milik guru ini")
     await db.piket_shifts.update_one({"id": sid}, {"$set": upd})
@@ -5413,6 +5415,50 @@ async def piket_presence(sid: str, action: str, user=Depends(require_roles(*PIKE
         upd = {"checked_out_at": now_iso()}
     await db.piket_shifts.update_one({"id": sid}, {"$set": upd})
     return piket_out(await db.piket_shifts.find_one({"id": sid}, {"_id": 0}))
+
+PIKET_REMIND_MIN = 35
+
+async def run_piket_reminder():
+    now = datetime.now(WIB)
+    days = sorted({now.date().isoformat(), (now + timedelta(minutes=PIKET_REMIND_MIN)).date().isoformat()})
+    brand = escape(os.environ.get("EMAIL_FROM_NAME", "SMA NEGERI 1 LAGUBOTI"))
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    sent = 0
+    async for s in db.piket_shifts.find({"date": {"$in": days}, "reminded_at": None, "checked_in_at": None}, {"_id": 0}):
+        start = _piket_dt(s["date"], s["start_time"])
+        mins = (start - now).total_seconds() / 60
+        if not 0 <= mins <= PIKET_REMIND_MIN:
+            continue
+        claimed = await db.piket_shifts.update_one({"id": s["id"], "reminded_at": None}, {"$set": {"reminded_at": now_iso()}})
+        if not claimed.modified_count:
+            continue
+        left = max(1, round(mins))
+        await notify([s["teacher_id"]], "Pengingat Piket Gerbang",
+                     f"Piket {s['gate']} dimulai {left} menit lagi (pukul {s['start_time']}-{s['end_time']} WIB). Jangan lupa check-in.", "/piket")
+        t = await db.users.find_one({"id": s["teacher_id"]}, {"_id": 0, "email": 1, "name": 1})
+        if t and t.get("email"):
+            html = (f'<div style="font-family:Arial;padding:24px;max-width:560px;margin:auto">'
+                    f'<h2 style="color:#0284C7">Pengingat Piket Gerbang</h2>'
+                    f'<p>Halo <b>{escape(t["name"])}</b>, piket Anda di <b>{escape(s["gate"])}</b> dimulai pukul '
+                    f'<b>{s["start_time"]}</b> sampai <b>{s["end_time"]} WIB</b> ({left} menit lagi).</p>'
+                    + (f'<p style="color:#475569">Catatan: {escape(s["notes"])}</p>' if s.get("notes") else "")
+                    + f'<p><a href="{base}/piket" style="display:inline-block;padding:12px 28px;background:#059669;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold">Buka &amp; Check-in</a></p>'
+                    f'<p style="color:#94A3B8;font-size:11px">— {brand}</p></div>')
+            try:
+                await send_email(t["email"], f"Pengingat Piket {s['gate']} {s['start_time']} WIB", html)
+            except Exception as e:
+                logger.warning("Piket reminder email gagal: %s", e)
+        sent += 1
+    logger.info("Piket reminder: %d pengingat dikirim", sent)
+
+@api.post("/cron/piket-reminder")
+async def cron_piket_reminder(request: Request, bg: BackgroundTasks):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    run_id = await _cron_guard(request, "piket-reminder")
+    if not run_id:
+        return {"ok": True, "duplicate": True}
+    bg.add_task(run_piket_reminder)
+    return {"ok": True}
 
 def _piket_report_rows(shifts: list) -> list:
     by = {}

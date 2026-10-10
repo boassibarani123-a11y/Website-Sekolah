@@ -36,6 +36,11 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 - Daftar wajah "Mode Per Kelas": otomatis pindah & mulai rekam siswa berikutnya yang belum terdaftar
 - Laporan Piket Bulanan per guru (hadir, tepat, telat, menit telat, absen, jam jaga, %) + ekspor Excel
 
+## Implemented (2026-10-10, iterasi 5)
+- Pengingat piket otomatis: /api/cron/piket-reminder (sekali per shift, ±30-35 menit sebelum; notifikasi + email); .emergent/crons.yml (5 cron) untuk preview/Emergent; crontab VPS */5
+- Kelola Akun: kolom Wajah (Terdaftar / tombol Daftarkan → /face-enroll?student=id)
+- PANDUAN_DEPLOY_VPS.md & setup-vps.sh diperbarui (cron piket, cache Nginx /models, setup kamera, ujian, troubleshooting)
+
 ## Backlog
 - P0: Jalankan setup-vps.sh di VPS, isi kredensial Brevo SMTP, uji kirim email
 - P1: Integrasi WhatsApp (nanti)

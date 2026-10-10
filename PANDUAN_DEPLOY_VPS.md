@@ -11,7 +11,9 @@ Saya ingin men-deploy website sekolah full-stack dari GitHub:
 - Database: MongoDB 7.0 lokal (bind 127.0.0.1)
 - Reverse proxy: Nginx + HTTPS Let's Encrypt (Certbot)
 - Process manager: systemd service `sekolah-backend`
-- Cron: 4 endpoint terjadwal dipanggil via curl dengan header `Authorization: Bearer <WEBHOOK_CRON_SECRET>` + `X-Webhook-Id`
+- Cron: 5 endpoint terjadwal (attendance-reminder, attendance-auto-alpha, attendance-archive, kas-reminder, piket-reminder) dipanggil via curl dengan header `Authorization: Bearer <WEBHOOK_CRON_SECRET>` + `X-Webhook-Id`
+- Fitur kamera: Presensi Wajah & Daftar Wajah Siswa memakai webcam di browser (butuh HTTPS + izin kamera). Model AI wajah (±12MB) ada di `frontend/public/models` dan ikut ter-build sebagai file statis; pencocokan wajah di backend memakai numpy.
+- Piket Gerbang: jadwal shift guru, check-in/out berbasis jam WIB, pengingat otomatis ±30 menit sebelum shift (notifikasi + email), laporan bulanan + ekspor Excel.
 - Email: Brevo SMTP (smtp-relay.brevo.com:587). AI (OpenAI) dikosongkan. WhatsApp nonaktif.
 - Login memakai cookie httpOnly `Secure` + `SameSite=None` → WAJIB HTTPS dan frontend+backend SATU domain.
 Bantu saya langkah demi langkah, cek output tiap langkah, dan bantu troubleshooting jika ada error.
@@ -154,6 +156,10 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 300s;
     }
+    location /models/ {
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri =404;
+    }
     location / { try_files $uri $uri/ /index.html; }
 }
 NGINX
@@ -182,9 +188,18 @@ sudo chmod 700 /usr/local/bin/sekolah-cron.sh
 0 9 * * *   /usr/local/bin/sekolah-cron.sh attendance-auto-alpha
 0 1 * * 1   /usr/local/bin/sekolah-cron.sh attendance-archive
 0 7 1 * *   /usr/local/bin/sekolah-cron.sh kas-reminder
+*/5 * * * * /usr/local/bin/sekolah-cron.sh piket-reminder
 CRON
 ) | sudo crontab -
 sudo /usr/local/bin/sekolah-cron.sh kas-reminder && tail -1 /var/log/sekolah-cron.log   # harus {"ok":true}
+sudo /usr/local/bin/sekolah-cron.sh piket-reminder && tail -1 /var/log/sekolah-cron.log # harus {"ok":true}
+```
+Catatan piket-reminder: dijalankan tiap 5 menit; sistem hanya mengirim SATU kali per shift (ditandai `reminded_at`), sekitar 30–35 menit sebelum jam mulai. Jika jam/tanggal shift diedit, pengingat otomatis dikirim ulang sesuai jadwal baru.
+
+**Sudah deploy sebelumnya? Tambahkan baris piket saja:**
+```bash
+( sudo crontab -l; echo '*/5 * * * * /usr/local/bin/sekolah-cron.sh piket-reminder' ) | sudo crontab -
+sudo crontab -l | grep piket
 ```
 
 ### Fase 9 — Brevo SMTP
@@ -200,6 +215,10 @@ sudo /usr/local/bin/sekolah-cron.sh kas-reminder && tail -1 /var/log/sekolah-cro
 - Presensi Barcode → colok scanner USB → scan kartu → muncul MASUK + baris di tabel
 - Kuis, Pemilu OSIS, Kartu Pelajar, tambah siswa/inventaris tersimpan
 - Pengaturan → Kirim Email Tes
+- Daftar Wajah Siswa → izinkan kamera → pilih siswa → rekam 5 pose → Simpan → di Kelola Akun kolom Wajah = Terdaftar
+- Presensi Wajah → siswa tadi berdiri di depan kamera → MASUK + baris baru di tabel (metode: Face)
+- Piket Gerbang → jadwalkan shift guru ±40 menit dari sekarang → tunggu ≤10 menit → guru menerima notifikasi/email pengingat → check-in → tab Laporan Bulanan → Export Excel
+- Ujian (login siswa) → masukkan password → langsung layar penuh; tekan Esc lama → layar "Ujian Terkunci" muncul
 
 ---
 
@@ -211,6 +230,19 @@ sudo /usr/local/bin/sekolah-cron.sh kas-reminder && tail -1 /var/log/sekolah-cro
 - Banyak gerbang: tiap laptop menyimpan nama stasiun sendiri (Gerbang 1, 2, …) – atur di panel Stasiun.
 - Barcode di Kartu Pelajar berisi NISN siswa.
 - Tips kiosk: Chrome `--kiosk https://domain/attendance`, matikan sleep/screen saver laptop.
+
+## Setup laptop Presensi Wajah (cadangan scanner)
+- Gunakan **Chrome / Edge terbaru**. Kamera hanya bisa diakses lewat **HTTPS** (Fase 7 wajib selesai).
+- Saat pertama membuka menu **Presensi Wajah** / **Daftar Wajah Siswa**, klik **Izinkan** kamera. Jika terlanjur ditolak: ikon gembok di address bar → Kamera → Izinkan → muat ulang.
+- Pembukaan pertama mengunduh model ±12MB (lalu tersimpan di cache browser; Nginx mengirimnya dengan cache 30 hari).
+- Laptop dengan webcam 720p sudah cukup. Letakkan kamera setinggi wajah, cahaya dari depan (jangan membelakangi jendela).
+- Pendaftaran wajah: menu **Daftar Wajah Siswa** → pilih kelas → **Mode Per Kelas** → sistem otomatis pindah ke siswa berikutnya setelah Simpan (±30 detik/siswa). Atau dari **Kelola Akun** → kolom Wajah → **Daftarkan**.
+- Aktifkan **Anti-Foto (Kedip)** di layar Presensi Wajah agar siswa harus berkedip (mencegah absen pakai foto).
+- Menghapus akun siswa otomatis menghapus data wajahnya.
+
+## Setup Ujian Anti-Nyontek
+- Siswa wajib memakai **Chrome/Edge di laptop/PC** agar layar penuh & kunci tombol Esc bekerja maksimal. Di HP, layar penuh tergantung browser.
+- Keluar layar penuh / pindah tab / Alt+Tab tetap bisa dilakukan oleh sistem operasi, tetapi soal langsung terkunci, pelanggaran tercatat, dan ujian terkirim otomatis setelah batas pelanggaran.
 
 ## Update / redeploy
 ```bash
@@ -239,3 +271,8 @@ sudo mkdir -p /var/backups/sekolah
 | Email tidak terkirim | cek SMTP key Brevo, sender sudah diverifikasi, port 587 tidak diblok provider VPS |
 | Scanner tidak terbaca | klik area kosong halaman (fokus keluar dari input), pastikan suffix Enter aktif |
 | `yarn build` killed | RAM kurang → tambah swap |
+| Kamera tidak muncul / "Izin kamera ditolak" | situs belum HTTPS atau izin diblokir → gembok address bar → Kamera: Izinkan |
+| "Gagal memuat model wajah" | cek `curl -I https://domain/models/face_recognition_model.bin` harus 200; jika 404 → `yarn build` ulang (folder public/models harus ada di repo) |
+| Wajah sering "tidak dikenali" | daftar ulang dengan cahaya terang, lepas masker/kacamata gelap, wajah mengisi ±1/4 layar |
+| "Wajah mirip siswa lain" | pastikan siswa yang dipilih benar; jika kembar/sangat mirip, hubungi admin untuk hapus data wajah siswa yang salah |
+| Pengingat piket tidak terkirim | `sudo crontab -l \| grep piket` harus ada; cek `/var/log/sekolah-cron.log` dan `journalctl -u sekolah-backend \| grep "Piket reminder"` |

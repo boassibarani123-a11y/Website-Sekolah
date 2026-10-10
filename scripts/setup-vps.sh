@@ -118,6 +118,11 @@ server {
         proxy_read_timeout 300s;
     }
 
+    location /models/ {
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files \$uri =404;
+    }
+
     location / {
         try_files \$uri \$uri/ /index.html;
     }
@@ -152,10 +157,12 @@ chmod 700 /usr/local/bin/sekolah-cron.sh
 0 9 * * *   /usr/local/bin/sekolah-cron.sh attendance-auto-alpha
 0 1 * * 1   /usr/local/bin/sekolah-cron.sh attendance-archive
 0 7 1 * *   /usr/local/bin/sekolah-cron.sh kas-reminder
+*/5 * * * * /usr/local/bin/sekolah-cron.sh piket-reminder
 CRON
 ) | crontab -
 crontab -l
 
 mongosh sekolah_db --quiet --eval 'db.settings.updateOne({_id:"singleton"},{$set:{school_logo_url:"/school-logo.png"}},{upsert:true})' || true
 
+echo -n "Cek model wajah: "; curl -s -o /dev/null -w "%{http_code}\n" "https://$DOMAIN/models/face_recognition_model.bin"
 echo "== SELESAI. Buka https://$DOMAIN dan login dengan $ADMIN_EMAIL =="
