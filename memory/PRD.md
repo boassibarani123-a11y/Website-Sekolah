@@ -66,3 +66,7 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 - Kamera wajah gaya Face ID
 ### Backlog
 - P1: SMTP Brevo; uji manual kamera nyata & story viewer di HP
+
+## Iterasi 3 — Dokumentasi
+- docs/notebooklm/00-07 (Rekap Fitur, TOR, PRD, BPMN, ERD, Slide, Panduan Update VPS main17)
+- scripts/update-vps.sh (update aman + backup), backend/requirements.txt dikembalikan ke 22 paket bersih (+websockets) agar pip di VPS tidak gagal
