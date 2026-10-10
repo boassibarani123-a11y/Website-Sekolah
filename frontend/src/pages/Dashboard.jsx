@@ -1,0 +1,227 @@
+import { useEffect, useState } from "react";
+import api from "@/lib/apiClient";
+import { useAuth } from "@/context/AuthContext";
+import { Users, GraduationCap, Boxes, ClipboardList, BrainCircuit, Camera, Clock, TrendingUp, Trophy, ArrowRight, Rocket, CalendarRange, Award, Star, MapPin, Megaphone, User as UserIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+
+const ROLE_LABEL = {super_admin:"Super Admin", kepsek:"Kepala Sekolah", staff_tu:"Staff Tata Usaha", guru:"Guru", siswa:"Siswa", ketua_osis:"Ketua OSIS", ketua_kelas:"Ketua Kelas", admin_perpus:"Admin Perpustakaan"};
+const STUDENT_ROLES = ["siswa", "ketua_kelas", "ketua_osis"];
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  const [stats, setStats] = useState(null);
+  const [att, setAtt] = useState(null);
+  const [ann, setAnn] = useState([]);
+  const [highlights, setHighlights] = useState([]);
+  const showHighlights = ["siswa", "guru"].includes(user.role);
+  useEffect(()=>{
+    api.get("/stats").then(r=>setStats(r.data));
+    api.get("/attendance/stats").then(r=>setAtt(r.data));
+    api.get("/announcements").then(r=>setAnn(r.data.slice(0,3)));
+    if (showHighlights) api.get("/gallery?category=Prestasi").then(r=>setHighlights(r.data.slice(0,4))).catch(()=>{});
+  },[showHighlights]);
+
+  const cards = [
+    { label: "Total Siswa", value: stats?.siswa ?? "—", icon: GraduationCap, color: "sky", to: "/accounts" },
+    { label: "Total Guru", value: stats?.guru ?? "—", icon: Users, color: "emerald", to: "/guru-staff" },
+    { label: "Inventaris", value: stats?.inventory ?? "—", icon: Boxes, color: "amber", to: "/inventory" },
+    { label: "Tugas Aktif", value: stats?.assignments ?? "—", icon: ClipboardList, color: "indigo", to: "/classes" },
+    { label: "Mini-Quiz", value: stats?.quizzes ?? "—", icon: BrainCircuit, color: "rose", to: "/classes" },
+    { label: "Post Schoolgram", value: stats?.posts ?? "—", icon: Camera, color: "purple", to: "/schoolgram" },
+  ];
+  const colors = {
+    sky: "from-sky-500 to-sky-600 shadow-sky-500/30",
+    emerald: "from-emerald-500 to-emerald-600 shadow-emerald-500/30",
+    amber: "from-amber-500 to-amber-600 shadow-amber-500/30",
+    indigo: "from-indigo-500 to-indigo-600 shadow-indigo-500/30",
+    rose: "from-rose-500 to-rose-600 shadow-rose-500/30",
+    purple: "from-purple-500 to-purple-600 shadow-purple-500/30",
+  };
+
+  return (
+    <div className="space-y-8" data-testid="dashboard-root">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="font-heading text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Selamat datang, {user.name.split(" ")[0]} 👋</h1>
+          <p className="mt-1 text-slate-500 text-sm">{ROLE_LABEL[user.role]} · {new Date().toLocaleDateString("id-ID", {weekday:"long", day:"numeric", month:"long", year:"numeric"})}</p>
+        </div>
+        <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl shadow-sm text-xs font-mono-alt text-slate-600">
+          <Clock className="w-3.5 h-3.5 inline mr-1.5"/>Semester Genap 2025/2026
+        </div>
+      </div>
+
+      {user.role === "super_admin" && (
+        <a href="/dokumentasi#panduan" data-testid="admin-guide-link"
+          className="flex items-center justify-between gap-4 p-5 bg-gradient-to-br from-sky-600 to-indigo-700 text-white rounded-2xl shadow-lg shadow-sky-500/20 transition-transform hover:scale-[1.01] group">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><Rocket className="w-5 h-5"/></div>
+            <div>
+              <p className="font-heading font-bold">Panduan Super Admin — Mulai dari Nol</p>
+              <p className="text-xs text-sky-100/90 mt-0.5">12 langkah berurutan mengisi sistem: akun, kelas, kartu pelajar, perpustakaan, prestasi, hingga otomatisasi.</p>
+            </div>
+          </div>
+          <ArrowRight className="w-5 h-5 shrink-0 group-hover:translate-x-1 transition-transform"/>
+        </a>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {cards.map(c=>(
+          <Link key={c.label} to={c.to} data-testid={`stat-card-${c.label.toLowerCase().replace(/\s/g,'-')}`}
+            className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:border-sky-300 transition-all">
+            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors[c.color]} shadow-lg flex items-center justify-center text-white`}><c.icon className="w-5 h-5"/></div>
+            <p className="mt-3 text-2xl font-heading font-extrabold text-slate-900">{c.value}</p>
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">{c.label}<ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all"/></p>
+          </Link>
+        ))}
+      </div>
+
+      {showHighlights && highlights.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="dashboard-highlights">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500"/>Sorotan Prestasi Terbaru</h2>
+            <Link to="/achievements" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Lihat semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {highlights.map(h=>(
+              <div key={h.id} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50" data-testid="highlight-card">
+                <div className="h-24 bg-gradient-to-br from-sky-500 to-indigo-700 relative flex items-center justify-center">
+                  {h.image_url ? <img src={h.image_url} alt={h.title} className="absolute inset-0 w-full h-full object-cover"/> : <Trophy className="w-7 h-7 text-white/70"/>}
+                  {h.level && <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-900">{h.level}</span>}
+                </div>
+                <div className="p-3">
+                  <p className="font-semibold text-sm text-slate-900 line-clamp-2 leading-snug">{h.title}</p>
+                  {h.date && <p className="text-[10px] text-slate-400 mt-1">{h.date}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-sky-600"/>Presensi Hari Ini</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono-alt text-slate-500">{att?.date}</span>
+              <Link to="/attendance-recap" data-testid="widget-presensi-link" className="text-xs text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Rekap <ArrowRight className="w-3 h-3"/></Link>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatBox label="Hadir" value={att?.hadir} color="emerald"/>
+            <StatBox label="Izin" value={att?.izin} color="sky"/>
+            <StatBox label="Sakit" value={att?.sakit} color="amber"/>
+            <StatBox label="Alpa" value={att?.alpa} color="rose"/>
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-100 text-sm text-slate-600">
+            Belum absen: <b className="text-slate-900">{att?.belum_absen ?? 0}</b> dari {att?.total_siswa ?? 0} siswa
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-bold text-slate-900">📢 Pengumuman Terbaru</h2>
+            <Link to="/announcements" data-testid="widget-pengumuman-link" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+          </div>
+          {ann.length===0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center" data-testid="pengumuman-empty">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-2"><Megaphone className="w-6 h-6 text-slate-300"/></div>
+              <p className="text-sm text-slate-400">Belum ada pengumuman.</p>
+            </div>
+          )}
+          <div className="space-y-3">
+            {ann.map(a=>(
+              <div key={a.id} className="p-3 bg-slate-50 rounded-xl border-l-4 border-sky-500">
+                <h3 className="font-semibold text-slate-900 text-sm">{a.title}</h3>
+                <p className="text-xs text-slate-600 mt-1 line-clamp-2">{a.content}</p>
+                <p className="text-[10px] text-slate-400 mt-1.5">{a.author} · {new Date(a.created_at).toLocaleDateString("id-ID")}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <DashboardExtras role={user.role}/>
+    </div>
+  );
+}
+
+function StatBox({label, value, color}) {
+  const bg = {emerald:"bg-emerald-50 text-emerald-900 border-emerald-200", sky:"bg-sky-50 text-sky-900 border-sky-200",
+              amber:"bg-amber-50 text-amber-900 border-amber-200", rose:"bg-rose-50 text-rose-900 border-rose-200"}[color];
+  return <div className={`${bg} border p-3 rounded-xl text-center`}>
+    <p className="text-2xl font-heading font-extrabold">{value ?? 0}</p>
+    <p className="text-[10px] font-semibold uppercase tracking-wider mt-0.5">{label}</p>
+  </div>;
+}
+
+function DashboardExtras({ role }) {
+  const [today, setToday] = useState(null);
+  const [board, setBoard] = useState([]);
+  const [mine, setMine] = useState(null);
+  const isStudent = STUDENT_ROLES.includes(role);
+  useEffect(()=>{
+    api.get("/timetable/today").then(r=>setToday(r.data)).catch(()=>setToday({day:"",items:[]}));
+    api.get("/points/leaderboard").then(r=>setBoard((r.data.students||[]).slice(0,5))).catch(()=>{});
+    if (isStudent) api.get("/points/me").then(r=>setMine(r.data)).catch(()=>{});
+  },[isStudent]);
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-6">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="widget-jadwal-today">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><CalendarRange className="w-5 h-5 text-sky-600"/>Jadwal Hari Ini {today?.day && <span className="text-xs font-normal text-slate-400">· {today.day}</span>}</h2>
+          <Link to="/jadwal" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+        </div>
+        {!today ? <p className="text-sm text-slate-400">Memuat...</p> :
+          today.items.length === 0 ? <p className="text-sm text-slate-400 italic">Tidak ada jadwal hari ini.</p> : (
+          <div className="space-y-2">
+            {today.items.map(it=>(
+              <div key={it.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border-l-4 border-sky-500">
+                <div className="text-center shrink-0 w-14">
+                  <p className="text-xs font-bold text-sky-700">{it.start_time}</p>
+                  <p className="text-[10px] text-slate-400">{it.end_time}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm text-slate-900 truncate">{it.subject}</p>
+                  <p className="text-[11px] text-slate-500 flex items-center gap-2">
+                    {it.class_name && <span>{it.class_name}</span>}
+                    {it.teacher_name && <span className="flex items-center gap-0.5"><UserIcon className="w-3 h-3"/>{it.teacher_name}</span>}
+                    {it.room && <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3"/>{it.room}</span>}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm" data-testid="widget-leaderboard">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-heading text-lg font-bold text-slate-900 flex items-center gap-2"><Award className="w-5 h-5 text-amber-500"/>Papan Peringkat</h2>
+          <Link to="/leaderboard" className="text-sm text-sky-600 font-semibold flex items-center gap-1 hover:text-sky-800">Semua <ArrowRight className="w-3.5 h-3.5"/></Link>
+        </div>
+        {isStudent && mine && (
+          <div className="mb-3 flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+            <Star className="w-4 h-4 text-amber-500"/>
+            <span className="text-sm text-amber-900">Poin saya: <b>{mine.total}</b></span>
+          </div>
+        )}
+        {board.length === 0 ? <p className="text-sm text-slate-400 italic">Belum ada poin.</p> : (
+          <div className="space-y-2">
+            {board.map((s,i)=>(
+              <div key={s.user_id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50">
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${i===0?"bg-amber-400 text-white":i===1?"bg-slate-300 text-white":i===2?"bg-orange-400 text-white":"bg-slate-100 text-slate-500"}`}>{i+1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{s.name}</p>
+                  <p className="text-[10px] text-slate-400">{s.kelas || "—"}</p>
+                </div>
+                <span className="font-heading font-bold text-amber-600">{s.total}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
