@@ -668,6 +668,8 @@ async def update_user(uid: str, body: UserUpdate, user=Depends(require_roles("su
 @api.delete("/users/{uid}")
 async def delete_user(uid: str, user=Depends(require_roles("super_admin"))):
     await db.users.delete_one({"id": uid})
+    if (await db.face_profiles.delete_many({"student_id": uid})).deleted_count:
+        await _face_matrix(force=True)
     return {"ok": True}
 
 STAFF_ROLES = ["guru", "staff_tu", "kepsek", "admin_perpus", "admin_absensi"]
@@ -5412,6 +5414,54 @@ async def piket_presence(sid: str, action: str, user=Depends(require_roles(*PIKE
     await db.piket_shifts.update_one({"id": sid}, {"$set": upd})
     return piket_out(await db.piket_shifts.find_one({"id": sid}, {"_id": 0}))
 
+def _piket_report_rows(shifts: list) -> list:
+    by = {}
+    for s in shifts:
+        r = by.setdefault(s["teacher_id"], {"teacher_id": s["teacher_id"], "teacher_name": s["teacher_name"], "total": 0, "hadir": 0,
+                                            "tepat": 0, "terlambat": 0, "late_minutes": 0, "tidak_hadir": 0, "mendatang": 0, "minutes": 0})
+        r["total"] += 1
+        if s.get("checked_in_at"):
+            r["hadir"] += 1
+            late = int(s.get("late_minutes") or 0)
+            r["late_minutes"] += late
+            r["terlambat" if late > PIKET_LATE_MIN else "tepat"] += 1
+            end = datetime.fromisoformat(s["checked_out_at"]) if s.get("checked_out_at") else _piket_dt(s["date"], s["end_time"])
+            r["minutes"] += max(0, int((min(end, _piket_dt(s["date"], s["end_time"])) - datetime.fromisoformat(s["checked_in_at"])).total_seconds() // 60))
+        elif s["status"] == "tidak_hadir":
+            r["tidak_hadir"] += 1
+        else:
+            r["mendatang"] += 1
+    for r in by.values():
+        due = r["total"] - r["mendatang"]
+        r["persen"] = round(r["hadir"] / due * 100, 1) if due else None
+    return sorted(by.values(), key=lambda x: x["teacher_name"].lower())
+
+async def _piket_month(month: str, user: dict):
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month or ""):
+        raise HTTPException(400, "Format bulan harus YYYY-MM")
+    rows = await db.piket_shifts.find({"date": {"$regex": f"^{month}-"}, **dscope(user)}, {"_id": 0}).sort([("date", 1), ("start_time", 1)]).to_list(5000)
+    return [piket_out(r) for r in rows]
+
+@api.get("/piket/report")
+async def piket_report(month: str, user=Depends(require_roles(*PIKET_ADMIN))):
+    shifts = await _piket_month(month, user)
+    return {"month": month, "teachers": _piket_report_rows(shifts), "shifts": shifts}
+
+@api.get("/piket/report/export")
+async def piket_report_export(month: str, user=Depends(require_roles(*PIKET_ADMIN))):
+    shifts = await _piket_month(month, user)
+    rep = _piket_report_rows(shifts)
+    columns = ["Nama Guru", "Total Shift", "Hadir", "Tepat Waktu", "Terlambat", "Total Menit Telat", "Tidak Hadir", "Mendatang", "Durasi Jaga (jam)", "Kehadiran %"]
+    rows = [{"Nama Guru": r["teacher_name"], "Total Shift": r["total"], "Hadir": r["hadir"], "Tepat Waktu": r["tepat"],
+             "Terlambat": r["terlambat"], "Total Menit Telat": r["late_minutes"], "Tidak Hadir": r["tidak_hadir"],
+             "Mendatang": r["mendatang"], "Durasi Jaga (jam)": round(r["minutes"] / 60, 1),
+             "Kehadiran %": "-" if r["persen"] is None else f"{r['persen']}%"} for r in rep]
+    summary = {"Total Shift": len(shifts), "Total Hadir": sum(r["hadir"] for r in rep),
+               "Total Terlambat": sum(r["terlambat"] for r in rep), "Total Tidak Hadir": sum(r["tidak_hadir"] for r in rep)}
+    data = pretty_excel(f"Laporan Piket Gerbang {month}", f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T', ' ')}",
+                        columns, rows, summary, "Piket")
+    return xlsx_response(data, f"Laporan_Piket_{month}.xlsx")
+
 # ---------------- FACE RECOGNITION (presensi cadangan) ----------------
 FACE_MATCH_THRESHOLD = 0.5
 FACE_DUP_THRESHOLD = 0.42
@@ -5424,11 +5474,22 @@ def _face_vec(v: List[float]):
         raise HTTPException(400, "Descriptor wajah tidak valid")
     return np.asarray(v, dtype=np.float32)
 
+async def _face_purge_orphans():
+    # Face data of deleted / non-student accounts must never block re-enrolment or matching
+    sids = await db.face_profiles.distinct("student_id")
+    if not sids:
+        return
+    alive = set(await db.users.distinct("id", {"id": {"$in": sids}, "role": "siswa"}))
+    dead = [s for s in sids if s not in alive]
+    if dead:
+        await db.face_profiles.delete_many({"student_id": {"$in": dead}})
+
 async def _face_matrix(force: bool = False):
     import numpy as np, time
     if not force and _face_cache["data"] is not None and time.time() - _face_cache["at"] < 20:
         return _face_cache["data"]
     ids, vecs = [], []
+    await _face_purge_orphans()
     async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "descriptors": 1}):
         for d in p.get("descriptors") or []:
             if len(d) == 128:
@@ -5468,6 +5529,7 @@ async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, us
         mq["kelas"] = kelas
     if q:
         mq["$or"] = [{"name": {"$regex": re.escape(q), "$options": "i"}}, {"nisn": {"$regex": re.escape(q)}}]
+    await _face_purge_orphans()
     students = await db.users.find(mq, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "photo": 1}).sort([("kelas", 1), ("name", 1)]).to_list(2000)
     prof = {p["student_id"]: p async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "samples": 1, "updated_at": 1, "photo": 1})}
     for s in students:
@@ -5519,7 +5581,8 @@ async def face_scan(body: FaceScanIn, user=Depends(require_roles(*SCAN_ROLES))):
         raise HTTPException(409, "Wajah kurang jelas, mohon hadap lurus ke kamera")
     st = await db.users.find_one({"id": sid, "role": "siswa"}, {"_id": 0, "qr_code": 1, "nisn": 1})
     if not st:
-        raise HTTPException(404, "Siswa tidak ditemukan")
+        await _face_matrix(force=True)
+        raise HTTPException(404, "Wajah tidak dikenali")
     res = await scan(ScanIn(qr_code=st.get("qr_code"), nisn=st.get("nisn"), method="face",
                             station_id=body.station_id, station_name=body.station_name), user)
     res["confidence"] = round(max(0.0, 1 - dist) * 100, 1)

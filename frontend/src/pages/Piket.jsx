@@ -7,6 +7,7 @@ import { todayWib } from "@/components/attendance/scannerUtils";
 import { PiketHero } from "@/components/piket/PiketHero";
 import { PiketWeek } from "@/components/piket/PiketWeek";
 import { PiketModal } from "@/components/piket/PiketModal";
+import { PiketReport } from "@/components/piket/PiketReport";
 import { addDays, mondayOf } from "@/components/piket/piketUtils";
 
 const ADMIN = ["super_admin", "kepsek", "staff_tu"];
@@ -32,6 +33,7 @@ export default function Piket() {
   const [modal, setModal] = useState(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [view, setView] = useState("jadwal");
   const offset = useRef(0);
 
   const load = useCallback(() => {
@@ -80,8 +82,19 @@ export default function Piket() {
         <Stat testid="piket-stat-absen" icon={XCircle} label="Tidak hadir" value={stats.absen} tone="bg-rose-100 text-rose-600" />
       </div>
 
+      {canManage && (
+        <div className="inline-flex p-1 bg-white border border-slate-200 rounded-2xl shadow-sm" data-testid="piket-view-tabs">
+          {[["jadwal", "Jadwal Mingguan"], ["laporan", "Laporan Bulanan"]].map(([k, l]) => (
+            <button key={k} data-testid={`piket-view-${k}`} onClick={() => setView(k)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${view === k ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`}>{l}</button>
+          ))}
+        </div>
+      )}
+
+      {view === "laporan" && canManage ? <PiketReport today={today} /> : (
       <PiketWeek weekStart={weekStart} setWeekStart={setWeekStart} today={today} shifts={shifts} canManage={canManage} nowHHMM={nowHHMM}
         onAdd={(d) => setModal({ date: d })} onEdit={(s) => setModal({ shift: s })} />
+      )}
 
       {modal && <PiketModal shift={modal.shift} teachers={teachers} defaultDate={modal.date || modal.shift?.date} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
     </div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { ScanFace, Search, CheckCircle2, Circle, Trash2, RotateCcw, Save, Loader2, ArrowLeft, UserRound, ShieldCheck } from "lucide-react";
+import { ScanFace, Search, CheckCircle2, Circle, Trash2, RotateCcw, Save, Loader2, ArrowLeft, UserRound, ShieldCheck, ListOrdered } from "lucide-react";
 import { CameraStage } from "@/components/face/CameraStage";
 import { useFaceCamera } from "@/components/face/useFaceCamera";
 import { detectFaces, drawBoxes, snapshotFace } from "@/components/face/faceUtils";
@@ -53,7 +53,7 @@ function StudentList({ data, selected, onPick, q, setQ, kelas, setKelas }) {
   );
 }
 
-function Enroller({ student, onDone }) {
+function Enroller({ student, onDone, autoStart }) {
   const { videoRef, canvasRef, apiRef, state, error, retry } = useFaceCamera("");
   const [phase, setPhase] = useState("idle"); // idle | capturing | review | saving
   const [samples, setSamples] = useState([]);
@@ -62,6 +62,11 @@ function Enroller({ student, onDone }) {
   const phaseRef = useRef(phase); phaseRef.current = phase;
 
   useEffect(() => { setPhase("idle"); setSamples([]); shot.current = null; }, [student.id]);
+  useEffect(() => {
+    if (!autoStart || state !== "ready" || student.enrolled) return;
+    const t = setTimeout(() => { if (phaseRef.current === "idle") begin(); }, 1500);
+    return () => clearTimeout(t);
+  }, [autoStart, state, student.id, student.enrolled]); // eslint-disable-line
 
   useEffect(() => {
     if (state !== "ready") return;
@@ -107,7 +112,7 @@ function Enroller({ student, onDone }) {
       }
       await api.post("/face/enroll", { student_id: student.id, descriptors: samples, photo });
       toast.success(`Wajah ${student.name} berhasil didaftarkan`);
-      onDone();
+      onDone(true);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal menyimpan data wajah");
       setPhase("review");
@@ -162,6 +167,23 @@ export default function FaceEnroll() {
   const [q, setQ] = useState("");
   const [kelas, setKelas] = useState("");
   const [selected, setSelected] = useState(null);
+  const [batch, setBatch] = useState(false);
+  const list = data?.students || [];
+  const pos = selected ? list.findIndex(s => s.id === selected.id) : -1;
+  const onDone = async (saved) => {
+    const next = saved && batch ? list.slice(pos + 1).find(s => !s.enrolled) : null;
+    await load();
+    if (next) setSelected(next);
+    else if (saved && batch) { toast.success("Semua siswa di daftar ini sudah terdaftar"); setBatch(false); }
+  };
+  const toggleBatch = () => {
+    if (batch) return setBatch(false);
+    if (!kelas) return toast.error("Pilih kelas terlebih dahulu untuk mode per kelas");
+    const first = list.find(s => !s.enrolled);
+    if (!first) return toast.success("Semua siswa di kelas ini sudah terdaftar");
+    setSelected(first); setBatch(true);
+  };
+  const kelasDone = list.filter(s => s.enrolled).length;
 
   const load = useCallback(() => {
     const p = new URLSearchParams(); if (q) p.set("q", q); if (kelas) p.set("kelas", kelas);
@@ -183,11 +205,18 @@ export default function FaceEnroll() {
           <h1 className="font-heading text-3xl font-extrabold text-slate-900 mt-1 flex items-center gap-2"><ScanFace className="w-8 h-8 text-sky-600" />Daftarkan Wajah Siswa</h1>
           <p className="mt-1 text-sm text-slate-500">Pilih siswa, tekan Mulai Rekam, lalu ikuti 5 arahan pose. Kamera merekam otomatis.</p>
         </div>
+        <div className="flex items-center gap-3">
+          {batch && <span data-testid="face-batch-progress" className="px-3 py-2 rounded-xl bg-sky-50 text-sky-700 text-sm font-semibold tabular-nums">Kelas {kelas}: {kelasDone}/{list.length} · siswa ke-{pos + 1}</span>}
+          <button data-testid="face-batch-toggle" onClick={toggleBatch}
+            className={`px-4 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-colors ${batch ? "bg-rose-600 hover:bg-rose-500 text-white" : "bg-slate-900 hover:bg-sky-600 text-white"}`}>
+            <ListOrdered className="w-4 h-4" />{batch ? "Hentikan Mode Per Kelas" : "Mode Per Kelas"}
+          </button>
+        </div>
       </div>
       <div className="grid lg:grid-cols-3 gap-6 items-start">
-        <StudentList data={data} selected={selected} onPick={setSelected} q={q} setQ={setQ} kelas={kelas} setKelas={setKelas} />
+        <StudentList data={data} selected={selected} onPick={(s) => setSelected(s)} q={q} setQ={setQ} kelas={kelas} setKelas={(k) => { setKelas(k); setBatch(false); }} />
         <div className="lg:col-span-2">
-          {selected ? <Enroller student={selected} onDone={load} /> : (
+          {selected ? <Enroller student={selected} onDone={onDone} autoStart={batch} /> : (
             <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-16 text-center" data-testid="face-enroll-empty">
               <ScanFace className="w-14 h-14 text-slate-300 mx-auto" />
               <p className="mt-3 font-semibold text-slate-600">Pilih siswa dari daftar di sebelah kiri</p>
