@@ -5445,7 +5445,7 @@ async def _face_best(vec, force: bool = False):
     dist = np.linalg.norm(mat - vec, axis=1)
     best = {}
     for sid, dd in zip(ids, dist.tolist()):
-        if dd < best.get(sid, 9):
+        if dd < best.get(sid, float("inf")):
             best[sid] = dd
     ranked = sorted(best.items(), key=lambda x: x[1])
     second = ranked[1][1] if len(ranked) > 1 else None

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 45: Tested Piket Gerbang + Face Recognition backend (22 pytest tests, 21 pass / 1 fail) and smoke-tested new UI (/piket, /face-attendance, /face-enroll, /classes/<id>). All data-testid hooks requested are present; piket CRUD, conflicts, role guard, guru check-in/out all work; face enroll min3/invalid-length/inconsistent/success/duplicate/scan/unenroll all work. 1 backend bug: /api/attendance/face-scan returns 500 (IndexError) instead of 404 when descriptor is very far from enrolled samples (dist > 9).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/attendance/face-scan", "issue": "500 IndexError when scan descriptor is far from any enrolled face (e.g. [1.0]*128). In server.py _face_best(), sentinel value 9 in `best.get(sid, 9)` is too small; large distances never populate `best` dict, so `ranked[0]` raises IndexError. Fix: use `float('inf')` sentinel (or any value > sqrt(128)=11.31). Expected behaviour: `dist > FACE_MATCH_THRESHOLD(0.5)` -> HTTP 404 'Wajah tidak dikenali'.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/face-attendance digital clock", "issues": ["Clock widget appears mirrored/reversed inside the live camera panel in the screenshot - looks like the camera canvas is overlaid in a mirrored state over the clock text; verify CSS transform scaleX on video doesn't also flip overlay time text."]},
+      {"screen": "PiketModal", "issues": ["React hydration warning: <span> rendered as direct child of <option> (visual-edit decorator wrapping option text). Non-blocking but noisy in console."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter45_piket_face.py", "/app/test_reports/pytest/iter45.xml"],
+  "action_items": [
+    "FIX HIGH: In backend/server.py _face_best(), change sentinel `best.get(sid, 9)` to `best.get(sid, float('inf'))` so very-far descriptors fall through properly and face-scan returns 404 instead of 500.",
+    "Investigate possible mirrored overlay in Presensi Wajah live camera (clock text appears reversed in headless screenshot).",
+    "Minor: avoid wrapping <option> text in a <span> in PiketModal to silence hydration warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py exceeds 5500 lines - should be split into feature modules (piket, face, exam, class, attendance, etc.).",
+    "_face_best uses magic sentinel 9 instead of float('inf') - direct cause of 500 in face-scan.",
+    "face_scan has no rate-limit; could be abused since it also writes attendance records.",
+    "piket_presence uses path parameter `action` with manual check; should be two explicit routes for clarity/openapi."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter45_piket_face.py"],
+  "success_rate": {"backend": "95% (21/22 pytest)", "frontend": "100% smoke (all requested data-testids present, tabs switchable)"},
+  "test_credentials": "Used super admin + TEST_guru + TEST_siswa from /app/memory/test_credentials.md. TEST accounts preserved per instruction.",
+  "seed_data_creation": "Created 1 piket shift (deleted in teardown) and 1 face profile for TEST_Siswa (deleted in teardown). 1-2 attendance records with method=face may remain for TEST_Siswa today - delete manually if needed.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Pytest file test_iter45_piket_face.py covers all piket + face endpoints. The single failing test (TestFace.test_09_face_scan_unknown) documents the real backend bug: fix the sentinel in _face_best and the test will pass. Headless browsers DO support getUserMedia in Chromium automation, so face-attendance camera actually went live during smoke (no camera-error path hit); to force that path would require blocking mediaDevices.",
+  "rca of the issue": "RCA for face-scan 500: In _face_best(), after computing distances, each sid is kept only if dd < best.get(sid, 9). The literal `9` acts as an initial comparison baseline. For normal faces distances are < 1, so this works. But when the probe descriptor is extremely different (e.g. all 1.0s giving Euclidean distance ~11.31 from a near-zero stored descriptor), every dd >= 9 so no sid ever gets inserted, leaving `best` empty. Then `ranked = sorted(best.items())` is `[]` and `ranked[0]` raises IndexError, surfaced as HTTP 500. Repro: enroll any face then POST /api/attendance/face-scan with descriptor=[1.0]*128. Mitigation: replace 9 with float('inf')."
+}

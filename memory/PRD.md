@@ -25,6 +25,12 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 - Presensi Gerbang layar penuh: tabel riwayat scan real-time (LiveScanTable: filter status, cari, highlight baris baru, refresh 3 detik)
 - Dokumen: /app/PANDUAN_DEPLOY_VPS.md (untuk Gemini), /app/DOKUMEN_SISTEM_NOTEBOOKLM.md (untuk NotebookLM)
 
+## Implemented (2026-10-10, iterasi 3)
+- Halaman detail kelas: hero baru (statistik count-up, wali kelas), tab bar sticky dengan badge jumlah, filter mapel
+- Ujian: fullscreen diminta langsung saat password di-submit, overlay "Ujian Terkunci" saat keluar fullscreen/pindah tab, blok shortcut/copy/paste/back, keyboard lock (Chrome), anti double-count pelanggaran
+- Piket Gerbang (/piket): CRUD shift (ulang mingguan, cek bentrok), status berbasis waktu WIB, check-in/out (dibuka 30 menit sebelum), hero live + countdown, grid mingguan
+- Face recognition: /face-enroll (5 pose otomatis, tolak wajah duplikat) & /face-attendance (deteksi otomatis, mode kedip anti-foto, tabel live); backend matching numpy (threshold 0.5) di /api/attendance/face-scan; model face-api di /frontend/public/models
+
 ## Backlog
 - P0: Jalankan setup-vps.sh di VPS, isi kredensial Brevo SMTP, uji kirim email
 - P1: Integrasi WhatsApp (nanti)
