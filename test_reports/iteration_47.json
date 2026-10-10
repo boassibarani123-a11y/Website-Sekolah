@@ -1,0 +1,35 @@
+{
+  "summary": "Fresh import smoke test (iter47) completed. Backend login, user creation, barcode attendance scan (success/duplicate/invalid/missing), attendance list/stats, and key API endpoints (classes, announcements, exams, rapor, attendance/stations) all pass. Frontend: super admin can log in via UI, dashboard renders with full role menu, and key pages (Kelola Akun, Presensi Barcode, Presensi Wajah, Piket Gerbang, Rapor Digital) open without crashes. No 5xx responses observed. SMTP-disabled path verified (forgot-password returns 2xx/4xx, never 500).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login/App", "issues": ["Minor React hydration warning: <span> cannot be a child of <option>. Non-blocking; appears in console only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter47_core_smoke.py",
+    "/app/test_reports/pytest/iter47.xml"
+  ],
+  "action_items": [
+    "Optional: fix hydration warning by removing <span> inside <option> element in a Select component."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 5643 lines - consider splitting into routers (users, attendance, rapor, etc.) for maintainability.",
+    "JWT_SECRET is read via os.environ[...] (fails fast - good practice). Confirmed present in env.",
+    "Attendance scan uses atomic find_one_and_update upsert - good; prevents dup races at multiple gate stations.",
+    "Mongo _id properly excluded via projections {'_id': 0}."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (5/5 pages, login+dashboard)"},
+  "test_credentials": "Super admin: boassibarani123@gmail.com / Boas12345io (works)",
+  "seed_data_creation": "Test created a transient student (TEST<uuid>) via POST /api/users and cleaned up via DELETE in fixture teardown. Attendance record for that student exists for today's date (orphaned after student delete; harmless).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression test lives at /app/backend/tests/test_iter47_core_smoke.py (pytest). All assertions include status + data validation + Create->GET persistence patterns. Chat module was intentionally removed in iter27; Ujian not in sidebar menu for super_admin (may be role-specific). Hydration <span> inside <option> warning is cosmetic.",
+  "rca of the issue": "N/A - no blocking issues found."
+}

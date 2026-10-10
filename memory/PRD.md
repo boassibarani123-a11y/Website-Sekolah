@@ -45,3 +45,12 @@ Import & Setup: Website Sekolah (SMAN 1 Laguboti) di VPS — import dari GitHub 
 - P0: Jalankan setup-vps.sh di VPS, isi kredensial Brevo SMTP, uji kirim email
 - P1: Integrasi WhatsApp (nanti)
 - P2: Aktifkan AI perpustakaan/kuis (OpenAI key)
+
+
+## Import & Setup (main16) — Jun 2026
+- Imported branch main16 as-is; installed backend (requirements.txt) and frontend (yarn) deps
+- backend/.env: JWT_SECRET, FRONTEND_URL, WEBHOOK_CRON_SECRET, ADMIN_EMAIL/PASSWORD added; SMTP not set (email DISABLED)
+- Admin seeded; smoke test iteration_47: 100% pass (login, dashboard, barcode scan, key pages)
+### Next
+- P1: Add Brevo SMTP credentials; verify crons
+- P2: Full module test (face, piket, ujian, rapor, chat) and deploy
