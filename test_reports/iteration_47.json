@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 47 — Fresh import smoke test of Website-Sekolah (branch main19) in Emergent workspace. Services up (supervisor: backend/frontend/mongodb RUNNING). Backend 18/18 pytest pass (auth login + /me, invalid-login 401, public /api/settings & frontend root, 3 face-model manifests served, 8 super-admin read endpoints, cron auth guard + authorized Bearer+X-Webhook-Id). Frontend smoke: super-admin login via UI succeeds, sidebar + 6 navigation targets (/accounts, /piket, /face-attendance, /face-enroll, /settings, /analytics, /schoolgram) render with sidebar intact, 0 page errors, 0 error-boundary elements. Face camera stream is live on /face-attendance (expected). Import is healthy — no code changes needed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter47_import_smoke.py",
+    "/app/test_reports/pytest/iter47.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 5643 lines — still exceeds the 700-line maintainability guideline; should be split into feature modules in a future refactor (carried over from iter46).",
+    "Prior test suites iter5–iter46 use route guesses that don't match App.js (e.g. /kelola-akun vs /accounts). Not a bug; worth standardising in a route constants file for future test authoring.",
+    "Face recognition page uses networkidle-breaking live camera stream — any test that waits for 'networkidle' on /face-attendance will time out; use 'domcontentloaded' instead (documented here for next agent)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter47_import_smoke.py"],
+  "success_rate": {"backend": "100% (18/18 pytest)", "frontend": "100% (login + 6 protected routes + 2 public routes render clean)"},
+  "test_credentials": "Super admin: boassibarani123@gmail.com / Boas12345io (from /app/memory/test_credentials.md, seeded via backend ADMIN_EMAIL/ADMIN_PASSWORD env).",
+  "seed_data_creation": "None. The only DB write was a single idempotent entry in db.cron_runs with run_id prefix 'TEST_' from the cron-auth test — safe (cron idempotency ledger, not business data).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Import of Website-Sekolah main19 is fully operational on Emergent. REACT_APP_BACKEND_URL=https://sekolah-main19.preview.emergentagent.com. Correct protected routes (nested under /) are: /accounts, /piket, /piket-report, /face-attendance, /face-enroll, /settings, /analytics, /schoolgram, /announcements, /classes, /library, /attendance-recap, /jadwal, /leaderboard, /guru-staff, /inventory, /assignments, /quizzes, /elections, /achievements, /social-fund, /feedback, /reports, /calendar, /admin-ppdb, /reset-requests, /my-card, /school-info, /org-structure, /profile. Public (no auth) routes: /login, /ppdb, /galeri, /profil-sekolah, /struktur-organisasi, /dokumentasi, /presentasi. Cron endpoints require Authorization: Bearer <WEBHOOK_CRON_SECRET> + X-Webhook-Id (or run_id in JSON body). SMTP and OPENAI keys are intentionally empty — do not report as bugs. test_iter47_import_smoke.py is the regression suite for the import.",
+  "rca of the issue": "N/A — no bugs found. Import is healthy."
+}
