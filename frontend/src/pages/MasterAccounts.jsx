@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle, ScanFace } from "lucide-react";
+import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle, ScanFace, Smartphone } from "lucide-react";
 import StudentIdCard from "@/components/StudentIdCard";
 
 const ROLES = [
@@ -32,6 +32,11 @@ export default function MasterAccounts() {
   const [statusFilter, setStatusFilter] = useState("");
   const [faces, setFaces] = useState({});
   const navigate = useNavigate();
+  const resetDevice = async (u) => {
+    if (!window.confirm(`Reset perangkat ${u.name}? Siswa akan logout dan bisa login di perangkat baru.`)) return;
+    try { await api.post(`/users/${u.id}/reset-device`); toast.success("Perangkat direset"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Gagal mereset perangkat"); }
+  };
   const load = () => {
     api.get("/users").then(r=>setUsers(r.data));
     api.get("/face/students").then(r=>setFaces(Object.fromEntries(r.data.students.map(s=>[s.id, s.enrolled])))).catch(()=>{});
@@ -131,6 +136,12 @@ export default function MasterAccounts() {
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-500 hover:text-white transition-colors"><ScanFace className="w-3 h-3"/>Daftarkan</button>}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5">
+                    {u.role === "siswa" && u.bound_device && (
+                      <button data-testid={`reset-device-${u.id}`} onClick={()=>resetDevice(u)} title="Akun terikat pada satu perangkat. Klik untuk reset."
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-xs font-semibold hover:bg-amber-200">
+                        <Smartphone className="w-3.5 h-3.5"/>Reset Perangkat
+                      </button>
+                    )}
                     {u.role === "siswa" && (
                       <button data-testid="student-id-card-modal-trigger" onClick={()=>setCardFor(u)}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800">

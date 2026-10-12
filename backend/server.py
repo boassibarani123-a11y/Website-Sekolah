@@ -449,8 +449,8 @@ def verify_pw(pw: str, h: str) -> bool:
     except Exception:
         return False
 
-def create_token(user_id: str, email: str, role: str, minutes=60*24*7, tv: int = 0) -> str:
-    payload = {"sub": user_id, "email": email, "role": role, "tv": tv,
+def create_token(user_id: str, email: str, role: str, minutes=60*24*7, tv: int = 0, did: Optional[str] = None) -> str:
+    payload = {"sub": user_id, "email": email, "role": role, "tv": tv, "did": did,
                "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes), "type": "access"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
@@ -480,6 +480,9 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(401, "User not found")
     if payload.get("tv", 0) != user.get("token_version", 0):
         raise HTTPException(401, "Sesi berakhir karena password diubah. Silakan login kembali.")
+    if user.get("role") == "siswa" and user.get("bound_device") and payload.get("did") != user["bound_device"]:
+        raise HTTPException(401, "Sesi perangkat tidak valid. Akun ini terikat di perangkat lain.")
+    request.state.did = payload.get("did")
     if user.get("must_change_password") and not request.url.path.startswith(MUST_CHANGE_ALLOWED):
         raise HTTPException(403, "Anda wajib mengganti password sementara terlebih dahulu.")
     user.pop("_id", None)
@@ -511,6 +514,7 @@ def dstamp(doc: dict, user: dict) -> dict:
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    device_id: Optional[str] = None
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -549,8 +553,8 @@ class UserUpdate(BaseModel):
 # ---------------- AUTH ----------------
 LOGIN_MAX_FAILS, LOGIN_LOCK_MIN = 5, 15
 
-def set_auth_cookie(response: Response, user: dict) -> str:
-    token = create_token(user["id"], user["email"], user["role"], tv=user.get("token_version", 0))
+def set_auth_cookie(response: Response, user: dict, did: Optional[str] = None) -> str:
+    token = create_token(user["id"], user["email"], user["role"], tv=user.get("token_version", 0), did=did)
     response.set_cookie("access_token", token, httponly=True, secure=True,
                         samesite="none", max_age=60*60*24*7, path="/")
     return token
@@ -577,7 +581,21 @@ async def login(body: LoginIn, request: Request, response: Response):
         raise HTTPException(403, "Akun Anda dinonaktifkan. Hubungi administrator sekolah.")
     if user.get("must_change_password") and (user.get("temp_password_expires_at") or "") < now.isoformat():
         raise HTTPException(403, "Password sementara sudah kedaluwarsa. Ajukan permintaan reset baru melalui halaman Lupa Password.")
-    token = set_auth_cookie(response, user)
+    did = None
+    if user.get("role") == "siswa":
+        did = (body.device_id or "").strip()[:100]
+        if not did:
+            raise HTTPException(400, "Perangkat tidak dikenali. Muat ulang halaman lalu coba lagi.")
+        bound = user.get("bound_device")
+        if bound and bound != did:
+            await audit("login_device_blocked", user["id"], user["id"], request, {"email": email})
+            raise HTTPException(403, "Akun siswa ini sudah login di perangkat lain. Minta Super Admin untuk me-reset perangkat Anda.")
+        if not bound:
+            await db.users.update_one({"id": user["id"]}, {"$set": {
+                "bound_device": did, "device_bound_at": now_iso(),
+                "device_agent": (request.headers.get("user-agent") or "")[:200]}})
+            user["bound_device"] = did
+    token = set_auth_cookie(response, user, did)
     return {"token": token, "user": strip(user)}
 
 class ChangePwIn(BaseModel):
@@ -603,7 +621,7 @@ async def change_password(body: ChangePwIn, request: Request, response: Response
         "$unset": {"temp_password_expires_at": ""}, "$inc": {"token_version": 1}})
     await audit("password_changed", user["id"], user["id"], request, {"forced": bool(full.get("must_change_password"))})
     fresh = await db.users.find_one({"id": user["id"]})
-    set_auth_cookie(response, fresh)
+    set_auth_cookie(response, fresh, getattr(request.state, "did", None))
     return {"ok": True, "user": strip(fresh)}
 
 @api.post("/auth/logout")
@@ -620,7 +638,10 @@ async def me(user=Depends(get_current_user)):
 async def list_users(role: Optional[str] = None, user=Depends(get_current_user)):
     q = dscope(user)
     if role: q["role"] = role
-    users = await db.users.find(q, {"password_hash": 0, "_id": 0}).to_list(1000)
+    proj = {"password_hash": 0, "_id": 0}
+    if user["role"] != "super_admin":
+        proj.update({"bound_device": 0, "device_agent": 0})
+    users = await db.users.find(q, proj).to_list(1000)
     return users
 
 @api.post("/users")
@@ -664,6 +685,15 @@ async def update_user(uid: str, body: UserUpdate, user=Depends(require_roles("su
     await db.users.update_one({"id": uid}, {"$set": upd, **({"$inc": {"token_version": 1}} if pw_changed and uid != user["id"] else {})})
     doc = await db.users.find_one({"id": uid}, {"password_hash": 0, "_id": 0})
     return doc
+
+@api.post("/users/{uid}/reset-device")
+async def reset_user_device(uid: str, request: Request, user=Depends(require_roles("super_admin"))):
+    r = await db.users.update_one({"id": uid}, {"$unset": {"bound_device": "", "device_bound_at": "", "device_agent": ""},
+                                               "$inc": {"token_version": 1}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Akun tidak ditemukan")
+    await audit("device_reset", user["id"], uid, request, None)
+    return {"ok": True}
 
 @api.delete("/users/{uid}")
 async def delete_user(uid: str, user=Depends(require_roles("super_admin"))):
@@ -2216,47 +2246,157 @@ async def attempt_quiz(body: QuizAttemptIn, user=Depends(require_roles("siswa"))
 # password immediately starts the exam (creates a server session with a deadline).
 # The frontend enforces fullscreen + tab-switch detection; after max_violations the
 # exam auto-submits. Violations are also tracked server-side for the teacher.
+# VortexGuard v1.0 — exam engine (PG + essay, paging, back-navigation rules)
+class ExamQuestion(BaseModel):
+    type: str = "pg"                   # pg | essay
+    q: str
+    options: List[str] = []
+    answer: int = 0
+    points: float = 1
+    rubric: Optional[str] = ""         # essay grading guide (staff only)
+    max_words: Optional[int] = 0       # essay word limit, 0 = unlimited
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize(cls, data):
+        if isinstance(data, dict):
+            data["type"] = "essay" if data.get("type") == "essay" else "pg"
+            if data["type"] == "essay":
+                data["options"], data["answer"] = [], 0
+            else:
+                opts = [str(o).strip() for o in (data.get("options") or [])]
+                data["options"] = opts
+                try: ans = int(data.get("answer", 0))
+                except (TypeError, ValueError): ans = 0
+                data["answer"] = ans if 0 <= ans < len(opts) else 0
+        return data
+
 class ExamIn(BaseModel):
     title: str
     kelas: str
-    questions: List[QuizQuestion]
+    questions: List[ExamQuestion]
     subject: Optional[str] = None
     class_id: Optional[str] = None
-    password: str                       # REQUIRED for exams
-    time_limit: Optional[int] = None    # minutes; None/0 = no limit
+    password: str
+    time_limit: Optional[int] = None
     max_violations: Optional[int] = 3
+    description: Optional[str] = ""
+    instructions: Optional[str] = ""
+    rules: List[str] = []
+    per_page: int = 10
+    allow_back: bool = True
+    shuffle_questions: bool = True
+    shuffle_options: bool = True
+    show_score: bool = True
+    show_review: bool = False
+    passing_grade: int = 70
+    start_at: Optional[str] = None
+    end_at: Optional[str] = None
 
 class ExamUpdate(BaseModel):
     title: Optional[str] = None
     subject: Optional[str] = None
-    questions: Optional[List[QuizQuestion]] = None
+    questions: Optional[List[ExamQuestion]] = None
     password: Optional[str] = None
     time_limit: Optional[int] = None
     max_violations: Optional[int] = None
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+    rules: Optional[List[str]] = None
+    per_page: Optional[int] = None
+    allow_back: Optional[bool] = None
+    shuffle_questions: Optional[bool] = None
+    shuffle_options: Optional[bool] = None
+    show_score: Optional[bool] = None
+    show_review: Optional[bool] = None
+    passing_grade: Optional[int] = None
+    start_at: Optional[str] = None
+    end_at: Optional[str] = None
 
 class ExamStartIn(BaseModel):
     password: str
 
+class ExamProgressIn(BaseModel):
+    page: int
+    answers: List[Any]
+
 class ExamAttemptIn(BaseModel):
     exam_id: str
-    answers: List[int]
+    answers: List[Any]
     violations: Optional[int] = 0
     auto_submitted: Optional[bool] = False
+
+class EssayGrade(BaseModel):
+    index: int
+    points: Optional[float] = None
+    comment: Optional[str] = ""
+
+class ExamGradeIn(BaseModel):
+    grades: List[EssayGrade]
+    feedback: Optional[str] = None
 
 EXAM_STAFF = ("super_admin", "guru")
 EXAM_GRACE_SECONDS = 20
 
+def _parse_dt(v: Optional[str]) -> Optional[datetime]:
+    if not v: return None
+    try:
+        d = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(400, "Format tanggal jadwal ujian tidak valid")
+
+def validate_exam_fields(d: dict):
+    if "per_page" in d and not (1 <= int(d["per_page"]) <= 50):
+        raise HTTPException(400, "Jumlah soal per halaman harus 1-50")
+    if "passing_grade" in d and not (0 <= int(d["passing_grade"]) <= 100):
+        raise HTTPException(400, "KKM harus 0-100")
+    if "max_violations" in d and d["max_violations"] is not None and not (1 <= int(d["max_violations"]) <= 20):
+        raise HTTPException(400, "Maks. pelanggaran harus 1-20")
+    s, e = _parse_dt(d.get("start_at")), _parse_dt(d.get("end_at"))
+    if s and e and e <= s:
+        raise HTTPException(400, "Waktu tutup harus setelah waktu buka")
+    if "rules" in d:
+        d["rules"] = [r.strip()[:500] for r in d["rules"] if r and r.strip()][:50]
+    for i, q in enumerate(d.get("questions") or []):
+        if not (q.get("q") or "").strip():
+            raise HTTPException(400, f"Soal #{i+1} belum diisi")
+        if not (0 < float(q.get("points") or 0) <= 100):
+            raise HTTPException(400, f"Bobot soal #{i+1} harus 0-100")
+        if q["type"] == "pg":
+            if len([o for o in q["options"] if o]) < 2 or any(not o for o in q["options"]):
+                raise HTTPException(400, f"Soal #{i+1}: minimal 2 opsi dan semua opsi wajib diisi")
+
 def exam_out(ex: dict, user: dict) -> dict:
     ex["has_password"] = bool(ex.pop("password_hash", None))
-    ex["question_count"] = len(ex.get("questions") or [])
+    qs = ex.get("questions") or []
+    ex["question_count"] = len(qs)
+    ex["essay_count"] = sum(1 for q in qs if q.get("type") == "essay")
+    ex["total_points"] = sum(float(q.get("points") or 1) for q in qs)
     ex["max_violations"] = int(ex.get("max_violations", 3) or 3)
-    # Students never receive questions or answers from the list endpoint; they only
-    # get them from /start after entering the password.
+    ex.setdefault("per_page", 10); ex.setdefault("allow_back", True); ex.setdefault("rules", [])
     if user.get("role") not in EXAM_STAFF:
-        for question in ex.get("questions", []):
-            question.pop("answer", None)
         ex["questions"] = []
     return ex
+
+async def assert_exam_staff(user: dict, ex: dict):
+    if user["role"] == "super_admin":
+        return
+    if user["role"] != "guru":
+        raise HTTPException(403, "Forbidden")
+    await guru_assert_manages(user, ex.get("class_id"), ex.get("kelas"))
+
+def calc_attempt_score(att: dict) -> dict:
+    resp = att.get("responses") or []
+    score = sum(float(r.get("points") or 0) for r in resp)
+    total = sum(float(r.get("max_points") or 0) for r in resp)
+    pending = any(r["type"] == "essay" and r.get("points") is None for r in resp)
+    att.update({"score": round(score, 2), "total": round(total, 2),
+                "percent": (score / total * 100) if total else 0,
+                "pg_score": round(sum(float(r.get("points") or 0) for r in resp if r["type"] == "pg"), 2),
+                "essay_score": round(sum(float(r.get("points") or 0) for r in resp if r["type"] == "essay"), 2),
+                "status": "pending" if pending else "graded"})
+    return att
 
 @api.get("/exams")
 async def list_exams(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
@@ -2270,8 +2410,26 @@ async def list_exams(class_id: Optional[str] = None, subject: Optional[str] = No
     lock = await locked_class_query(user)
     if lock:
         q["$and"] = lock
-    exams = await db.exams.find(q, {"_id": 0}).to_list(500)
-    return [exam_out(ex, user) for ex in exams]
+    exams = await db.exams.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    out = [exam_out(ex, user) for ex in exams]
+    if user["role"] == "siswa" and out:
+        mine = {a["exam_id"]: a for a in await db.exam_attempts.find(
+            {"student_id": user["id"], "exam_id": {"$in": [e["id"] for e in out]}},
+            {"_id": 0, "exam_id": 1, "status": 1, "percent": 1, "submitted_at": 1}).to_list(500)}
+        for e in out:
+            a = mine.get(e["id"])
+            if a and not e.get("show_score", True):
+                a.pop("percent", None)
+            e["my_attempt"] = a
+    else:
+        counts = {c["_id"]: c for c in await db.exam_attempts.aggregate([
+            {"$match": {"exam_id": {"$in": [e["id"] for e in out]}}},
+            {"$group": {"_id": "$exam_id", "n": {"$sum": 1},
+                        "pending": {"$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}}}}]).to_list(500)}
+        for e in out:
+            c = counts.get(e["id"]) or {}
+            e["attempt_count"], e["pending_count"] = c.get("n", 0), c.get("pending", 0)
+    return out
 
 @api.post("/exams")
 async def create_exam(body: ExamIn, user=Depends(require_roles("guru", "super_admin"))):
@@ -2282,6 +2440,9 @@ async def create_exam(body: ExamIn, user=Depends(require_roles("guru", "super_ad
         raise HTTPException(400, "Ujian wajib memiliki password")
     data = body.model_dump()
     data.pop("password", None)
+    if not data["questions"]:
+        raise HTTPException(400, "Ujian minimal memiliki 1 soal")
+    validate_exam_fields(data)
     doc = {"id": str(uuid.uuid4()), **data, "teacher_id": user["id"],
            "teacher_name": user["name"], "password_hash": hash_pw(pw), "created_at": now_iso()}
     doc["max_violations"] = int(body.max_violations or 3)
@@ -2294,11 +2455,17 @@ async def edit_exam(eid: str, body: ExamUpdate, user=Depends(require_roles("guru
     ex = await db.exams.find_one({"id": eid})
     if not ex:
         raise HTTPException(404, "Ujian tidak ditemukan")
-    if user["role"] != "super_admin" and ex.get("teacher_id") != user["id"]:
-        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat mengedit ujian ini")
+    await assert_exam_staff(user, ex)
     validate_time_limit(body.time_limit)
     upd = {k: v for k, v in body.model_dump(exclude={"password"}).items() if v is not None}
-    if "time_limit" in upd or "questions" in upd or "max_violations" in upd:
+    for k in ("start_at", "end_at"):
+        if k in body.model_fields_set and not getattr(body, k):
+            upd[k] = None
+    if "questions" in upd and not upd["questions"]:
+        raise HTTPException(400, "Ujian minimal memiliki 1 soal")
+    validate_exam_fields({**{k: ex.get(k) for k in ("start_at", "end_at")}, **upd})
+    if any(k in upd for k in ("time_limit", "questions", "max_violations", "per_page", "allow_back",
+                              "shuffle_questions", "shuffle_options")):
         await db.exam_sessions.delete_many({"exam_id": eid})
     pw = (body.password or "").strip()
     if pw:
@@ -2312,8 +2479,7 @@ async def delete_exam(eid: str, user=Depends(require_roles("guru", "super_admin"
     ex = await db.exams.find_one({"id": eid})
     if not ex:
         raise HTTPException(404, "Ujian tidak ditemukan")
-    if user["role"] != "super_admin" and ex.get("teacher_id") != user["id"]:
-        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus ujian ini")
+    await assert_exam_staff(user, ex)
     await db.exams.delete_one({"id": eid})
     await db.exam_attempts.delete_many({"exam_id": eid})
     await db.exam_sessions.delete_many({"exam_id": eid})
@@ -2325,8 +2491,37 @@ def shuffled_exam_questions(exam: dict, sess: dict) -> list:
     for q_idx in sess["q_order"]:
         q = qs[q_idx]
         opts = q.get("options") or []
-        out.append({"q": q.get("q"), "options": [opts[o] for o in sess["opt_orders"][len(out)] if o < len(opts)]})
+        out.append({"q": q.get("q"), "type": q.get("type", "pg"), "points": float(q.get("points") or 1),
+                    "max_words": int(q.get("max_words") or 0),
+                    "options": [opts[o] for o in sess["opt_orders"][len(out)] if o < len(opts)]})
     return out
+
+def _exam_locked_count(exam: dict, sess: dict) -> int:
+    """Number of leading (shuffled) answers frozen because back-navigation is disabled."""
+    if exam.get("allow_back", True):
+        return 0
+    return int(sess.get("current_page", 0)) * int(exam.get("per_page", 10) or 10)
+
+def _clean_answer(v, qtype: str, max_words: int):
+    if qtype == "essay":
+        s = str(v or "")[:20000]
+        if max_words and len(s.split()) > max_words:
+            s = " ".join(s.split()[:max_words])
+        return s
+    try:
+        return int(v) if v is not None and int(v) >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+def _merge_answers(exam: dict, sess: dict, incoming: list) -> list:
+    qs = shuffled_exam_questions(exam, sess)
+    saved = list(sess.get("answers") or [None] * len(qs))
+    saved += [None] * (len(qs) - len(saved))
+    locked = _exam_locked_count(exam, sess)
+    for i, q in enumerate(qs):
+        if i >= locked and i < len(incoming):
+            saved[i] = _clean_answer(incoming[i], q["type"], q["max_words"])
+    return saved[:len(qs)]
 
 @api.post("/exams/{eid}/start")
 async def start_exam(eid: str, body: ExamStartIn, user=Depends(require_roles("siswa"))):
@@ -2343,24 +2538,57 @@ async def start_exam(eid: str, body: ExamStartIn, user=Depends(require_roles("si
         raise HTTPException(400, "Password ujian salah")
     limit = exam.get("time_limit") or 0
     now = datetime.now(timezone.utc)
+    s_at, e_at = _parse_dt(exam.get("start_at")), _parse_dt(exam.get("end_at"))
+    if s_at and now < s_at:
+        raise HTTPException(400, "Ujian belum dibuka")
+    if e_at and now > e_at:
+        raise HTTPException(400, "Ujian sudah ditutup")
     qs = exam.get("questions") or []
     sess = await db.exam_sessions.find_one({"exam_id": eid, "student_id": user["id"]}, {"_id": 0})
     if not sess or len(sess.get("q_order", [])) != len(qs):
         await db.exam_sessions.delete_one({"exam_id": eid, "student_id": user["id"]})
-        q_order = list(range(len(qs))); random.shuffle(q_order)
+        q_order = list(range(len(qs)))
+        if exam.get("shuffle_questions", True): random.shuffle(q_order)
         opt_orders = []
-        for q in qs:
-            o = list(range(len(q.get("options") or []))); random.shuffle(o); opt_orders.append(o)
+        for q_idx in q_order:
+            o = list(range(len(qs[q_idx].get("options") or [])))
+            if exam.get("shuffle_options", True): random.shuffle(o)
+            opt_orders.append(o)
         sess = {"exam_id": eid, "student_id": user["id"], "started_at": now.isoformat(),
                 "deadline": (now + timedelta(minutes=limit)).isoformat() if limit else None,
-                "q_order": q_order, "opt_orders": opt_orders, "violations": 0}
+                "q_order": q_order, "opt_orders": opt_orders, "violations": 0,
+                "answers": [None] * len(qs), "current_page": 0}
         await db.exam_sessions.insert_one(dict(sess))
     expired = bool(limit and now.isoformat() > sess["deadline"])
     return {"time_limit": limit, "started_at": sess["started_at"], "deadline": sess.get("deadline"),
             "server_now": now.isoformat(), "expired": expired,
             "max_violations": int(exam.get("max_violations", 3) or 3),
             "violations": int(sess.get("violations", 0)),
+            "per_page": int(exam.get("per_page", 10) or 10), "allow_back": exam.get("allow_back", True),
+            "current_page": int(sess.get("current_page", 0)),
+            "answers": sess.get("answers") or [None] * len(qs),
+            "rules": exam.get("rules") or [], "instructions": exam.get("instructions") or "",
             "questions": [] if expired else shuffled_exam_questions(exam, sess)}
+
+@api.post("/exams/{eid}/progress")
+async def exam_progress(eid: str, body: ExamProgressIn, user=Depends(require_roles("siswa"))):
+    exam = await db.exams.find_one({"id": eid, **dscope(user)}, {"_id": 0})
+    if not exam:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    sess = await db.exam_sessions.find_one({"exam_id": eid, "student_id": user["id"]}, {"_id": 0})
+    if not sess:
+        raise HTTPException(400, "Ujian belum dimulai")
+    per = int(exam.get("per_page", 10) or 10)
+    pages = max(1, -(-len(sess["q_order"]) // per))
+    page = max(0, min(int(body.page), pages - 1))
+    cur = int(sess.get("current_page", 0))
+    if not exam.get("allow_back", True) and page < cur:
+        raise HTTPException(400, "Ujian ini tidak mengizinkan kembali ke halaman sebelumnya")
+    answers = _merge_answers(exam, sess, body.answers)
+    new_page = max(cur, page) if not exam.get("allow_back", True) else page
+    await db.exam_sessions.update_one({"exam_id": eid, "student_id": user["id"]},
+                                      {"$set": {"answers": answers, "current_page": new_page, "saved_at": now_iso()}})
+    return {"ok": True, "current_page": new_page, "answers": answers}
 
 @api.post("/exams/{eid}/violation")
 async def record_exam_violation(eid: str, user=Depends(require_roles("siswa"))):
@@ -2395,25 +2623,39 @@ async def attempt_exam(body: ExamAttemptIn, user=Depends(require_roles("siswa"))
         if late.total_seconds() > EXAM_GRACE_SECONDS and not body.auto_submitted:
             raise HTTPException(400, "Waktu pengerjaan ujian sudah habis")
     questions = exam.get("questions", [])
-    score = 0
+    answers = _merge_answers(exam, sess, body.answers)
     await db.exam_sessions.delete_one({"exam_id": body.exam_id, "student_id": user["id"]})
+    responses = [None] * len(questions)
     for i, q_idx in enumerate(sess.get("q_order", [])):
-        if i >= len(body.answers) or body.answers[i] is None or body.answers[i] < 0:
+        if q_idx >= len(questions):
             continue
-        opts = sess["opt_orders"][i]
-        chosen = opts[body.answers[i]] if body.answers[i] < len(opts) else None
-        if chosen is not None and q_idx < len(questions) and questions[q_idx].get("answer") == chosen:
-            score += 1
-    total = len(questions)
-    percent = (score / total * 100) if total else 0
+        q, a = questions[q_idx], answers[i] if i < len(answers) else None
+        mx = float(q.get("points") or 1)
+        if q.get("type") == "essay":
+            text = (a or "").strip()
+            responses[q_idx] = {"type": "essay", "answer": text, "max_points": mx,
+                                "points": None if text else 0.0, "comment": ""}
+        else:
+            opts = sess["opt_orders"][i]
+            chosen = opts[a] if isinstance(a, int) and 0 <= a < len(opts) else None
+            ok = chosen is not None and q.get("answer") == chosen
+            responses[q_idx] = {"type": "pg", "answer": chosen, "correct": ok,
+                                "max_points": mx, "points": mx if ok else 0.0, "comment": ""}
+    responses = [r or {"type": "pg", "answer": None, "correct": False, "max_points": 0, "points": 0.0, "comment": ""}
+                 for r in responses]
     violations = max(int(body.violations or 0), int(sess.get("violations", 0)))
-    doc = {"id": str(uuid.uuid4()), "exam_id": body.exam_id, "student_id": user["id"],
-           "student_name": user["name"], "score": score, "total": total, "percent": percent,
+    doc = calc_attempt_score({"id": str(uuid.uuid4()), "exam_id": body.exam_id, "student_id": user["id"],
+           "student_name": user["name"], "student_nisn": user.get("nisn"), "responses": responses,
            "violations": violations, "auto_submitted": bool(body.auto_submitted),
-           "submitted_at": now_iso(), "is_demo": bool(user.get("is_demo"))}
+           "started_at": sess.get("started_at"), "submitted_at": now_iso(), "feedback": "",
+           "is_demo": bool(user.get("is_demo"))})
+    doc["answered"] = sum(1 for r in responses if r["answer"] not in (None, ""))
     await db.exam_attempts.replace_one({"exam_id": body.exam_id, "student_id": user["id"]}, doc, upsert=True)
-    return {"score": score, "total": total, "percent": percent,
-            "violations": violations, "auto_submitted": bool(body.auto_submitted)}
+    out = {"status": doc["status"], "violations": violations, "auto_submitted": bool(body.auto_submitted),
+           "answered": doc["answered"], "question_count": len(questions), "show_score": exam.get("show_score", True)}
+    if exam.get("show_score", True):
+        out.update({k: doc[k] for k in ("score", "total", "percent", "pg_score", "essay_score")})
+    return out
 
 @api.get("/exams/{eid}/results")
 async def exam_results(eid: str, user=Depends(get_current_user)):
@@ -2422,11 +2664,66 @@ async def exam_results(eid: str, user=Depends(get_current_user)):
         raise HTTPException(404, "Ujian tidak ditemukan")
     if user["role"] == "siswa":
         att = await db.exam_attempts.find_one({"exam_id": eid, "student_id": user["id"]}, {"_id": 0})
+        if att and not exam.get("show_score", True):
+            for k in ("score", "total", "percent", "pg_score", "essay_score"): att.pop(k, None)
+        if att and not exam.get("show_review", False):
+            att.pop("responses", None)
         return {"mine": att}
-    if user["role"] not in EXAM_STAFF:
-        raise HTTPException(403, "Forbidden")
-    attempts = await db.exam_attempts.find({"exam_id": eid}, {"_id": 0}).sort("submitted_at", -1).to_list(1000)
-    return {"attempts": attempts}
+    await assert_exam_staff(user, exam)
+    attempts = await db.exam_attempts.find({"exam_id": eid}, {"_id": 0, "responses": 0}).sort("submitted_at", -1).to_list(1000)
+    for a in attempts:
+        a.setdefault("status", "graded")
+    return {"attempts": attempts, "passing_grade": exam.get("passing_grade", 70)}
+
+@api.get("/exams/{eid}/attempts/{aid}")
+async def exam_attempt_detail(eid: str, aid: str, user=Depends(require_roles("guru", "super_admin"))):
+    exam = await db.exams.find_one({"id": eid}, {"_id": 0, "password_hash": 0})
+    att = await db.exam_attempts.find_one({"id": aid, "exam_id": eid}, {"_id": 0})
+    if not exam or not att:
+        raise HTTPException(404, "Data tidak ditemukan")
+    await assert_exam_staff(user, exam)
+    att.setdefault("responses", [])
+    att.setdefault("status", "graded")
+    return {"attempt": att, "questions": exam.get("questions") or [], "passing_grade": exam.get("passing_grade", 70)}
+
+@api.patch("/exams/{eid}/attempts/{aid}/grade")
+async def grade_exam_attempt(eid: str, aid: str, body: ExamGradeIn, user=Depends(require_roles("guru", "super_admin"))):
+    exam = await db.exams.find_one({"id": eid}, {"_id": 0})
+    att = await db.exam_attempts.find_one({"id": aid, "exam_id": eid}, {"_id": 0})
+    if not exam or not att:
+        raise HTTPException(404, "Data tidak ditemukan")
+    await assert_exam_staff(user, exam)
+    resp = att.get("responses") or []
+    for g in body.grades:
+        if not (0 <= g.index < len(resp)):
+            raise HTTPException(400, f"Soal #{g.index+1} tidak ada")
+        r = resp[g.index]
+        if g.points is not None:
+            if r["type"] != "essay":
+                raise HTTPException(400, f"Soal #{g.index+1} adalah PG (dinilai otomatis)")
+            if not (0 <= g.points <= float(r["max_points"])):
+                raise HTTPException(400, f"Nilai soal #{g.index+1} harus 0-{r['max_points']:g}")
+            r["points"] = float(g.points)
+        r["comment"] = (g.comment or "")[:2000]
+    att["responses"] = resp
+    if body.feedback is not None:
+        att["feedback"] = body.feedback[:3000]
+    calc_attempt_score(att)
+    att.update({"graded_by": user["name"], "graded_at": now_iso()})
+    await db.exam_attempts.update_one({"id": aid}, {"$set": {k: att[k] for k in (
+        "responses", "feedback", "score", "total", "percent", "pg_score", "essay_score", "status", "graded_by", "graded_at")}})
+    return {"attempt": att}
+
+@api.delete("/exams/{eid}/attempts/{aid}")
+async def reset_exam_attempt(eid: str, aid: str, user=Depends(require_roles("guru", "super_admin"))):
+    exam = await db.exams.find_one({"id": eid}, {"_id": 0})
+    att = await db.exam_attempts.find_one({"id": aid, "exam_id": eid})
+    if not exam or not att:
+        raise HTTPException(404, "Data tidak ditemukan")
+    await assert_exam_staff(user, exam)
+    await db.exam_attempts.delete_one({"id": aid})
+    await db.exam_sessions.delete_many({"exam_id": eid, "student_id": att["student_id"]})
+    return {"ok": True}
 
 
 class PostIn(BaseModel):
