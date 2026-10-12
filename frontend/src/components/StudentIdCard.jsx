@@ -47,13 +47,14 @@ export function IdCardFront({ student, schoolName, validUntil, logoUrl }) {
           <div className="grid grid-cols-2 gap-x-2 mt-1.5">
             <div>
               <p className="text-[8px] uppercase tracking-widest text-sky-200/80">NISN</p>
-              <p className="text-[10px] font-semibold font-mono-alt">{student.nisn || "—"}</p>
+              <p data-testid="id-card-nisn" className="text-[10px] font-semibold font-mono-alt">{student.nisn || "—"}</p>
             </div>
             <div>
-              <p className="text-[8px] uppercase tracking-widest text-sky-200/80">Berlaku</p>
-              <p className="text-[10px] font-semibold">{validUntil}</p>
+              <p className="text-[8px] uppercase tracking-widest text-sky-200/80">NIS</p>
+              <p data-testid="id-card-nis" className="text-[10px] font-semibold font-mono-alt">{student.nis || "—"}</p>
             </div>
           </div>
+          <p data-testid="id-card-valid" className="mt-1 inline-block px-1.5 py-0.5 rounded bg-white/15 text-[8px] font-bold uppercase tracking-wider">{validUntil}</p>
         </div>
       </div>
 
@@ -109,7 +110,7 @@ export function IdCardBack({ student, schoolName, logoUrl, rules }) {
 }
 
 export default function StudentIdCard({ student, school, validYears, logoUrl, rules, side = "front" }) {
-  const validUntil = "Sampai Lulus SMA";
+  const validUntil = "Berlaku sampai lulus SMA";
   const schoolName = school || "SMA NEGERI 1 LAGUBOTI";
   return (
     <div className="printable-id-card inline-block">

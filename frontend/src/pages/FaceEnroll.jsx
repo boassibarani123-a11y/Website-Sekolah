@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { ScanFace, Search, CheckCircle2, Circle, Trash2, RotateCcw, Save, Loader2, ArrowLeft, UserRound, ShieldCheck, ListOrdered } from "lucide-react";
-import { CameraStage } from "@/components/face/CameraStage";
+import { FaceIdStage } from "@/components/face/FaceIdStage";
 import { useFaceCamera } from "@/components/face/useFaceCamera";
 import { detectFaces, drawBoxes, snapshotFace } from "@/components/face/faceUtils";
 
@@ -110,7 +110,12 @@ function Enroller({ student, onDone, autoStart }) {
         const fd = new FormData(); fd.append("file", shot.current, "face.jpg");
         const up = await api.post("/upload", fd); photo = `${BACKEND}${up.data.url}`;
       }
-      await api.post("/face/enroll", { student_id: student.id, descriptors: samples, photo });
+      try { await api.post("/face/enroll", { student_id: student.id, descriptors: samples, photo }); }
+      catch (e) {
+        if (e.response?.status !== 409 || !window.confirm(`${e.response.data.detail}\n\nTetap daftarkan sebagai wajah mirip? Saat presensi, sistem akan meminta 4 digit terakhir NISN/NIS/NIP.`)) throw e;
+        await api.post("/face/enroll", { student_id: student.id, descriptors: samples, photo, allow_similar: true });
+        toast.warning("Ditandai sebagai wajah mirip — presensi akan meminta konfirmasi digit");
+      }
       toast.success(`Wajah ${student.name} berhasil didaftarkan`);
       onDone(true);
     } catch (e) {
@@ -125,17 +130,19 @@ function Enroller({ student, onDone, autoStart }) {
   };
 
   return (
-    <div className="bg-slate-950 text-white rounded-3xl p-6 shadow-2xl space-y-5" data-testid="face-enroller">
+    <div className="bg-black text-white rounded-[2.5rem] p-6 sm:p-8 shadow-2xl space-y-5" data-testid="face-enroller">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-400">Pendaftaran Wajah</p>
           <p data-testid="face-enroll-student-name" className="font-heading text-2xl font-extrabold">{student.name}</p>
-          <p className="text-sm text-slate-400">{student.kelas || "—"} · NISN {student.nisn || "—"} {student.enrolled && <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase">Sudah terdaftar</span>}</p>
+          <p className="text-sm text-slate-400">{student.role === "guru" ? `Guru · NIP ${student.nip || "—"}` : `${student.kelas || "—"} · NISN ${student.nisn || "—"}`}{student.lookalike && <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-bold uppercase">Wajah mirip</span>} {student.enrolled && <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase">Sudah terdaftar</span>}</p>
         </div>
         {student.enrolled && <button data-testid="face-delete-button" onClick={remove} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-rose-600 text-sm font-semibold flex items-center gap-2 transition-colors"><Trash2 className="w-4 h-4" />Hapus Data Wajah</button>}
       </div>
       <div className="grid md:grid-cols-5 gap-5">
-        <div className="md:col-span-3"><CameraStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} hint={phase === "idle" ? "" : hint.text} hintTone={hint.tone} onRetry={retry} /></div>
+        <div className="md:col-span-3"><FaceIdStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} onRetry={retry}
+            progress={samples.length / POSES.length} status={phase === "review" || phase === "saving" ? "success" : phase === "capturing" ? "scanning" : "searching"}
+            hint={phase === "idle" ? "Tekan Mulai Rekam" : phase === "capturing" ? hint.text : "Wajah terekam"} /></div>
         <div className="md:col-span-2 space-y-3">
           {POSES.map((p, i) => {
             const done = i < samples.length, active = phase === "capturing" && i === samples.length;
@@ -166,6 +173,7 @@ export default function FaceEnroll() {
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
   const [kelas, setKelas] = useState("");
+  const [role, setRole] = useState("siswa");
   const [selected, setSelected] = useState(null);
   const [batch, setBatch] = useState(false);
   const list = data?.students || [];
@@ -186,7 +194,7 @@ export default function FaceEnroll() {
   const kelasDone = list.filter(s => s.enrolled).length;
 
   const load = useCallback(() => {
-    const p = new URLSearchParams(); if (q) p.set("q", q); if (kelas) p.set("kelas", kelas);
+    const p = new URLSearchParams({ role }); if (q) p.set("q", q); if (kelas && role === "siswa") p.set("kelas", kelas);
     return api.get(`/face/students?${p}`).then(r => {
       setData(r.data);
       setSelected(sel => {
@@ -194,7 +202,7 @@ export default function FaceEnroll() {
         return r.data.students.find(s => s.id === want) || sel;
       });
     }).catch(() => setData({ students: [], total: 0, enrolled: 0 }));
-  }, [q, kelas, params]);
+  }, [q, kelas, params, role]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
   return (
@@ -202,7 +210,13 @@ export default function FaceEnroll() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <Link to="/face-attendance" className="inline-flex items-center gap-1.5 text-sm text-sky-600 font-semibold hover:text-sky-800"><ArrowLeft className="w-4 h-4" />Presensi Wajah</Link>
-          <h1 className="font-heading text-3xl font-extrabold text-slate-900 mt-1 flex items-center gap-2"><ScanFace className="w-8 h-8 text-sky-600" />Daftarkan Wajah Siswa</h1>
+          <h1 className="font-heading text-3xl font-extrabold text-slate-900 mt-1 flex items-center gap-2"><ScanFace className="w-8 h-8 text-sky-600" />Daftarkan Wajah</h1>
+          <div className="mt-3 inline-flex bg-slate-100 rounded-full p-1" data-testid="face-role-toggle">
+            {[["siswa", "Siswa"], ["guru", "Guru"]].map(([k, l]) => (
+              <button key={k} data-testid={`face-role-${k}`} onClick={() => { setRole(k); setSelected(null); setBatch(false); }}
+                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors ${role === k ? "bg-white shadow text-slate-900" : "text-slate-500"}`}>{l}</button>
+            ))}
+          </div>
           <p className="mt-1 text-sm text-slate-500">Pilih siswa, tekan Mulai Rekam, lalu ikuti 5 arahan pose. Kamera merekam otomatis.</p>
         </div>
         <div className="flex items-center gap-3">

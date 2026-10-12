@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Grand+Hotel&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
 @tailwind base;
@@ -144,3 +145,9 @@ html.dark body { background-color: #0b1220; color: #e2e8f0; }
 
 @keyframes gateScan { 0%, 100% { top: 18%; } 50% { top: 82%; } }
 .gate-full { min-height: 100vh; border-radius: 0 !important; overflow-y: auto; }
+
+@keyframes fidSpin { to { transform: rotate(360deg); } }
+@keyframes fidShake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-12px); } 40%,80% { transform: translateX(12px); } }
+@keyframes fidDraw { to { stroke-dashoffset: 0; } }
+.guest-card { width: 54mm; height: 86mm; border-radius: 10px; overflow: hidden; }
+.sg-logo { font-family: 'Grand Hotel', cursive; }

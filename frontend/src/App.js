@@ -13,6 +13,9 @@ import Inventory from "@/pages/Inventory";
 import Assignments from "@/pages/Assignments";
 import Quizzes from "@/pages/Quizzes";
 import VortexGuard from "@/pages/VortexGuard";
+import Guests from "@/pages/Guests";
+import IzinKeluar from "@/pages/IzinKeluar";
+import TeacherAttendance from "@/pages/TeacherAttendance";
 import PublicOrg from "@/pages/PublicOrg";
 import Documentation from "@/pages/Documentation";
 import Presentation from "@/pages/Presentation";
@@ -85,6 +88,9 @@ function AppInner() {
           <Route path="assignments" element={<Assignments/>}/>
           <Route path="quizzes" element={<Quizzes/>}/>
           <Route path="vortex-guard" element={<VortexGuard/>}/>
+          <Route path="guests" element={<Guests/>}/>
+          <Route path="izin-keluar" element={<IzinKeluar/>}/>
+          <Route path="teacher-attendance" element={<TeacherAttendance/>}/>
           <Route path="classes" element={<Classes/>}/>
           <Route path="classes/:id" element={<ClassDetail/>}/>
           <Route path="school-info" element={<SchoolInfo/>}/>

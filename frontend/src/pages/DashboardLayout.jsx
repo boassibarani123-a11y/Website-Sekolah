@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound, ScanFace, ShieldCheck, UserCheck, Tornado } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound, ScanFace, ShieldCheck, UserCheck, Contact, DoorOpen, ClipboardCheck, Tornado } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 import AiAssistant from "@/components/AiAssistant";
@@ -25,7 +25,10 @@ const MENU = [
   { to: "/analytics", label: "Analitik", icon: BarChart3, roles: ["kepsek","super_admin"] },
   { to: "/attendance", label: "Presensi Barcode", icon: QrCode, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
   { to: "/face-attendance", label: "Presensi Wajah", icon: ScanFace, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
-  { to: "/face-enroll", label: "Daftar Wajah Siswa", icon: UserCheck, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/face-enroll", label: "Daftar Wajah", icon: UserCheck, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/teacher-attendance", label: "Absensi Guru", icon: ClipboardCheck, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/izin-keluar", label: "Izin Keluar (IK)", icon: DoorOpen, roles: ["super_admin","kepsek","staff_tu","guru","admin_absensi","siswa","ketua_kelas","ketua_osis"] },
+  { to: "/guests", label: "Kunjungan Tamu", icon: Contact, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/piket", label: "Piket Gerbang", icon: ShieldCheck, roles: ["super_admin","kepsek","staff_tu","guru","admin_absensi"] },
   { to: "/attendance-recap", label: "Rekap Absensi", icon: CalendarCheck, roles: ["super_admin","kepsek","guru","staff_tu","admin_absensi"] },
   { to: "/calendar", label: "Kalender", icon: CalendarDays, roles: "*" },

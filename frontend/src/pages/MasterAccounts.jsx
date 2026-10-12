@@ -4,6 +4,7 @@ import api from "@/lib/apiClient";
 import { toast } from "sonner";
 import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle, ScanFace } from "lucide-react";
 import StudentIdCard from "@/components/StudentIdCard";
+import { BulkDeleteModal } from "@/components/accounts/BulkDeleteModal";
 
 const ROLES = [
   {v:"siswa", l:"Siswa"}, {v:"guru", l:"Guru / Wali Kelas"}, {v:"kepsek", l:"Kepala Sekolah"},
@@ -30,6 +31,9 @@ export default function MasterAccounts() {
   const [filter, setFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [kelasFilter, setKelasFilter] = useState("");
+  const [bulk, setBulk] = useState(false);
+  const kelasOpts = [...new Set(users.map(u => u.kelas).filter(Boolean))].sort();
   const [faces, setFaces] = useState({});
   const navigate = useNavigate();
   const load = () => {
@@ -39,11 +43,12 @@ export default function MasterAccounts() {
   useEffect(() => { load(); }, []);
 
   const filtered = users.filter(u => {
-    const text = !filter || u.name?.toLowerCase().includes(filter.toLowerCase()) || u.email.includes(filter.toLowerCase()) || (u.nisn||"").includes(filter);
+    const text = !filter || u.name?.toLowerCase().includes(filter.toLowerCase()) || u.email.includes(filter.toLowerCase()) || (u.nisn||"").includes(filter) || (u.nis||"").includes(filter);
     const role = !roleFilter || u.role === roleFilter;
     const active = u.is_active !== false;
     const status = !statusFilter || (statusFilter === "active" ? active : !active);
-    return text && role && status;
+    const kelas = !kelasFilter || u.kelas === kelasFilter;
+    return text && role && status && kelas;
   });
 
   const doDelete = async () => {
@@ -62,8 +67,12 @@ export default function MasterAccounts() {
         <div className="flex gap-2">
           <a href="/print-cards" target="_blank" rel="noreferrer" data-testid="bulk-print-link"
             className="px-4 py-2.5 bg-white border-2 border-slate-200 rounded-xl font-semibold flex items-center gap-2 hover:border-sky-400 transition-all">
-            🖨️ Cetak Kartu Massal
+            <Printer className="w-4 h-4"/>Cetak Kartu Massal
           </a>
+          <button data-testid="bulk-delete-button" onClick={()=>setBulk(true)}
+            className="px-4 py-2.5 bg-white border-2 border-rose-200 text-rose-600 rounded-xl font-semibold flex items-center gap-2 hover:bg-rose-50 transition-colors">
+            <Trash2 className="w-4 h-4"/>Hapus Massal
+          </button>
           <button data-testid="create-account-button" onClick={()=>setShowCreate(true)}
             className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-xl shadow-lg shadow-sky-600/30 flex items-center gap-2 transition-all">
             <UserPlus className="w-4 h-4"/>Buat Akun Baru
@@ -73,7 +82,7 @@ export default function MasterAccounts() {
 
       {/* Filters */}
       <div className="grid sm:grid-cols-12 gap-3">
-        <div className="relative sm:col-span-6">
+        <div className="relative sm:col-span-4">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"/>
           <input data-testid="accounts-search" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Cari nama, email, atau NISN..."
             className="w-full pl-10 pr-4 py-3 bg-white border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none"/>
@@ -83,8 +92,13 @@ export default function MasterAccounts() {
           <option value="">Semua Role</option>
           {ROLES.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
         </select>
-        <select data-testid="accounts-status-filter" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+        <select data-testid="accounts-kelas-filter" value={kelasFilter} onChange={e=>setKelasFilter(e.target.value)}
           className="sm:col-span-3 w-full px-3 py-3 bg-white border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
+          <option value="">Semua Kelas</option>
+          {kelasOpts.map(k=><option key={k} value={k}>{k}</option>)}
+        </select>
+        <select data-testid="accounts-status-filter" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+          className="sm:col-span-2 w-full px-3 py-3 bg-white border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
           <option value="">Semua Status</option>
           <option value="active">Aktif</option>
           <option value="inactive">Nonaktif</option>
@@ -159,6 +173,7 @@ export default function MasterAccounts() {
       {showCreate && <CreateModal onClose={()=>setShowCreate(false)} onCreated={()=>{load(); setShowCreate(false);}}/>}
       {editFor && <EditModal user={editFor} onClose={()=>setEditFor(null)} onSaved={()=>{load(); setEditFor(null);}}/>}
       {cardFor && <CardModal student={cardFor} onClose={()=>setCardFor(null)}/>}
+      {bulk && <BulkDeleteModal users={users} kelasOpts={kelasOpts} onClose={()=>setBulk(false)} onDone={()=>{setBulk(false); load();}}/>}
       {delFor && <DeleteConfirm user={delFor} onClose={()=>setDelFor(null)} onConfirm={doDelete}/>}
     </div>
   );
@@ -187,8 +202,7 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
 function EditModal({ user, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: user.name || "", role: user.role, password: "", kelas: user.kelas || "",
-    nisn: user.nisn || "", nip: user.nip || "", phone: user.phone || "",
-    parent_name: user.parent_name || "", parent_email: user.parent_email || "", parent_phone: user.parent_phone || "",
+    nisn: user.nisn || "", nis: user.nis || "", nip: user.nip || "", phone: user.phone || "",
     is_active: user.is_active !== false,
   });
   const [classList, setClassList] = useState([]);
@@ -200,7 +214,7 @@ function EditModal({ user, onClose, onSaved }) {
     e.preventDefault(); setBusy(true);
     const payload = { name: form.name, role: form.role, is_active: form.is_active };
     if (form.password.trim()) payload.password = form.password.trim();
-    ["kelas","nisn","nip","phone","parent_name","parent_email","parent_phone"].forEach(k=>{
+    ["kelas","nisn","nis","nip","phone"].forEach(k=>{
       if ((form[k]||"").trim() !== "") payload[k] = form[k].trim();
     });
     try { await api.patch(`/users/${user.id}`, payload); toast.success("Akun diperbarui"); onSaved(); }
@@ -238,12 +252,7 @@ function EditModal({ user, onClose, onSaved }) {
             </Field>
           </div>
           <Field label="Nomor WhatsApp"><input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="08xxxxxxxxxx" className={inp}/></Field>
-          {isStudent && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Nama Ortu"><input value={form.parent_name} onChange={e=>setForm({...form,parent_name:e.target.value})} className={inp}/></Field>
-              <Field label="Nomor Ortu"><input value={form.parent_phone} onChange={e=>setForm({...form,parent_phone:e.target.value})} className={inp}/></Field>
-            </div>
-          )}
+          {isStudent && <Field label="NIS"><input data-testid="edit-nis" value={form.nis} onChange={e=>setForm({...form,nis:e.target.value})} className={inp}/></Field>}
           <label className="flex items-center justify-between gap-3 p-3 rounded-xl border-2 border-slate-200 cursor-pointer">
             <div>
               <p className="text-sm font-semibold text-slate-800">Status Akun Aktif</p>
@@ -269,7 +278,7 @@ function Field({ label, children }) {
 }
 
 function CreateModal({onClose, onCreated}) {
-  const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", kelas:"", photo:"", phone:"", parent_name:"", parent_email:"", parent_phone:"", student_id:"", subjects:[]});
+  const [form, setForm] = useState({email:"", password:"", name:"", role:"siswa", nisn:"", nis:"", kelas:"", photo:"", phone:"", student_id:"", subjects:[]});
   const [classList, setClassList] = useState([]);
   const [subjectList, setSubjectList] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -320,8 +329,10 @@ function CreateModal({onClose, onCreated}) {
           {(form.role==="siswa" || form.role==="ketua_kelas" || form.role==="ketua_osis") && (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <Input label="NISN" v={form.nisn} on={v=>setForm({...form,nisn:v})}/>
-                <div>
+                <Input label="NISN" v={form.nisn} on={v=>setForm({...form,nisn:v})} data-testid="new-account-nisn"/>
+                <Input label="NIS" v={form.nis} on={v=>setForm({...form,nis:v})} placeholder="Nomor Induk Siswa" data-testid="new-account-nis"/>
+              </div>
+              <div>
                   <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Kelas</label>
                   <select data-testid="new-account-kelas" value={form.kelas} onChange={e=>setForm({...form,kelas:e.target.value})}
                     className="mt-1 w-full px-3 py-2.5 border-2 border-slate-200 rounded-xl focus:border-sky-500 outline-none">
@@ -329,17 +340,12 @@ function CreateModal({onClose, onCreated}) {
                     {classList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                   {classList.length===0 && <p className="mt-1 text-[10px] text-amber-600">Belum ada kelas. Buat kelas dulu di menu Ruang Kelas.</p>}
-                </div>
               </div>
               <div className="-mt-1">
                 <button type="button" data-testid="nisn-generate" onClick={()=>setForm({...form,nisn:String(Math.floor(1000000000+Math.random()*9000000000))})}
                   className="text-xs font-semibold text-sky-600 hover:text-sky-800">Buat NISN acak otomatis</button>
               </div>
               <Input label={form.role==="siswa" ? "Nomor WhatsApp Aktif (wajib)" : "Nomor WhatsApp"} v={form.phone} on={v=>setForm({...form,phone:v})} required={form.role==="siswa"} placeholder="08xxxxxxxxxx" data-testid="new-account-phone"/>
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="Nama Ortu" v={form.parent_name} on={v=>setForm({...form,parent_name:v})}/>
-                <Input label="Email Ortu" type="email" v={form.parent_email} on={v=>setForm({...form,parent_email:v})}/>
-              </div>
             </>
           )}
           {form.role === "guru" && (

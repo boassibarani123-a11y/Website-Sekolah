@@ -518,6 +518,7 @@ class UserCreate(BaseModel):
     name: str
     role: str
     nisn: Optional[str] = None
+    nis: Optional[str] = None
     kelas: Optional[str] = None
     jurusan: Optional[str] = None
     photo: Optional[str] = None
@@ -536,6 +537,7 @@ class UserUpdate(BaseModel):
     kelas: Optional[str] = None
     jurusan: Optional[str] = None
     nisn: Optional[str] = None
+    nis: Optional[str] = None
     photo: Optional[str] = None
     parent_name: Optional[str] = None
     parent_email: Optional[EmailStr] = None
@@ -639,7 +641,7 @@ async def create_user(body: UserCreate, user=Depends(require_roles("super_admin"
     doc = {
         "id": uid, "email": email, "password_hash": hash_pw(body.password),
         "name": body.name, "role": body.role,
-        "nisn": body.nisn, "kelas": body.kelas, "jurusan": body.jurusan,
+        "nisn": body.nisn, "nis": (body.nis or "").strip() or None, "kelas": body.kelas, "jurusan": body.jurusan,
         "photo": body.photo, "qr_code": qr_payload,
         "parent_name": body.parent_name, "parent_email": body.parent_email, "parent_phone": body.parent_phone,
         "phone": (body.phone or "").strip() or None,
@@ -1279,11 +1281,11 @@ def _build_week_matrix(docs, days):
             totals[k] += daily[dd][k]
     return slist, daily, totals
 
-def weekly_attendance_excel(label, subtitle, days, students, daily, totals):
+def weekly_attendance_excel(label, subtitle, days, students, daily, totals, who="Siswa"):
     wb = Workbook(); ws = wb.active; ws.title = "Rekap Mingguan"
     CO = 2  # content starts at column B (A = left margin)
     day_hdrs = [f"{DAY_LABELS[i]}\n{days[i][8:10]}/{days[i][5:7]}" for i in range(7)]
-    columns = ["No", "Nama Siswa", "Kelas"] + day_hdrs + ["H", "I", "S", "A"]
+    columns = ["No", f"Nama {who}", "Kelas" if who == "Siswa" else "Jabatan"] + day_hdrs + ["H", "I", "S", "A"]
     n = len(columns)
     first = get_column_letter(CO); last = get_column_letter(CO + n - 1)
     ws.column_dimensions["A"].width = 2.6
@@ -1378,33 +1380,36 @@ async def attendance_week_export(start: Optional[str] = None, user=Depends(get_c
     data = weekly_attendance_excel(label, f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}", days, students, daily, totals)
     return xlsx_response(data, f"Rekap_Absensi_{days[0]}_sd_{days[6]}.xlsx")
 
-async def _archive_week(is_demo, monday, generated_by):
+async def _archive_week(is_demo, monday, generated_by, kind="siswa"):
     days = _week_dates(monday)
+    coll = db.teacher_attendance if kind == "guru" else db.attendance
     scope = {"is_demo": True} if is_demo else {"is_demo": {"$ne": True}}
-    docs = await db.attendance.find({"date": {"$gte": days[0], "$lte": days[6]}, **scope}, {"_id": 0}).to_list(30000)
+    docs = await coll.find({"date": {"$gte": days[0], "$lte": days[6]}, **scope}, {"_id": 0}).to_list(30000)
     if not docs:
         return None
     students, daily, totals = _build_week_matrix(docs, days)
-    label = f"Rekap Absensi Mingguan {_fmt_range(days[0], days[6])}"
-    data = weekly_attendance_excel(label, f"Arsip otomatis · dibuat oleh {generated_by}", days, students, daily, totals)
-    arc = {"id": str(uuid.uuid4()), "is_demo": bool(is_demo), "period_start": days[0], "period_end": days[6],
+    label = f"Rekap Absensi {'Guru ' if kind == 'guru' else ''}Mingguan {_fmt_range(days[0], days[6])}"
+    data = weekly_attendance_excel(label, f"Arsip otomatis · dibuat oleh {generated_by}", days, students, daily, totals,
+                                   who="Guru" if kind == "guru" else "Siswa")
+    arc = {"id": str(uuid.uuid4()), "kind": kind, "is_demo": bool(is_demo), "period_start": days[0], "period_end": days[6],
            "label": label, "record_count": len(docs), "student_count": len(students),
            "summary": totals, "generated_at": now_iso(), "generated_by": generated_by,
            "file_b64": base64.b64encode(data).decode()}
     await db.attendance_archives.insert_one(arc)
-    await db.attendance.delete_many({"date": {"$gte": days[0], "$lte": days[6]}, **scope})
+    await coll.delete_many({"date": {"$gte": days[0], "$lte": days[6]}, **scope})
     return arc
 
-async def _archive_completed_weeks(is_demo, generated_by):
+async def _archive_completed_weeks(is_demo, generated_by, kind="siswa"):
     """Archive every completed week (date <= last Sunday) into Storage and purge those records. Current week is kept live."""
     today = datetime.now(WIB).date()
     last_sunday = (_monday_of(today) - timedelta(days=1)).isoformat()
     scope = {"is_demo": True} if is_demo else {"is_demo": {"$ne": True}}
-    dates = await db.attendance.distinct("date", {"date": {"$lte": last_sunday}, **scope})
+    coll = db.teacher_attendance if kind == "guru" else db.attendance
+    dates = await coll.distinct("date", {"date": {"$lte": last_sunday}, **scope})
     mondays = sorted({_monday_of(_date.fromisoformat(d)) for d in dates})
     created = []
     for mon in mondays:
-        arc = await _archive_week(is_demo, mon, generated_by)
+        arc = await _archive_week(is_demo, mon, generated_by, kind)
         if arc:
             created.append({"label": arc["label"], "records": arc["record_count"]})
     return created
@@ -1413,12 +1418,13 @@ async def run_attendance_weekly_archive():
     for is_demo in (False, True):
         try:
             await _archive_completed_weeks(is_demo, "Otomatis (Jadwal Mingguan)")
+            await _archive_completed_weeks(is_demo, "Otomatis (Jadwal Mingguan)", kind="guru")
         except Exception as e:
             logging.exception("Weekly attendance archive failed: %s", e)
 
 @api.get("/attendance/archives")
 async def list_att_archives(user=Depends(ATT_RECAP_ROLES)):
-    return await db.attendance_archives.find(dscope(user), {"_id": 0, "file_b64": 0}).sort("period_start", -1).to_list(500)
+    return await db.attendance_archives.find({"kind": {"$ne": "guru"}, **dscope(user)}, {"_id": 0, "file_b64": 0}).sort("period_start", -1).to_list(500)
 
 @api.get("/attendance/archives/{aid}/download")
 async def download_att_archive(aid: str, user=Depends(ATT_RECAP_ROLES)):
@@ -2635,7 +2641,7 @@ async def delete_comment(pid: str, cid: str, user=Depends(get_current_user)):
     if not found:
         raise HTTPException(404, "Komentar tidak ditemukan")
     is_owner = found.get("user_id") == user["id"]
-    is_admin = user["role"] in ("super_admin", "kepsek")
+    is_admin = user["role"] in ("super_admin", "kepsek", "ketua_osis")
     if not (is_owner or is_admin):
         raise HTTPException(403, "Hanya pemilik komentar yang dapat menghapusnya")
     await db.posts.update_one({"id": pid}, {"$pull": {"comments": {"id": cid}}})
@@ -3259,17 +3265,17 @@ async def analytics(user=Depends(require_roles("kepsek", "super_admin"))):
 # Admin-approved flow (no email): request -> pending -> admin verifies identity
 # -> approve issues a one-time temporary password (30 min) that must be changed on login.
 TEMP_PW_MINUTES = 30
-RESET_GENERIC_MSG = ("Permintaan reset telah dicatat. Silakan hubungi admin/TU sekolah dengan membawa "
-                     "identitas diri untuk verifikasi. Admin akan memberikan password sementara secara langsung.")
+RESET_GENERIC_MSG = ("Permintaan ubah password terkirim. Password baru Anda akan aktif setelah disetujui Super Admin. "
+                     "Sampai saat itu, password lama masih berlaku.")
 
 class ForgotIn(BaseModel):
     email: EmailStr
     identifier: str = Field(min_length=4, max_length=30)
+    new_password: str = Field(min_length=8, max_length=128)
     note: str = Field(default="", max_length=300)
 
 class ResetApproveIn(BaseModel):
-    identity_verified: bool
-    verification_method: str = Field(min_length=3, max_length=100)
+    verification_method: str = Field(default="Verifikasi Email + NISN", max_length=100)
 
 class ResetRejectIn(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
@@ -3304,12 +3310,14 @@ async def forgot(body: ForgotIn, request: Request):
         raise HTTPException(429, "Terlalu banyak permintaan. Coba lagi beberapa saat lagi.")
     await db.password_reset_requests.insert_one({"email": email, "ip": ip, "ts": now})
     user = await db.users.find_one({"email": email})
-    if not user or user.get("is_active") is False:
-        return {"message": RESET_GENERIC_MSG}
     given = _norm_ident(body.identifier)
-    match = bool(given) and given in {_norm_ident(user.get(k)) for k in ("nisn", "nip", "phone") if user.get(k)}
+    match = bool(user) and bool(given) and given in {_norm_ident(user.get(k)) for k in ("nisn", "nis", "nip") if user.get(k)}
+    if not match or user.get("is_active") is False:
+        raise HTTPException(400, "Email dan NISN tidak cocok dengan data akun mana pun")
+    if not re.search(r"[A-Za-z]", body.new_password) or not re.search(r"\d", body.new_password):
+        raise HTTPException(400, "Password baru minimal 8 karakter dan mengandung huruf serta angka")
     fields = {"identity_match": match, "identifier_hint": _mask(given), "note": body.note.strip(),
-              "ip": ip, "updated_at": now_iso()}
+              "new_password_hash": hash_pw(body.new_password), "ip": ip, "updated_at": now_iso()}
     existing = await db.reset_requests.find_one({"user_id": user["id"], "status": "pending"})
     if existing:
         await db.reset_requests.update_one({"id": existing["id"]}, {"$set": fields})
@@ -3320,7 +3328,7 @@ async def forgot(body: ForgotIn, request: Request):
                                             "role": user["role"], "kelas": user.get("kelas"), "status": "pending",
                                             "created_at": now_iso(), "is_demo": bool(user.get("is_demo")), **fields})
         admins = [u["id"] for u in await db.users.find({"role": "super_admin"}, {"id": 1}).to_list(20)]
-        await notify(admins, "🔑 Permintaan Reset Password", f"{user['name']} ({user['email']}) meminta reset password", "/reset-requests")
+        await notify(admins, "Permintaan Ubah Password", f"{user['name']} ({user['email']}) meminta ubah password", "/reset-requests")
     await audit("reset_requested", None, user["id"], request, {"request_id": rid, "identity_match": match})
     return {"message": RESET_GENERIC_MSG}
 
@@ -3328,29 +3336,34 @@ async def forgot(body: ForgotIn, request: Request):
 async def list_reset_requests(status: Optional[str] = None, user=Depends(require_roles("super_admin"))):
     q = {**dscope(user)}
     if status: q["status"] = status
-    return await db.reset_requests.find(q, {"_id": 0, "ip": 0}).sort("created_at", -1).to_list(500)
+    return await db.reset_requests.find(q, {"_id": 0, "ip": 0, "new_password_hash": 0}).sort("created_at", -1).to_list(500)
+
+async def _apply_reset(req: dict, user: dict, request: Request, method: str) -> bool:
+    req = await db.reset_requests.find_one_and_update(
+        {"id": req["id"], "status": "pending"},
+        {"$set": {"status": "approved", "processed_by": user["name"], "processed_by_id": user["id"],
+                  "verification_method": method, "processed_at": now_iso()}})
+    if not req:
+        return False
+    await db.users.update_one({"id": req["user_id"]}, {
+        "$set": {"password_hash": req["new_password_hash"], "must_change_password": False},
+        "$unset": {"temp_password_expires_at": ""}, "$inc": {"token_version": 1}})
+    await db.reset_requests.update_one({"id": req["id"]}, {"$unset": {"new_password_hash": ""}})
+    await notify([req["user_id"]], "Password Diperbarui", "Permintaan ubah password Anda disetujui. Silakan login dengan password baru.", "/login")
+    await audit("reset_approved", user["id"], req["user_id"], request, {"request_id": req["id"], "verification_method": method})
+    return True
 
 @api.post("/admin/reset-requests/{rid}/approve")
-async def approve_reset(rid: str, body: ResetApproveIn, request: Request, user=Depends(require_roles("super_admin"))):
-    if not body.identity_verified:
-        raise HTTPException(400, "Konfirmasi bahwa identitas pengguna sudah diverifikasi")
+async def approve_reset(rid: str, request: Request, body: Optional[ResetApproveIn] = None, user=Depends(require_roles("super_admin"))):
     req = await db.reset_requests.find_one({"id": rid, **dscope(user)})
     if not req: raise HTTPException(404, "Permintaan tidak ditemukan")
     if req["user_id"] == user["id"]:
         raise HTTPException(403, "Tidak dapat menyetujui permintaan reset akun sendiri")
-    req = await db.reset_requests.find_one_and_update(
-        {"id": rid, "status": "pending"},
-        {"$set": {"status": "approved", "processed_by": user["name"], "processed_by_id": user["id"],
-                  "verification_method": body.verification_method.strip(), "processed_at": now_iso()}})
-    if not req: raise HTTPException(409, "Permintaan sudah diproses sebelumnya")
-    temp = gen_temp_password()
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=TEMP_PW_MINUTES)).isoformat()
-    await db.users.update_one({"id": req["user_id"]}, {
-        "$set": {"password_hash": hash_pw(temp), "must_change_password": True, "temp_password_expires_at": expires},
-        "$inc": {"token_version": 1}})
-    await audit("reset_approved", user["id"], req["user_id"], request,
-                {"request_id": rid, "verification_method": body.verification_method.strip()})
-    return {"ok": True, "temp_password": temp, "expires_at": expires, "email": req["email"]}
+    if not req.get("new_password_hash"):
+        raise HTTPException(400, "Permintaan lama tanpa password baru. Tolak lalu minta pengguna mengajukan ulang.")
+    if not await _apply_reset(req, user, request, (body.verification_method if body else "") or "Verifikasi Email + NISN"):
+        raise HTTPException(409, "Permintaan sudah diproses sebelumnya")
+    return {"ok": True, "email": req["email"]}
 
 @api.post("/admin/reset-requests/{rid}/reject")
 async def reject_reset(rid: str, body: ResetRejectIn, request: Request, user=Depends(require_roles("super_admin"))):
@@ -4955,8 +4968,17 @@ async def delete_point(pid: str, user=Depends(require_roles(*POINT_MANAGE_ROLES)
 
 
 # ==================== SCHOOLGRAM PER-KELAS (Instagram-style) ====================
+SG_MODS = ("super_admin", "ketua_osis")
+
+def _sg_hidden_filter(user: dict) -> dict:
+    if user.get("role") in SG_MODS:
+        return {}
+    or_ = [{"taken_down": {"$ne": True}}, {"author_id": user["id"]}]
+    if user.get("role") == "ketua_kelas" and user.get("kelas"):
+        or_.append({"kelas": user["kelas"]})
+    return {"$or": or_}
 def can_manage_schoolgram(user: dict, klass: dict) -> bool:
-    if user.get("role") == "super_admin":
+    if user.get("role") in SG_MODS:
         return True
     if user.get("role") == "ketua_kelas" and user.get("kelas") == klass.get("name"):
         return True
@@ -4971,8 +4993,9 @@ async def schoolgram_classes(user=Depends(get_current_user)):
     classes = await db.classes.find(dscope(user), {"_id": 0}).to_list(500)
     now = now_iso()
     out = []
+    fol = set(await db.sg_follows.distinct("following_id", {"follower_id": user["id"]}))
     for c in classes:
-        latest = await db.posts.find({"class_id": c["id"]}, {"_id": 0, "image": 1}).sort("created_at", -1).to_list(1)
+        latest = await db.posts.find({"class_id": c["id"], "taken_down": {"$ne": True}}, {"_id": 0, "image": 1}).sort("created_at", -1).to_list(1)
         out.append({
             "id": c["id"], "name": c["name"],
             "post_count": await db.posts.count_documents({"class_id": c["id"]}),
@@ -4980,6 +5003,7 @@ async def schoolgram_classes(user=Depends(get_current_user)):
             "cover": (latest[0]["image"] if latest else None),
             "has_story": (await db.stories.count_documents({"class_id": c["id"], "$or": [{"highlighted": True}, {"expires_at": {"$gte": now}}]})) > 0,
             "can_manage": can_manage_schoolgram(user, c),
+            "avatar": c.get("avatar"), "is_following": c["id"] in fol,
         })
     out.sort(key=lambda x: x["name"])
     return out
@@ -4990,12 +5014,15 @@ async def schoolgram_class(cid: str, user=Depends(get_current_user)):
     c = await db.classes.find_one({"id": cid}, {"_id": 0})
     if not c:
         raise HTTPException(404, "Kelas tidak ditemukan")
-    posts = await db.posts.find({"class_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    posts = await db.posts.find({"class_id": cid, **_sg_hidden_filter(user)}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    saved = await _sg_saved(user)
     for p in posts:
-        p["like_count"] = len(p.get("likes", []))
-        p["liked"] = user["id"] in p.get("likes", [])
+        _enrich_post(p, user["id"], saved)
     now = now_iso()
     return {
+        "followers": await db.sg_follows.count_documents({"following_id": cid}),
+        "is_following": bool(await db.sg_follows.find_one({"follower_id": user["id"], "following_id": cid})),
+        "can_moderate": user.get("role") in SG_MODS,
         "class": {"id": c["id"], "name": c["name"], "description": c.get("description", ""), "avatar": c.get("avatar"), "cover": c.get("cover")},
         "posts": posts,
         "stories": await db.stories.find({"class_id": cid, "expires_at": {"$gte": now}}, {"_id": 0}).sort("created_at", -1).to_list(100),
@@ -5048,6 +5075,8 @@ async def sg_delete_post(pid: str, user=Depends(get_current_user)):
         raise HTTPException(404, "Post tidak ditemukan")
     await _assert_manage(p.get("class_id"), user)
     await db.posts.delete_one({"id": pid})
+    if p.get("author_id") != user["id"]:
+        await notify([p["author_id"]], "Postingan dihapus", f"Postingan Anda dihapus oleh {user['name']}", "/schoolgram")
     return {"ok": True}
 
 class SgStoryIn(BaseModel):
@@ -5089,17 +5118,28 @@ async def sg_delete_story(sid: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 # ==================== SCHOOLGRAM FEED / REELS / PROFILE / CHAT ====================
-def _enrich_post(p, uid):
+def _enrich_post(p, uid, saved=frozenset(), avatars=None):
     p["like_count"] = len(p.get("likes", []))
     p["liked"] = uid in p.get("likes", [])
     p["comment_count"] = len(p.get("comments", []))
+    p["saved"] = p.get("id") in saved
+    if avatars is not None:
+        p["class_avatar"] = avatars.get(p.get("class_id"))
+    p.pop("likes", None)
     return p
 
 @api.get("/schoolgram/feed")
-async def sg_feed(user=Depends(get_current_user)):
+async def sg_feed(following: bool = False, saved: bool = False, user=Depends(get_current_user)):
     await _story_cleanup()
-    posts = await db.posts.find({}, {"_id": 0}).sort("created_at", -1).to_list(300)
-    return [_enrich_post(p, user["id"]) for p in posts]
+    q = dict(_sg_hidden_filter(user))
+    mine = await _sg_saved(user)
+    if following:
+        q["class_id"] = {"$in": await db.sg_follows.distinct("following_id", {"follower_id": user["id"]})}
+    if saved:
+        q["id"] = {"$in": list(mine)}
+    posts = await db.posts.find(q, {"_id": 0}).sort("created_at", -1).to_list(300)
+    avatars = {c["id"]: c.get("avatar") for c in await db.classes.find({}, {"_id": 0, "id": 1, "avatar": 1}).to_list(500)}
+    return [_enrich_post(p, user["id"], mine, avatars) for p in posts]
 
 @api.get("/schoolgram/stories")
 async def sg_all_stories(user=Depends(get_current_user)):
@@ -5114,7 +5154,7 @@ async def sg_all_stories(user=Depends(get_current_user)):
 
 @api.get("/schoolgram/reels")
 async def sg_reels(user=Depends(get_current_user)):
-    posts = await db.posts.find({"media_type": "video"}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    posts = await db.posts.find({"media_type": "video", "taken_down": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return [_enrich_post(p, user["id"]) for p in posts]
 
 class SgProfileIn(BaseModel):
@@ -5648,7 +5688,8 @@ async def piket_report_export(month: str, user=Depends(require_roles(*PIKET_ADMI
 # ---------------- FACE RECOGNITION (presensi cadangan) ----------------
 FACE_MATCH_THRESHOLD = 0.5
 FACE_DUP_THRESHOLD = 0.42
-FACE_AMBIGUITY_GAP = 0.04
+FACE_AMBIGUITY_GAP = 0.06
+FACE_ROLES = ["siswa", "ketua_kelas", "ketua_osis", "guru"]
 _face_cache = {"at": 0.0, "data": None}
 
 def _face_vec(v: List[float]):
@@ -5662,7 +5703,7 @@ async def _face_purge_orphans():
     sids = await db.face_profiles.distinct("student_id")
     if not sids:
         return
-    alive = set(await db.users.distinct("id", {"id": {"$in": sids}, "role": "siswa"}))
+    alive = set(await db.users.distinct("id", {"id": {"$in": sids}, "role": {"$in": FACE_ROLES}}))
     dead = [s for s in sids if s not in alive]
     if dead:
         await db.face_profiles.delete_many({"student_id": {"$in": dead}})
@@ -5681,63 +5722,78 @@ async def _face_matrix(force: bool = False):
     _face_cache.update(at=time.time(), data=data)
     return data
 
-async def _face_best(vec, force: bool = False):
+async def _face_ranked(vec, force: bool = False):
     import numpy as np
     ids, mat = await _face_matrix(force)
     if mat is None:
-        return None, None, None
+        return []
     dist = np.linalg.norm(mat - vec, axis=1)
     best = {}
     for sid, dd in zip(ids, dist.tolist()):
         if dd < best.get(sid, float("inf")):
             best[sid] = dd
-    ranked = sorted(best.items(), key=lambda x: x[1])
-    second = ranked[1][1] if len(ranked) > 1 else None
-    return ranked[0][0], ranked[0][1], second
+    return sorted(best.items(), key=lambda x: x[1])
+
+async def _face_best(vec, force: bool = False):
+    ranked = await _face_ranked(vec, force)
+    if not ranked:
+        return None, None, None
+    return ranked[0][0], ranked[0][1], ranked[1][1] if len(ranked) > 1 else None
 
 class FaceEnrollIn(BaseModel):
     student_id: str
     descriptors: List[List[float]] = Field(min_length=3, max_length=10)
     photo: Optional[str] = None
+    allow_similar: bool = False
 
 class FaceScanIn(BaseModel):
     descriptor: List[float]
     station_id: Optional[str] = Field(default=None, max_length=64)
     station_name: Optional[str] = Field(default=None, max_length=40)
 
+class FaceConfirmIn(FaceScanIn):
+    digits: str = Field(min_length=4, max_length=4)
+
 @api.get("/face/students")
-async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, user=Depends(require_roles(*SCAN_ROLES))):
-    mq = {"role": "siswa", **dscope(user)}
+async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, role: str = "siswa", user=Depends(require_roles(*SCAN_ROLES))):
+    roles = ["guru"] if role == "guru" else ["siswa", "ketua_kelas", "ketua_osis"]
+    mq = {"role": {"$in": roles}, **dscope(user)}
     if kelas:
         mq["kelas"] = kelas
     if q:
         mq["$or"] = [{"name": {"$regex": re.escape(q), "$options": "i"}}, {"nisn": {"$regex": re.escape(q)}}]
     await _face_purge_orphans()
-    students = await db.users.find(mq, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "photo": 1}).sort([("kelas", 1), ("name", 1)]).to_list(2000)
-    prof = {p["student_id"]: p async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "samples": 1, "updated_at": 1, "photo": 1})}
+    students = await db.users.find(mq, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "nis": 1, "nip": 1, "role": 1, "photo": 1}).sort([("kelas", 1), ("name", 1)]).to_list(2000)
+    prof = {p["student_id"]: p async for p in db.face_profiles.find({}, {"_id": 0, "student_id": 1, "samples": 1, "updated_at": 1, "photo": 1, "lookalikes": 1})}
     for s in students:
         p = prof.get(s["id"])
         s["enrolled"] = bool(p)
         s["samples"] = p.get("samples", 0) if p else 0
         s["face_updated_at"] = p.get("updated_at") if p else None
         s["face_photo"] = p.get("photo") if p else None
-    total = await db.users.count_documents({"role": "siswa", **dscope(user)})
-    return {"students": students, "total": total, "enrolled": len(prof)}
+        s["lookalike"] = bool(p and p.get("lookalikes"))
+    total = await db.users.count_documents({"role": {"$in": roles}, **dscope(user)})
+    return {"students": students, "total": total, "enrolled": len([s for s in students if s["enrolled"]]) if kelas or q else
+            await db.face_profiles.count_documents({"student_id": {"$in": await db.users.distinct("id", {"role": {"$in": roles}})}})}
 
 @api.post("/face/enroll")
 async def face_enroll(body: FaceEnrollIn, user=Depends(require_roles(*SCAN_ROLES))):
     import numpy as np
-    st = await db.users.find_one({"id": body.student_id, "role": "siswa"}, {"_id": 0, "id": 1, "name": 1})
+    st = await db.users.find_one({"id": body.student_id, "role": {"$in": FACE_ROLES}}, {"_id": 0, "id": 1, "name": 1})
     if not st:
-        raise HTTPException(404, "Siswa tidak ditemukan")
+        raise HTTPException(404, "Pengguna tidak ditemukan")
     vecs = [_face_vec(d) for d in body.descriptors]
     mean = np.mean(vecs, axis=0)
     if max(float(np.linalg.norm(v - mean)) for v in vecs) > 0.45:
         raise HTTPException(400, "Sampel wajah tidak konsisten. Pastikan hanya satu orang di depan kamera lalu ulangi.")
-    sid, dist, _ = await _face_best(mean, force=True)
-    if sid and sid != st["id"] and dist < FACE_DUP_THRESHOLD:
-        other = await db.users.find_one({"id": sid}, {"_id": 0, "name": 1, "kelas": 1})
-        raise HTTPException(409, f"Wajah ini sangat mirip dengan {(other or {}).get('name', 'siswa lain')} yang sudah terdaftar. Periksa kembali siswa yang dipilih.")
+    similar = [sid for sid, d in await _face_ranked(mean, force=True) if sid != st["id"] and d < FACE_DUP_THRESHOLD]
+    if similar and not body.allow_similar:
+        other = await db.users.find_one({"id": similar[0]}, {"_id": 0, "name": 1, "kelas": 1})
+        raise HTTPException(409, f"Wajah ini sangat mirip dengan {(other or {}).get('name', 'pengguna lain')} ({(other or {}).get('kelas') or '-'}). "
+                                 "Jika memang orang berbeda (mis. kembar), daftarkan sebagai wajah mirip.")
+    if similar:
+        await db.face_profiles.update_many({"student_id": {"$in": similar}}, {"$addToSet": {"lookalikes": st["id"]}})
+    await db.face_profiles.update_one({"student_id": st["id"]}, {"$addToSet": {"lookalikes": {"$each": similar}}} if similar else {"$unset": {"_x": ""}}, upsert=True)
     await db.face_profiles.update_one({"student_id": st["id"]}, {"$set": {
         "student_id": st["id"], "descriptors": [v.round(5).tolist() for v in vecs], "samples": len(vecs),
         "photo": body.photo, "enrolled_by": user["name"], "updated_at": now_iso()}}, upsert=True)
@@ -5752,24 +5808,382 @@ async def face_unenroll(student_id: str, user=Depends(require_roles(*SCAN_ROLES)
         raise HTTPException(404, "Data wajah tidak ditemukan")
     return {"ok": True}
 
+async def _face_candidates(vec):
+    ranked = await _face_ranked(vec)
+    if not ranked:
+        raise HTTPException(404, "Belum ada wajah yang terdaftar")
+    best_id, best = ranked[0]
+    if best > FACE_MATCH_THRESHOLD:
+        raise HTTPException(404, "Wajah tidak dikenali")
+    prof = await db.face_profiles.find_one({"student_id": best_id}, {"_id": 0, "lookalikes": 1})
+    look = set((prof or {}).get("lookalikes") or [])
+    return [sid for sid, d in ranked if d <= FACE_MATCH_THRESHOLD + 0.05 and (sid == best_id or d - best < FACE_AMBIGUITY_GAP or sid in look)], best
+
+async def _face_record(sid: str, dist: float, body: FaceScanIn, user: dict, confirmed: bool = False):
+    person = await db.users.find_one({"id": sid, "role": {"$in": FACE_ROLES}}, {"_id": 0, "password_hash": 0})
+    if not person:
+        await _face_matrix(force=True)
+        raise HTTPException(404, "Wajah tidak dikenali")
+    conf = round(max(0.0, 1 - dist) * 100, 1)
+    if person["role"] == "guru":
+        r = await record_teacher_attendance(person, user, "hadir", "face", body.station_id, body.station_name)
+        return {"ok": True, "kind": "guru", "student": {"id": person["id"], "name": person["name"], "photo": person.get("photo"), "kelas": "Guru"},
+                "status": "hadir", "confidence": conf, "confirmed": confirmed, **r}
+    res = await scan(ScanIn(qr_code=person.get("qr_code"), nisn=person.get("nisn"), method="face",
+                            station_id=body.station_id, station_name=body.station_name), user)
+    res.update(confidence=conf, kind="siswa", confirmed=confirmed)
+    return res
+
 @api.post("/attendance/face-scan")
 async def face_scan(body: FaceScanIn, user=Depends(require_roles(*SCAN_ROLES))):
     vec = _face_vec(body.descriptor)
-    sid, dist, second = await _face_best(vec)
-    if sid is None:
-        raise HTTPException(404, "Belum ada wajah siswa yang terdaftar")
-    if dist > FACE_MATCH_THRESHOLD:
-        raise HTTPException(404, "Wajah tidak dikenali")
-    if second is not None and second - dist < FACE_AMBIGUITY_GAP:
-        raise HTTPException(409, "Wajah kurang jelas, mohon hadap lurus ke kamera")
-    st = await db.users.find_one({"id": sid, "role": "siswa"}, {"_id": 0, "qr_code": 1, "nisn": 1})
-    if not st:
+    cands, best = await _face_candidates(vec)
+    if len(cands) > 1:
+        return {"ok": False, "needs_confirm": True, "candidate_count": len(cands),
+                "message": "Wajah sangat mirip dengan pengguna lain. Masukkan 4 digit terakhir NISN/NIS/NIP."}
+    return await _face_record(cands[0], best, body, user)
+
+@api.post("/attendance/face-confirm")
+async def face_confirm(body: FaceConfirmIn, user=Depends(require_roles(*SCAN_ROLES))):
+    vec = _face_vec(body.descriptor)
+    cands, best = await _face_candidates(vec)
+    people = await db.users.find({"id": {"$in": cands}}, {"_id": 0, "id": 1, "nisn": 1, "nis": 1, "nip": 1}).to_list(20)
+    hit = [p for p in people if any(str(p.get(k) or "")[-4:] == body.digits for k in ("nisn", "nis", "nip") if p.get(k))]
+    if len(hit) != 1:
+        raise HTTPException(400, "Digit tidak cocok dengan wajah yang terdeteksi")
+    return await _face_record(hit[0]["id"], best, body, user, confirmed=True)
+
+# ---------------- BULK DELETE AKUN ----------------
+class BulkDeleteIn(BaseModel):
+    roles: List[str] = Field(min_length=1)
+    kelas: Optional[str] = None
+    confirm: str
+
+@api.post("/users/bulk-delete")
+async def bulk_delete_users(body: BulkDeleteIn, request: Request, user=Depends(require_roles("super_admin"))):
+    if body.confirm.strip().upper() != "HAPUS":
+        raise HTTPException(400, "Ketik HAPUS untuk konfirmasi")
+    if any(r not in ROLES for r in body.roles):
+        raise HTTPException(400, "Role tidak valid")
+    q = {"role": {"$in": body.roles}, "id": {"$ne": user["id"]}, **dscope(user)}
+    if body.kelas:
+        q["kelas"] = body.kelas
+    ids = await db.users.distinct("id", q)
+    if ids:
+        await db.users.delete_many({"id": {"$in": ids}})
+        await db.face_profiles.delete_many({"student_id": {"$in": ids}})
         await _face_matrix(force=True)
-        raise HTTPException(404, "Wajah tidak dikenali")
-    res = await scan(ScanIn(qr_code=st.get("qr_code"), nisn=st.get("nisn"), method="face",
-                            station_id=body.station_id, station_name=body.station_name), user)
-    res["confidence"] = round(max(0.0, 1 - dist) * 100, 1)
-    return res
+    await audit("bulk_delete", user["id"], None, request, {"roles": body.roles, "kelas": body.kelas, "count": len(ids)})
+    return {"ok": True, "deleted": len(ids)}
+
+# ---------------- RESET PASSWORD: APPROVE ALL ----------------
+@api.post("/admin/reset-requests/approve-all")
+async def approve_all_resets(request: Request, user=Depends(require_roles("super_admin"))):
+    pending = await db.reset_requests.find({"status": "pending", "identity_match": True, **dscope(user),
+                                            "user_id": {"$ne": user["id"]}, "new_password_hash": {"$exists": True}}, {"_id": 0}).to_list(2000)
+    done = 0
+    for req in pending:
+        if await _apply_reset(req, user, request, "Approve semua"):
+            done += 1
+    skipped = await db.reset_requests.count_documents({"status": "pending", **dscope(user)})
+    return {"ok": True, "approved": done, "skipped": skipped}
+
+# ---------------- ABSENSI GURU (FACE) ----------------
+TEACHER_ATT_ROLES = ("super_admin", "kepsek", "staff_tu", "admin_absensi")
+
+async def record_teacher_attendance(teacher: dict, user: dict, status: str = "hadir", method: str = "face",
+                                    station_id: Optional[str] = None, station_name: Optional[str] = None):
+    today = _today_wib()
+    now = datetime.now(WIB)
+    rec = {"id": str(uuid.uuid4()), "student_id": teacher["id"], "student_name": teacher["name"],
+           "kelas": "Guru", "nip": teacher.get("nip"), "photo": teacher.get("photo"), "date": today, "status": status,
+           "scanned_at": now_iso(), "time": now.strftime("%H:%M"), "late": status == "hadir" and now.strftime("%H:%M") > "07:30",
+           "scanned_by": user["name"], "method": method, "station_id": station_id, "station_name": station_name,
+           "is_demo": bool(user.get("is_demo"))}
+    prev = await db.teacher_attendance.find_one_and_update(
+        {"student_id": teacher["id"], "date": today}, {"$setOnInsert": rec}, upsert=True)
+    if prev and prev.get("status") != status:
+        await db.teacher_attendance.update_one({"id": prev["id"]}, {"$set": {"status": status, "method": method, "scanned_at": now_iso()}})
+        return {"duplicate": False, "scanned_at": now_iso()}
+    return {"duplicate": prev is not None, "scanned_at": (prev or rec).get("scanned_at")}
+
+class TeacherManualIn(BaseModel):
+    teacher_id: str
+    status: str
+
+@api.post("/teacher-attendance/manual")
+async def teacher_att_manual(body: TeacherManualIn, user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    if body.status not in STATUS_ORDER:
+        raise HTTPException(400, "Status tidak valid")
+    t = await db.users.find_one({"id": body.teacher_id, "role": "guru"}, {"_id": 0})
+    if not t:
+        raise HTTPException(404, "Guru tidak ditemukan")
+    return {"ok": True, **await record_teacher_attendance(t, user, body.status, "manual")}
+
+@api.get("/teacher-attendance")
+async def teacher_att_list(date: Optional[str] = None, user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    date = date or _today_wib()
+    rows = await db.teacher_attendance.find({"date": date, **dscope(user)}, {"_id": 0}).sort("scanned_at", -1).to_list(2000)
+    teachers = await db.users.find({"role": "guru", **dscope(user)}, {"_id": 0, "id": 1, "name": 1, "nip": 1, "photo": 1}).sort("name", 1).to_list(2000)
+    seen = {r["student_id"] for r in rows}
+    stats = {k: len([r for r in rows if r["status"] == k]) for k in STATUS_ORDER}
+    stats.update(total=len(teachers), belum=len([t for t in teachers if t["id"] not in seen]),
+                 terlambat=len([r for r in rows if r.get("late")]))
+    return {"date": date, "rows": rows, "stats": stats, "missing": [t for t in teachers if t["id"] not in seen]}
+
+def _week_monday(start: Optional[str]):
+    try:
+        return _monday_of(_date.fromisoformat(start)) if start else _monday_of(datetime.now(WIB).date())
+    except Exception:
+        raise HTTPException(400, "Tanggal tidak valid")
+
+@api.get("/teacher-attendance/week")
+async def teacher_att_week(start: Optional[str] = None, user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    days = _week_dates(_week_monday(start))
+    docs = await db.teacher_attendance.find({"date": {"$gte": days[0], "$lte": days[6]}, **dscope(user)}, {"_id": 0}).to_list(20000)
+    students, daily, totals = _build_week_matrix(docs, days)
+    return {"start": days[0], "end": days[6], "days": days, "day_labels": DAY_LABELS, "label": _fmt_range(days[0], days[6]),
+            "students": students, "daily": daily, "totals": totals, "record_count": len(docs)}
+
+@api.get("/teacher-attendance/week/export")
+async def teacher_att_week_export(start: Optional[str] = None, user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    days = _week_dates(_week_monday(start))
+    docs = await db.teacher_attendance.find({"date": {"$gte": days[0], "$lte": days[6]}, **dscope(user)}, {"_id": 0}).to_list(20000)
+    students, daily, totals = _build_week_matrix(docs, days)
+    data = weekly_attendance_excel(f"Rekap Absensi Guru {_fmt_range(days[0], days[6])}",
+                                   f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T', ' ')}", days, students, daily, totals, who="Guru")
+    return xlsx_response(data, f"Rekap_Absensi_Guru_{days[0]}_sd_{days[6]}.xlsx")
+
+@api.post("/teacher-attendance/archive-now")
+async def teacher_att_archive_now(user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    created = await _archive_completed_weeks(bool(user.get("is_demo")), user["name"], kind="guru")
+    return {"ok": True, "archived": created, "count": len(created)}
+
+@api.get("/teacher-attendance/archives")
+async def teacher_att_archives(user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    return await db.attendance_archives.find({"kind": "guru", **dscope(user)}, {"_id": 0, "file_b64": 0}).sort("period_start", -1).to_list(500)
+
+@api.get("/teacher-attendance/archives/{aid}/download")
+async def teacher_att_archive_download(aid: str, user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    arc = await db.attendance_archives.find_one({"id": aid, "kind": "guru", **dscope(user)})
+    if not arc:
+        raise HTTPException(404, "Arsip tidak ditemukan")
+    return xlsx_response(base64.b64decode(arc["file_b64"]), f"Rekap_Absensi_Guru_{arc['period_start']}_sd_{arc['period_end']}.xlsx")
+
+@api.delete("/teacher-attendance/archives/{aid}")
+async def teacher_att_archive_delete(aid: str, user=Depends(require_roles("kepsek", "staff_tu"))):
+    if not (await db.attendance_archives.delete_one({"id": aid, "kind": "guru", **dscope(user)})).deleted_count:
+        raise HTTPException(404, "Arsip tidak ditemukan")
+    return {"ok": True}
+
+# ---------------- SCHOOLGRAM (Instagram-like) ----------------
+
+class TakedownIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=300)
+
+async def _sg_saved(user: dict) -> set:
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "sg_saved": 1})
+    return set((u or {}).get("sg_saved") or [])
+
+@api.post("/schoolgram/follow/{cid}")
+async def sg_follow(cid: str, user=Depends(get_current_user)):
+    if not await db.classes.find_one({"id": cid}):
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    q = {"follower_id": user["id"], "following_id": cid}
+    if await db.sg_follows.find_one(q):
+        await db.sg_follows.delete_one(q)
+        return {"following": False}
+    await db.sg_follows.insert_one({**q, "created_at": now_iso()})
+    return {"following": True}
+
+@api.post("/posts/{pid}/save")
+async def sg_save(pid: str, user=Depends(get_current_user)):
+    saved = await _sg_saved(user)
+    op = "$pull" if pid in saved else "$addToSet"
+    await db.users.update_one({"id": user["id"]}, {op: {"sg_saved": pid}})
+    return {"saved": op == "$addToSet"}
+
+async def _sg_post(pid: str) -> dict:
+    p = await db.posts.find_one({"id": pid}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Post tidak ditemukan")
+    return p
+
+@api.post("/schoolgram/post/{pid}/takedown")
+async def sg_takedown(pid: str, body: TakedownIn, user=Depends(require_roles(*SG_MODS))):
+    p = await _sg_post(pid)
+    await db.posts.update_one({"id": pid}, {"$set": {"taken_down": True, "takedown_reason": body.reason.strip(),
+                                                     "takedown_by": user["name"], "takedown_at": now_iso()}})
+    await notify([p["author_id"]], "Postingan di-takedown", f"Alasan: {body.reason.strip()}", "/schoolgram")
+    return {"ok": True}
+
+@api.post("/schoolgram/post/{pid}/restore")
+async def sg_restore(pid: str, user=Depends(require_roles(*SG_MODS))):
+    await _sg_post(pid)
+    await db.posts.update_one({"id": pid}, {"$set": {"taken_down": False}, "$unset": {"takedown_reason": "", "takedown_by": "", "takedown_at": ""}})
+    return {"ok": True}
+
+# ---------------- KUNJUNGAN TAMU ----------------
+GUEST_ROLES = ("super_admin", "staff_tu", "kepsek")
+
+class GuestIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    institution: str = Field(min_length=2, max_length=120)
+    institution_address: Optional[str] = Field(default=None, max_length=200)
+    position: Optional[str] = Field(default=None, max_length=80)
+    phone: Optional[str] = Field(default=None, max_length=20)
+    purpose: str = Field(min_length=2, max_length=200)
+    host: Optional[str] = Field(default=None, max_length=80)
+    visit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    visit_time: Optional[str] = Field(default=None, pattern=HHMM)
+    photo: Optional[str] = None
+    institution_logo: Optional[str] = None
+    arrived: Optional[bool] = False
+
+class GuestUpdate(BaseModel):
+    name: Optional[str] = None
+    institution: Optional[str] = None
+    institution_address: Optional[str] = None
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    purpose: Optional[str] = None
+    host: Optional[str] = None
+    visit_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    visit_time: Optional[str] = Field(default=None, pattern=HHMM)
+    photo: Optional[str] = None
+    institution_logo: Optional[str] = None
+
+@api.get("/guests")
+async def list_guests(status: Optional[str] = None, user=Depends(require_roles(*GUEST_ROLES))):
+    q = dict(dscope(user))
+    if status:
+        q["status"] = status
+    return await db.guests.find(q, {"_id": 0}).sort([("visit_date", -1), ("visit_time", -1)]).to_list(1000)
+
+@api.post("/guests")
+async def create_guest(body: GuestIn, user=Depends(require_roles(*GUEST_ROLES))):
+    n = await db.guests.count_documents({"visit_date": body.visit_date}) + 1
+    data = body.model_dump()
+    arrived = data.pop("arrived")
+    doc = {"id": str(uuid.uuid4()), **data, "card_no": f"TAMU-{body.visit_date.replace('-', '')}-{n:03d}",
+           "status": "hadir" if arrived else "dijadwalkan", "checked_in_at": now_iso() if arrived else None,
+           "checked_out_at": None, "created_by": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.guests.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+@api.patch("/guests/{gid}")
+async def update_guest(gid: str, body: GuestUpdate, user=Depends(require_roles(*GUEST_ROLES))):
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.guests.update_one({"id": gid}, {"$set": upd})
+    g = await db.guests.find_one({"id": gid}, {"_id": 0})
+    if not g:
+        raise HTTPException(404, "Tamu tidak ditemukan")
+    return g
+
+@api.post("/guests/{gid}/{action}")
+async def guest_action(gid: str, action: str, user=Depends(require_roles(*GUEST_ROLES))):
+    upd = {"checkin": {"status": "hadir", "checked_in_at": now_iso()},
+           "checkout": {"status": "selesai", "checked_out_at": now_iso()},
+           "cancel": {"status": "batal"}}.get(action)
+    if not upd:
+        raise HTTPException(400, "Aksi tidak valid")
+    if not (await db.guests.update_one({"id": gid}, {"$set": upd})).matched_count:
+        raise HTTPException(404, "Tamu tidak ditemukan")
+    return await db.guests.find_one({"id": gid}, {"_id": 0})
+
+@api.delete("/guests/{gid}")
+async def delete_guest(gid: str, user=Depends(require_roles(*GUEST_ROLES))):
+    await db.guests.delete_one({"id": gid})
+    return {"ok": True}
+
+# ---------------- IZIN KELUAR (IK) ----------------
+IK_GATE_ROLES = ("super_admin", "kepsek", "staff_tu", "admin_absensi")
+
+class IkIn(BaseModel):
+    student_id: str
+    reason: str = Field(min_length=3, max_length=300)
+    category: str = Field(default="Lainnya", max_length=40)
+    out_time: str = Field(pattern=HHMM)
+    return_time: Optional[str] = Field(default=None, pattern=HHMM)
+
+class IkDecisionIn(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=300)
+
+async def _homeroom_classes(user: dict) -> list:
+    return await db.classes.find({"homeroom_teacher_id": user["id"]}, {"_id": 0, "id": 1, "name": 1}).to_list(50)
+
+async def _on_piket_duty(user: dict) -> bool:
+    if user["role"] in IK_GATE_ROLES:
+        return True
+    today = datetime.now(WIB).date().isoformat()
+    for s in await db.piket_shifts.find({"teacher_id": user["id"], "date": today}, {"_id": 0}).to_list(20):
+        if piket_out(s)["status"] in ("bertugas", "menunggu", "terlambat"):
+            return True
+    return False
+
+@api.get("/ik/context")
+async def ik_context(user=Depends(get_current_user)):
+    classes = await _homeroom_classes(user) if user["role"] == "guru" else []
+    students = await db.users.find({"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": {"$in": [c["name"] for c in classes]}},
+                                   {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "photo": 1}).sort("name", 1).to_list(500) if classes else []
+    return {"is_homeroom": bool(classes), "classes": classes, "students": students, "is_gate": await _on_piket_duty(user)}
+
+@api.get("/ik")
+async def list_ik(date: Optional[str] = None, user=Depends(get_current_user)):
+    q = dict(dscope(user))
+    if date:
+        q["date"] = date
+    if user["role"] in ("siswa", "ketua_kelas", "ketua_osis"):
+        q["student_id"] = user["id"]
+    elif not await _on_piket_duty(user):
+        q["teacher_id"] = user["id"]
+    return await db.ik_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api.post("/ik")
+async def create_ik(body: IkIn, user=Depends(require_roles("guru"))):
+    st = await db.users.find_one({"id": body.student_id}, {"_id": 0, "id": 1, "name": 1, "kelas": 1, "nisn": 1, "photo": 1})
+    if not st:
+        raise HTTPException(404, "Siswa tidak ditemukan")
+    if st.get("kelas") not in [c["name"] for c in await _homeroom_classes(user)]:
+        raise HTTPException(403, "Hanya wali kelas siswa ini yang dapat membuat Request IK")
+    doc = {"id": str(uuid.uuid4()), "student_id": st["id"], "student_name": st["name"], "kelas": st.get("kelas"),
+           "nisn": st.get("nisn"), "student_photo": st.get("photo"), "teacher_id": user["id"], "teacher_name": user["name"],
+           "reason": body.reason.strip(), "category": body.category, "out_time": body.out_time, "return_time": body.return_time,
+           "date": _today_wib(), "status": "pending", "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.ik_requests.insert_one(doc); doc.pop("_id", None)
+    gate_ids = await db.users.distinct("id", {"role": {"$in": list(IK_GATE_ROLES)}})
+    duty = await db.piket_shifts.distinct("teacher_id", {"date": doc["date"]})
+    await notify(list(set(gate_ids + duty)), "Request Izin Keluar", f"{st['name']} ({st.get('kelas')}) — {doc['reason']}", "/izin-keluar")
+    return doc
+
+@api.post("/ik/{iid}/{action}")
+async def decide_ik(iid: str, action: str, body: Optional[IkDecisionIn] = None, user=Depends(get_current_user)):
+    if action not in ("approve", "reject", "returned", "cancel"):
+        raise HTTPException(400, "Aksi tidak valid")
+    ik = await db.ik_requests.find_one({"id": iid}, {"_id": 0})
+    if not ik:
+        raise HTTPException(404, "Request tidak ditemukan")
+    if action == "cancel":
+        if ik["teacher_id"] != user["id"] or ik["status"] != "pending":
+            raise HTTPException(403, "Hanya wali kelas pembuat request (status pending) yang dapat membatalkan")
+        await db.ik_requests.update_one({"id": iid}, {"$set": {"status": "batal"}})
+        return {"ok": True}
+    if not await _on_piket_duty(user):
+        raise HTTPException(403, "Hanya petugas piket gerbang yang dapat memproses request IK")
+    need = "approved" if action == "returned" else "pending"
+    if ik["status"] != need:
+        raise HTTPException(409, "Status request sudah berubah")
+    status = {"approve": "approved", "reject": "rejected", "returned": "returned"}[action]
+    upd = {"status": status, f"{status}_at": now_iso(), f"{status}_by": user["name"]}
+    if body and body.note:
+        upd["gate_note"] = body.note.strip()
+    await db.ik_requests.update_one({"id": iid}, {"$set": upd})
+    label = {"approved": "DISETUJUI", "rejected": "DITOLAK", "returned": "sudah kembali"}[status]
+    await notify([ik["teacher_id"], ik["student_id"]], "Izin Keluar", f"Izin keluar {ik['student_name']} {label} oleh {user['name']}", "/izin-keluar")
+    return {"ok": True, **upd}
 
 
 app.include_router(api)
