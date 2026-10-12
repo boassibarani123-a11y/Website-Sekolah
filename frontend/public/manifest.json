@@ -1,0 +1,24 @@
+{
+  "short_name": "Sekolahku",
+  "name": "SMA Negeri 1 Laguboti — Manajemen Sekolah",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0284C7",
+  "background_color": "#0f172a",
+  "scope": "/"
+}
