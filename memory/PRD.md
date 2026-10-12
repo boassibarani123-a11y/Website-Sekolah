@@ -1,7 +1,7 @@
 # PRD — Website Sekolah SMAN 1 Laguboti + Vortex Guard
 
 ## Original problem statement
-Import project dari GitHub repository https://github.com/boassibarani123-a11y/Website-Sekolah.git, branch main19. Setup dan install semua dependencies-nya.
+Import project dari GitHub repository https://github.com/boassibarani123-a11y/Website-Sekolah.git, branch main21 (previously main19). Setup dan install semua dependencies-nya.
 Approved plan: rename exam system to "Vortex Guard" and complete the exam features (schedule, token, MC+essay bank, shuffle, timer, nav, ragu-ragu, autosave, tab-switch guard, MC auto-grade, essay grading, recap).
 
 ## Architecture
@@ -22,3 +22,12 @@ Admin (super_admin), Guru, Siswa (+ other existing roles from repo)
 - P1: Export nilai Excel/PDF, real-time proctor dashboard (websocket), Brevo SMTP activation
 - P1: Import 500+ student accounts (needs data file from user)
 - P2: AI question generation, WhatsApp notifications, item analysis & statistics
+
+## Update 2026-06 — main21 import
+- Imported branch main21, pip + yarn deps installed, backend .env (JWT_SECRET, ADMIN_*, FRONTEND_URL, empty SMTP/OpenAI)
+- Seeded test accounts: guru, siswa, ketua_osis, admin_absensi + class XII IPA 1 (see test_credentials.md)
+- Fixes: bulk-delete blocks super_admin (backend + modal option removed); forgot-password validates password rule first (400 message); new GET /api/health and GET /api/users/{uid}
+- iteration_49: backend 10/10; frontend smoke of all batch pages passes. Deep UI flows (schoolgram follow/takedown, izin keluar gate approve, guest check-in/out, face confirm with camera) only smoke-tested
+## Next
+- Phase 2: Vortex Guard export Excel/PDF, real-time proctor dashboard, big token screen for projector
+- Phase 3: bulk import 500+ students, Brevo, AI features, WhatsApp notifications
