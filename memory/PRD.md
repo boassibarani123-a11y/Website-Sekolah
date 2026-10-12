@@ -31,3 +31,13 @@ Admin (super_admin), Guru, Siswa (+ other existing roles from repo)
 ## Next
 - Phase 2: Vortex Guard export Excel/PDF, real-time proctor dashboard, big token screen for projector
 - Phase 3: bulk import 500+ students, Brevo, AI features, WhatsApp notifications
+
+## Update 2026-06 — Vortex Guard Phase 2, Face/Barcode redesign, Inventory v2
+- Vortex Guard: token projector screen (big token + countdown, hide/fullscreen), live proctor dashboard (4s polling, per-student state/violations/remaining time), Excel/PDF grade export per exam (creator, wali kelas, super admin). Plain token stored as `token_plain` (staff-only endpoint /exams/{id}/token)
+- Face ID page redesigned (light, animated frame, big PresenceCard); log tabs Siswa/Guru; teacher records stay in teacher_attendance (/teacher-attendance)
+- Barcode gate uses the same PresenceCard
+- Inventory: dashboard (KPIs + charts), rooms CRUD, condition incl. Hilang, return condition (Rusak→damaged_units, Hilang→lost_units, stock not restored), activity log, QR labels print + QR/code lookup, item drawer, grid/table views
+- iteration_50: backend 26/26, frontend all flows pass
+## Backlog
+- P1: bulk import 500+ students (needs file), Brevo email activation
+- P2: AI question generator / book summary, WhatsApp notifications to parents, exam item analysis
