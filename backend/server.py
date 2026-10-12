@@ -1622,6 +1622,22 @@ class BorrowRequest(BaseModel):
     purpose: str
     return_date: str
 
+INV_CONDITIONS = ("Baik", "Perbaikan", "Rusak", "Hilang")
+INV_FIELD_LABEL = {"name": "Nama", "category": "Kategori", "stock": "Stok", "condition": "Kondisi",
+                   "location": "Lokasi", "code": "Kode", "min_stock": "Min. stok"}
+
+def _inv_validate(data: dict):
+    if data.get("condition") is not None and data["condition"] not in INV_CONDITIONS:
+        raise HTTPException(400, "Kondisi barang tidak valid")
+    if data.get("stock") is not None and int(data["stock"]) < 0:
+        raise HTTPException(400, "Stok tidak boleh negatif")
+
+async def _inv_log(item: dict, action: str, detail: str, user: dict):
+    await db.inventory_logs.insert_one({"id": str(uuid.uuid4()), "item_id": item.get("id"), "item_name": item.get("name"),
+                                        "item_code": item.get("code"), "action": action, "detail": detail,
+                                        "actor": user["name"], "actor_role": user.get("role"), "created_at": now_iso(),
+                                        "is_demo": bool(user.get("is_demo"))})
+
 @api.get("/inventory")
 async def list_inventory(user=Depends(get_current_user)):
     items = await db.inventory.find(dscope(user), {"_id": 0}).to_list(500)
@@ -1644,9 +1660,11 @@ async def inventory_history(iid: str, user=Depends(require_roles("staff_tu", "su
 
 @api.post("/inventory")
 async def add_inventory(body: InventoryItem, user=Depends(require_roles("staff_tu", "super_admin"))):
+    _inv_validate(body.model_dump())
     doc = {"id": str(uuid.uuid4()), **body.model_dump(), "created_at": now_iso()}
     dstamp(doc, user)
     await db.inventory.insert_one(doc); doc.pop("_id", None)
+    await _inv_log(doc, "tambah", f"Barang ditambahkan · stok {doc.get('stock', 0)}", user)
     return doc
 
 @api.patch("/inventory/{iid}")
@@ -1657,13 +1675,23 @@ async def edit_inventory(iid: str, body: InventoryUpdate, user=Depends(require_r
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     if not upd:
         raise HTTPException(400, "Tidak ada perubahan")
+    _inv_validate(upd)
     await db.inventory.update_one({"id": iid}, {"$set": {**upd, "updated_at": now_iso()}})
     doc = await db.inventory.find_one({"id": iid}, {"_id": 0})
+    changes = [f"{INV_FIELD_LABEL.get(k, k)}: {item.get(k) if item.get(k) not in (None, '') else '-'} → {v}"
+               for k, v in upd.items() if k in INV_FIELD_LABEL and item.get(k) != v]
+    if changes:
+        await _inv_log(doc, "kondisi" if "condition" in upd and item.get("condition") != upd["condition"] else "ubah", "; ".join(changes), user)
     return doc
 
 @api.delete("/inventory/{iid}")
 async def del_inventory(iid: str, user=Depends(require_roles("staff_tu", "super_admin"))):
-    await db.inventory.delete_one({"id": iid}); return {"ok": True}
+    item = await db.inventory.find_one({"id": iid, **dscope(user)}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+    await db.inventory.delete_one({"id": iid})
+    await _inv_log(item, "hapus", "Barang dihapus dari inventaris", user)
+    return {"ok": True}
 
 
 
@@ -1689,25 +1717,44 @@ async def list_borrow(mine: bool = False, user=Depends(get_current_user)):
     return await db.borrow_requests.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.patch("/borrow/{bid}")
-async def update_borrow(bid: str, status: str, user=Depends(require_roles("staff_tu", "super_admin"))):
+async def update_borrow(bid: str, status: str, return_condition: Optional[str] = None, note: Optional[str] = None,
+                        user=Depends(require_roles("staff_tu", "super_admin"))):
     if status not in ["Disetujui", "Ditolak", "Dikembalikan"]:
         raise HTTPException(400, "Status tidak valid")
+    if return_condition and return_condition not in INV_CONDITIONS:
+        raise HTTPException(400, "Kondisi pengembalian tidak valid")
     br = await db.borrow_requests.find_one({"id": bid})
     if not br: raise HTTPException(404, "Permintaan tidak ditemukan")
     prev = br.get("status")
+    if prev == status:
+        raise HTTPException(409, "Status sudah sama")
     qty = int(br.get("quantity", 0))
     item = await db.inventory.find_one({"id": br.get("item_id")})
+    cond = return_condition or "Baik"
     # Approving an outstanding request reduces available stock (only once)
     if status == "Disetujui" and prev != "Disetujui":
         if item and qty > int(item.get("stock", 0)):
             raise HTTPException(400, f"Stok tidak cukup untuk disetujui. Tersedia: {item.get('stock', 0)}")
         if item:
             await db.inventory.update_one({"id": item["id"]}, {"$inc": {"stock": -qty}})
-    # Returning or rejecting a previously-approved loan restores stock
+    # Returning or rejecting a previously-approved loan restores stock (lost units are not restored)
     if status in ("Dikembalikan", "Ditolak") and prev == "Disetujui" and item:
-        await db.inventory.update_one({"id": item["id"]}, {"$inc": {"stock": qty}})
-    await db.borrow_requests.update_one({"id": bid}, {"$set": {"status": status, "updated_at": now_iso(),
-                                                                 "approved_by": user["name"]}})
+        inc = {"stock": 0 if status == "Dikembalikan" and cond == "Hilang" else qty}
+        if status == "Dikembalikan" and cond == "Rusak":
+            inc["damaged_units"] = qty
+        if status == "Dikembalikan" and cond == "Hilang":
+            inc["lost_units"] = qty
+        await db.inventory.update_one({"id": item["id"]}, {"$inc": inc})
+    upd = {"status": status, "updated_at": now_iso(), "approved_by": user["name"]}
+    if status == "Disetujui":
+        upd["approved_at"] = now_iso()
+    if status == "Dikembalikan":
+        upd.update(returned_at=now_iso(), return_condition=cond, return_note=(note or "").strip()[:300] or None)
+    await db.borrow_requests.update_one({"id": bid}, {"$set": upd})
+    if item:
+        label = {"Disetujui": "pinjam", "Ditolak": "tolak", "Dikembalikan": "kembali"}[status]
+        detail = f"{br.get('requester_name')} × {qty}" + (f" · kondisi {cond}" if status == "Dikembalikan" else "")
+        await _inv_log(item, label, detail, user)
     if br.get("requester_id"):
         await notify([br["requester_id"]],
                      f"Peminjaman: {status}",
@@ -2305,6 +2352,9 @@ def validate_exam_body(data: dict):
 
 def exam_out(ex: dict, user: dict) -> dict:
     ex["has_password"] = bool(ex.pop("password_hash", None))
+    ex["has_token_plain"] = bool(ex.pop("token_plain", None))
+    ex["can_manage"] = user.get("role") == "super_admin" or ex.get("teacher_id") == user.get("id")
+    ex["can_export"] = ex["can_manage"]
     qs = ex.get("questions") or []
     ex["question_count"] = len(qs)
     ex["essay_count"] = len([q for q in qs if q.get("type") == "essay"])
@@ -2314,13 +2364,19 @@ def exam_out(ex: dict, user: dict) -> dict:
         ex["questions"] = []
     return ex
 
+async def _homeroom_kelas(user: dict) -> list:
+    if user.get("role") != "guru":
+        return []
+    return [c["name"] async for c in db.classes.find({"homeroom_teacher_id": user["id"]}, {"_id": 0, "name": 1})]
+
 @api.get("/exams")
 async def list_exams(class_id: Optional[str] = None, subject: Optional[str] = None, user=Depends(get_current_user)):
     q = dict(dscope(user))
     if user["role"] == "siswa":
         q["kelas"] = user.get("kelas")
+    homeroom = await _homeroom_kelas(user)
     if user["role"] == "guru" and not class_id:
-        q["teacher_id"] = user["id"]
+        q["$or"] = [{"teacher_id": user["id"]}, {"kelas": {"$in": homeroom}}]
     if class_id:
         q["class_id"] = class_id
     if subject:
@@ -2330,6 +2386,8 @@ async def list_exams(class_id: Optional[str] = None, subject: Optional[str] = No
         q["$and"] = lock
     exams = await db.exams.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     out = [exam_out(ex, user) for ex in exams]
+    for ex in out:
+        ex["can_export"] = ex["can_manage"] or ex.get("kelas") in homeroom
     if user["role"] == "siswa":
         done = {a["exam_id"] for a in await db.exam_attempts.find(
             {"student_id": user["id"]}, {"_id": 0, "exam_id": 1}).to_list(1000)}
@@ -2348,7 +2406,7 @@ async def create_exam(body: ExamIn, user=Depends(require_roles("guru", "super_ad
     data.pop("password", None)
     validate_exam_body(data)
     doc = {"id": str(uuid.uuid4()), **data, "teacher_id": user["id"],
-           "teacher_name": user["name"], "password_hash": hash_pw(pw), "created_at": now_iso()}
+           "teacher_name": user["name"], "password_hash": hash_pw(pw), "token_plain": pw, "created_at": now_iso()}
     doc["max_violations"] = int(body.max_violations or 3)
     dstamp(doc, user)
     await db.exams.insert_one(doc); doc.pop("_id", None)
@@ -2376,6 +2434,7 @@ async def edit_exam(eid: str, body: ExamUpdate, user=Depends(require_roles("guru
     pw = (body.password or "").strip()
     if pw:
         upd["password_hash"] = hash_pw(pw)
+        upd["token_plain"] = pw
     if upd:
         await db.exams.update_one({"id": eid}, {"$set": upd})
     return exam_out(await db.exams.find_one({"id": eid}, {"_id": 0}), user)
@@ -5827,7 +5886,7 @@ async def _face_record(sid: str, dist: float, body: FaceScanIn, user: dict, conf
     conf = round(max(0.0, 1 - dist) * 100, 1)
     if person["role"] == "guru":
         r = await record_teacher_attendance(person, user, "hadir", "face", body.station_id, body.station_name)
-        return {"ok": True, "kind": "guru", "student": {"id": person["id"], "name": person["name"], "photo": person.get("photo"), "kelas": "Guru"},
+        return {"ok": True, "kind": "guru", "student": {"id": person["id"], "name": person["name"], "photo": person.get("photo"), "kelas": "Guru", "nip": person.get("nip")},
                 "status": "hadir", "confidence": conf, "confirmed": confirmed, **r}
     res = await scan(ScanIn(qr_code=person.get("qr_code"), nisn=person.get("nisn"), method="face",
                             station_id=body.station_id, station_name=body.station_name), user)
@@ -6191,6 +6250,267 @@ async def decide_ik(iid: str, action: str, body: Optional[IkDecisionIn] = None, 
 async def health():
     await db.command("ping")
     return {"status": "ok"}
+
+# ---------------- VORTEX GUARD: TOKEN PROYEKTOR, EKSPOR NILAI, PENGAWAS LANGSUNG ----------------
+STUDENT_ROLES = ["siswa", "ketua_kelas", "ketua_osis"]
+
+async def _exam_viewer(eid: str, user: dict) -> dict:
+    ex = await db.exams.find_one({"id": eid, **dscope(user)}, {"_id": 0})
+    if not ex:
+        raise HTTPException(404, "Ujian tidak ditemukan")
+    if user["role"] == "super_admin" or ex.get("teacher_id") == user["id"]:
+        return ex
+    if ex.get("kelas") in await _homeroom_kelas(user):
+        return ex
+    raise HTTPException(403, "Hanya pembuat ujian, wali kelas, atau Super Admin")
+
+@api.get("/exams/{eid}/token")
+async def exam_token(eid: str, user=Depends(require_roles("guru", "super_admin"))):
+    ex = await _own_exam(eid, user)
+    return {"token": ex.get("token_plain"), "title": ex.get("title"), "kelas": ex.get("kelas"), "subject": ex.get("subject"),
+            "start_at": ex.get("start_at"), "end_at": ex.get("end_at"), "time_limit": ex.get("time_limit") or 0,
+            "status": exam_status(ex), "server_now": datetime.now(timezone.utc).isoformat(), "teacher_name": ex.get("teacher_name")}
+
+async def _exam_roster(ex: dict, user: dict):
+    students = await db.users.find({"role": {"$in": STUDENT_ROLES}, "kelas": ex.get("kelas"), **dscope(user)},
+                                   {"_id": 0, "id": 1, "name": 1, "nisn": 1, "nis": 1, "photo": 1}).sort("name", 1).to_list(1000)
+    attempts = {a["student_id"]: a for a in await db.exam_attempts.find({"exam_id": ex["id"]}, {"_id": 0}).to_list(1000)}
+    sessions = {s["student_id"]: s for s in await db.exam_sessions.find({"exam_id": ex["id"]}, {"_id": 0, "q_order": 0, "opt_orders": 0}).to_list(1000)}
+    known = {s["id"] for s in students}
+    for sid, a in list(attempts.items()) + list(sessions.items()):
+        if sid not in known:
+            known.add(sid)
+            students.append({"id": sid, "name": a.get("student_name") or "Siswa", "nisn": None, "nis": None, "photo": None})
+    return students, attempts, sessions
+
+def _essay_avg(att: dict):
+    sc = [d.get("score") for d in att.get("details", []) if d.get("type") == "essay" and d.get("score") is not None]
+    return round(sum(sc) / len(sc), 1) if sc else None
+
+def _pdf_txt(v) -> str:
+    return str(v if v is not None else "-").encode("latin-1", "replace").decode("latin-1")
+
+def _exam_pdf(ex: dict, rows: list, summary: dict, who: str) -> bytes:
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(True, 12)
+    pdf.add_page()
+    pdf.set_fill_color(15, 118, 110)
+    pdf.rect(0, 0, 297, 28, style="F")
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_xy(12, 7)
+    pdf.cell(273, 8, _pdf_txt(f"Rekap Nilai Ujian - {ex.get('title')}"), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_x(12)
+    pdf.cell(273, 5, _pdf_txt(f"SMA NEGERI 1 LAGUBOTI · Vortex Guard · Kelas {ex.get('kelas')} · {ex.get('subject') or '-'} · Guru {ex.get('teacher_name') or '-'}"), ln=1)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_xy(12, 33)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(273, 5, _pdf_txt(" | ".join(f"{k}: {v}" for k, v in summary.items())), ln=1)
+    cols = [("No", 10), ("Nama Siswa", 70), ("NISN", 30), ("PG Benar", 22), ("Rata Esai", 22), ("Nilai Akhir", 24), ("Pelanggaran", 24), ("Status", 34), ("Waktu Kumpul", 37)]
+    pdf.set_xy(12, 41)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(226, 232, 240)
+    for name, w in cols:
+        pdf.cell(w, 8, name, border=0, fill=True, align="C")
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "", 9)
+    for i, r in enumerate(rows):
+        pdf.set_x(12)
+        pdf.set_fill_color(248, 250, 252) if i % 2 else pdf.set_fill_color(255, 255, 255)
+        vals = [r["No"], r["Nama Siswa"], r["NISN"], r["PG Benar"], r["Rata Esai"], r["Nilai Akhir"], r["Pelanggaran"], r["Status"], r["Waktu Kumpul"]]
+        for (name, w), v in zip(cols, vals):
+            pdf.cell(w, 7, _pdf_txt(v)[:42], fill=True, align="L" if name == "Nama Siswa" else "C")
+        pdf.ln(7)
+    pdf.ln(4)
+    pdf.set_x(12)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.cell(273, 5, _pdf_txt(f"Diekspor oleh {who} pada {datetime.now(WIB).strftime('%d-%m-%Y %H:%M')} WIB"))
+    return bytes(pdf.output())
+
+@api.get("/exams/{eid}/export")
+async def exam_export(eid: str, format: str = "xlsx", user=Depends(require_roles("guru", "super_admin"))):
+    if format not in ("xlsx", "pdf"):
+        raise HTTPException(400, "Format harus xlsx atau pdf")
+    ex = await _exam_viewer(eid, user)
+    students, attempts, sessions = await _exam_roster(ex, user)
+    rows = []
+    for i, s in enumerate(students, 1):
+        a = attempts.get(s["id"])
+        status = ("Selesai (esai belum dinilai)" if a.get("essay_pending") else "Selesai") if a else "Sedang mengerjakan" if s["id"] in sessions else "Belum mengerjakan"
+        rows.append({"No": i, "Nama Siswa": s["name"], "NISN": s.get("nisn") or "-",
+                     "PG Benar": f"{a.get('mc_correct', 0)}/{a.get('total', 0) - a.get('essay_count', 0)}" if a else "-",
+                     "Rata Esai": _essay_avg(a) if a and _essay_avg(a) is not None else "-",
+                     "Nilai Akhir": round(a.get("percent", 0), 1) if a else "-",
+                     "Pelanggaran": a.get("violations", 0) if a else (sessions.get(s["id"], {}).get("violations", 0) if s["id"] in sessions else "-"),
+                     "Status": status, "Waktu Kumpul": datetime.fromisoformat(a["submitted_at"]).astimezone(WIB).strftime("%d-%m-%Y %H:%M") if a and a.get("submitted_at") else "-"})
+    pcts = [a.get("percent", 0) for a in attempts.values()]
+    summary = {"Jumlah Siswa": len(students), "Sudah Mengumpulkan": len(attempts),
+               "Rata-rata": round(sum(pcts) / len(pcts), 1) if pcts else 0,
+               "Tertinggi": round(max(pcts), 1) if pcts else 0, "Terendah": round(min(pcts), 1) if pcts else 0}
+    fname = re.sub(r"[^A-Za-z0-9_-]+", "_", f"Nilai_{ex.get('kelas')}_{ex.get('title')}")[:80]
+    if format == "pdf":
+        data = _exam_pdf(ex, rows, summary, user["name"])
+        return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
+                                 headers={"Content-Disposition": f'attachment; filename="{fname}.pdf"'})
+    data = pretty_excel(f"Rekap Nilai Ujian · {ex.get('title')}",
+                        f"Kelas {ex.get('kelas')} · {ex.get('subject') or '-'} · Diekspor oleh {user['name']} pada {datetime.now(WIB).strftime('%d-%m-%Y %H:%M')} WIB",
+                        list(rows[0].keys()) if rows else ["No", "Nama Siswa"], rows, summary, "Nilai Ujian")
+    return xlsx_response(data, f"{fname}.xlsx")
+
+@api.get("/exams/{eid}/live")
+async def exam_live(eid: str, user=Depends(require_roles("guru", "super_admin"))):
+    ex = await _exam_viewer(eid, user)
+    students, attempts, sessions = await _exam_roster(ex, user)
+    now = datetime.now(timezone.utc)
+    max_v = int(ex.get("max_violations", 3) or 3)
+    total_q = len(ex.get("questions") or [])
+    out = []
+    for s in students:
+        a, sess = attempts.get(s["id"]), sessions.get(s["id"])
+        row = {"id": s["id"], "name": s["name"], "nisn": s.get("nisn"), "photo": s.get("photo"), "total": total_q}
+        if a:
+            row.update(state="selesai", answered=total_q, violations=a.get("violations", 0), percent=a.get("percent"),
+                       auto_submitted=a.get("auto_submitted"), submitted_at=a.get("submitted_at"),
+                       last_violation=(a.get("violation_log") or [None])[-1])
+        elif sess:
+            dl = _parse_dt(sess.get("deadline"))
+            seen = _parse_dt(sess.get("last_seen"))
+            v = int(sess.get("violations", 0))
+            row.update(state="melanggar" if v >= max_v else "mengerjakan", violations=v,
+                       answered=len([x for x in sess.get("answers") or [] if x not in (None, "", -1)]),
+                       remaining_seconds=max(0, int((dl - now).total_seconds())) if dl else None,
+                       idle_seconds=int((now - seen).total_seconds()) if seen else None,
+                       started_at=sess.get("started_at"), last_violation=(sess.get("violation_log") or [None])[-1])
+        else:
+            row.update(state="belum", answered=0, violations=0)
+        out.append(row)
+    counts = {k: len([r for r in out if r["state"] == k]) for k in ("belum", "mengerjakan", "melanggar", "selesai")}
+    return {"exam": {"id": ex["id"], "title": ex.get("title"), "kelas": ex.get("kelas"), "subject": ex.get("subject"),
+                     "end_at": ex.get("end_at"), "time_limit": ex.get("time_limit") or 0, "max_violations": max_v,
+                     "status": exam_status(ex), "question_count": total_q},
+            "server_now": now.isoformat(), "students": out, "counts": counts,
+            "total_violations": sum(r.get("violations") or 0 for r in out)}
+
+# ---------------- INVENTARIS: RUANGAN, STATISTIK, AKTIVITAS, LABEL QR ----------------
+INV_STAFF = ("staff_tu", "super_admin")
+
+class RoomIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    building: Optional[str] = Field(default=None, max_length=80)
+    pic: Optional[str] = Field(default=None, max_length=80)
+    description: Optional[str] = Field(default=None, max_length=300)
+
+@api.get("/inventory-rooms")
+async def list_rooms(user=Depends(get_current_user)):
+    rooms = await db.inventory_rooms.find(dscope(user), {"_id": 0}).sort("name", 1).to_list(500)
+    items = await db.inventory.find(dscope(user), {"_id": 0, "location": 1, "stock": 1, "condition": 1}).to_list(5000)
+    for r in rooms:
+        mine = [i for i in items if (i.get("location") or "") == r["name"]]
+        r["item_count"] = len(mine)
+        r["units"] = sum(int(i.get("stock", 0)) for i in mine)
+        r["issues"] = len([i for i in mine if i.get("condition") in ("Rusak", "Hilang", "Perbaikan")])
+    return rooms
+
+@api.post("/inventory-rooms")
+async def create_room(body: RoomIn, user=Depends(require_roles(*INV_STAFF))):
+    name = body.name.strip()
+    if await db.inventory_rooms.find_one({"name": name, **dscope(user)}):
+        raise HTTPException(400, "Nama ruangan sudah ada")
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "name": name, "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.inventory_rooms.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+@api.patch("/inventory-rooms/{rid}")
+async def update_room(rid: str, body: RoomIn, user=Depends(require_roles(*INV_STAFF))):
+    room = await db.inventory_rooms.find_one({"id": rid, **dscope(user)}, {"_id": 0})
+    if not room:
+        raise HTTPException(404, "Ruangan tidak ditemukan")
+    upd = {**body.model_dump(), "name": body.name.strip()}
+    if upd["name"] != room["name"]:
+        if await db.inventory_rooms.find_one({"name": upd["name"], **dscope(user)}):
+            raise HTTPException(400, "Nama ruangan sudah ada")
+        await db.inventory.update_many({"location": room["name"], **dscope(user)}, {"$set": {"location": upd["name"]}})
+    await db.inventory_rooms.update_one({"id": rid}, {"$set": upd})
+    return {**room, **upd}
+
+@api.delete("/inventory-rooms/{rid}")
+async def delete_room(rid: str, user=Depends(require_roles(*INV_STAFF))):
+    room = await db.inventory_rooms.find_one({"id": rid, **dscope(user)}, {"_id": 0})
+    if not room:
+        raise HTTPException(404, "Ruangan tidak ditemukan")
+    if await db.inventory.count_documents({"location": room["name"], **dscope(user)}):
+        raise HTTPException(400, "Ruangan masih berisi barang. Pindahkan barang terlebih dahulu.")
+    await db.inventory_rooms.delete_one({"id": rid})
+    return {"ok": True}
+
+@api.get("/inventory-stats")
+async def inventory_stats(user=Depends(get_current_user)):
+    items = await db.inventory.find(dscope(user), {"_id": 0}).to_list(5000)
+    loans = await db.borrow_requests.find(dscope(user), {"_id": 0}).to_list(20000)
+    today = _today_wib()
+    active = [b for b in loans if b.get("status") == "Disetujui"]
+    out_map = {}
+    for b in active:
+        out_map[b["item_id"]] = out_map.get(b["item_id"], 0) + int(b.get("quantity", 0))
+    by_cat, by_room = {}, {}
+    for i in items:
+        units = int(i.get("stock", 0)) + out_map.get(i["id"], 0)
+        c = by_cat.setdefault(i.get("category") or "Lainnya", {"name": i.get("category") or "Lainnya", "items": 0, "units": 0})
+        c["items"] += 1; c["units"] += units
+        r = by_room.setdefault(i.get("location") or "Tanpa lokasi", {"name": i.get("location") or "Tanpa lokasi", "items": 0, "units": 0})
+        r["items"] += 1; r["units"] += units
+    months = []
+    d = datetime.now(WIB).replace(day=1)
+    for _ in range(6):
+        months.insert(0, d.strftime("%Y-%m"))
+        d = (d - timedelta(days=1)).replace(day=1)
+    monthly = [{"month": m, "pinjam": len([b for b in loans if (b.get("created_at") or "")[:7] == m]),
+                "kembali": len([b for b in loans if (b.get("returned_at") or "")[:7] == m])} for m in months]
+    top = {}
+    for b in loans:
+        if b.get("status") in ("Disetujui", "Dikembalikan"):
+            top[b.get("item_name") or "-"] = top.get(b.get("item_name") or "-", 0) + int(b.get("quantity", 0))
+    return {
+        "totals": {"items": len(items), "units": sum(int(i.get("stock", 0)) + out_map.get(i["id"], 0) for i in items),
+                   "available": sum(int(i.get("stock", 0)) for i in items), "borrowed": sum(out_map.values()),
+                   "low_stock": len([i for i in items if int(i.get("stock", 0)) <= int(i.get("min_stock", 0) or 0)]),
+                   "pending": len([b for b in loans if b.get("status") == "Menunggu Approval"]),
+                   "active_loans": len(active), "overdue": len([b for b in active if b.get("return_date") and b["return_date"] < today]),
+                   "damaged_units": sum(int(i.get("damaged_units", 0) or 0) for i in items),
+                   "lost_units": sum(int(i.get("lost_units", 0) or 0) for i in items),
+                   "rooms": await db.inventory_rooms.count_documents(dscope(user))},
+        "by_condition": [{"name": c, "value": len([i for i in items if (i.get("condition") or "Baik") == c])} for c in INV_CONDITIONS],
+        "by_category": sorted(by_cat.values(), key=lambda x: -x["units"]),
+        "by_room": sorted(by_room.values(), key=lambda x: -x["units"]),
+        "monthly": monthly,
+        "top_items": [{"name": k, "count": v} for k, v in sorted(top.items(), key=lambda x: -x[1])[:5]],
+        "overdue_list": sorted([{"id": b["id"], "item_name": b.get("item_name"), "requester_name": b.get("requester_name"),
+                                 "quantity": b.get("quantity"), "return_date": b.get("return_date")}
+                                for b in active if b.get("return_date") and b["return_date"] < today], key=lambda x: x["return_date"])[:10],
+    }
+
+@api.get("/inventory-activity")
+async def inventory_activity(limit: int = 100, item_id: Optional[str] = None, user=Depends(require_roles(*INV_STAFF))):
+    q = {**dscope(user)}
+    if item_id:
+        q["item_id"] = item_id
+    return await db.inventory_logs.find(q, {"_id": 0}).sort("created_at", -1).to_list(min(max(limit, 1), 500))
+
+@api.get("/inventory-lookup/{code}")
+async def inventory_lookup(code: str, user=Depends(get_current_user)):
+    key = code.strip()
+    if key.upper().startswith("INV:"):
+        key = key[4:]
+    item = await db.inventory.find_one({"$or": [{"id": key}, {"code": key}], **dscope(user)}, {"_id": 0})
+    if not item:
+        raise HTTPException(404, "Barang tidak ditemukan")
+    out = await db.borrow_requests.aggregate([{"$match": {"item_id": item["id"], "status": "Disetujui"}},
+                                              {"$group": {"_id": None, "n": {"$sum": "$quantity"}}}]).to_list(1)
+    item["outstanding"] = int(out[0]["n"]) if out else 0
+    item["total"] = int(item.get("stock", 0)) + item["outstanding"]
+    return item
 
 @api.get("/users/{uid}")
 async def get_user(uid: str, user=Depends(require_roles("super_admin", "staff_tu", "kepsek"))):

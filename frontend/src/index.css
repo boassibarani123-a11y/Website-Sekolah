@@ -147,6 +147,10 @@ html.dark body { background-color: #0b1220; color: #e2e8f0; }
 .gate-full { min-height: 100vh; border-radius: 0 !important; overflow-y: auto; }
 
 @keyframes fidSpin { to { transform: rotate(360deg); } }
+@keyframes faceBreath { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.96); opacity: 0.7; } }
+@keyframes presenceFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes presenceTimer { from { width: 100%; } to { width: 0%; } }
+@keyframes tokenGlow { 0%,100% { text-shadow: 0 0 40px rgba(45,212,191,0.35); } 50% { text-shadow: 0 0 90px rgba(45,212,191,0.7); } }
 @keyframes fidShake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-12px); } 40%,80% { transform: translateX(12px); } }
 @keyframes fidDraw { to { stroke-dashoffset: 0; } }
 .guest-card { width: 54mm; height: 86mm; border-radius: 10px; overflow: hidden; }

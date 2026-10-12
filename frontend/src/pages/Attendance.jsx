@@ -186,7 +186,7 @@ export default function Attendance() {
         </div>
       </div>
 
-      <div ref={gateRef} className={isFull ? "gate-full bg-slate-950" : ""}>
+      <div ref={gateRef} className={isFull ? "gate-full bg-white" : ""}>
         <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull} rows={rows} stats={stats} newId={newId}/>
       </div>
 

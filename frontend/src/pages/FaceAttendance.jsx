@@ -2,40 +2,55 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { ScanFace, Maximize, Minimize, ScanBarcode, Eye, UserPlus, Camera, GraduationCap } from "lucide-react";
+import { ScanFace, Maximize, Minimize, ScanBarcode, Eye, UserPlus, Camera, GraduationCap, Users, ClipboardCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { LiveScanTable } from "@/components/attendance/LiveScanTable";
+import { PresenceCard } from "@/components/attendance/PresenceCard";
+import { Clock } from "@/components/attendance/GateDisplay";
 import { beep, getStation, todayWib } from "@/components/attendance/scannerUtils";
-import { FaceIdStage } from "@/components/face/FaceIdStage";
+import { FaceScanFrame } from "@/components/face/FaceScanFrame";
 import { DigitPad } from "@/components/face/DigitPad";
 import { useFaceCamera } from "@/components/face/useFaceCamera";
 import { detectFaces, eyeAspect, meanDescriptor, listCameras } from "@/components/face/faceUtils";
 
 const OPS = ["admin_absensi", "super_admin", "staff_tu", "kepsek"];
 const STABLE_FRAMES = 4;
-const fmt = (iso) => iso ? new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "";
 
-function ResultPanel({ r }) {
-  if (!r) return (
-    <div data-testid="gate-idle" className="h-full rounded-[2rem] bg-white/[0.04] border border-white/10 flex flex-col items-center justify-center text-center p-8">
-      <ScanFace className="w-16 h-16 text-white/30" />
-      <p className="mt-4 text-2xl font-semibold text-white">Lihat ke Kamera</p>
-      <p className="mt-1 text-white/50 text-sm">Siswa & guru dikenali otomatis dalam ±1 detik</p>
-    </div>
-  );
-  const ok = r.kind !== "err";
+function useLiveLogs() {
+  const [log, setLog] = useState({ siswa: [], guru: [], sStats: null, gStats: null, newId: null });
+  const tops = useRef({});
+  const load = useCallback(() => {
+    const d = todayWib();
+    const mark = (k, rows) => {
+      const top = rows[0]?.id;
+      const fresh = top && tops.current[k] && top !== tops.current[k];
+      tops.current[k] = top;
+      if (fresh) { setLog(l => ({ ...l, newId: top })); setTimeout(() => setLog(l => ({ ...l, newId: null })), 2500); }
+    };
+    Promise.all([
+      api.get(`/attendance?date=${d}`).catch(() => ({ data: [] })),
+      api.get(`/attendance/stats?date=${d}`).catch(() => ({ data: null })),
+      api.get(`/teacher-attendance?date=${d}`).catch(() => ({ data: { rows: [], stats: null } })),
+    ]).then(([s, st, g]) => {
+      mark("s", s.data); mark("g", g.data.rows || []);
+      const gs = g.data.stats;
+      setLog(l => ({ ...l, siswa: s.data, sStats: st.data, guru: g.data.rows || [],
+        gStats: gs ? { ...gs, belum_absen: gs.belum, total_siswa: gs.total } : null }));
+    });
+  }, []);
+  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
+  return { log, load };
+}
+
+function LogTabs({ tab, setTab, log }) {
   return (
-    <div data-testid="gate-result" data-kind={r.kind} className={`h-full rounded-[2rem] p-8 flex flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-200 ${ok ? "bg-gradient-to-b from-[#30d158]/25 to-transparent border border-[#30d158]/40" : "bg-gradient-to-b from-[#ff453a]/25 to-transparent border border-[#ff453a]/40"}`}>
-      <div className="w-28 h-28 rounded-full overflow-hidden bg-white/10 ring-4 ring-white/20 flex items-center justify-center text-4xl font-bold text-white">
-        {r.student?.photo ? <img src={r.student.photo} alt="" className="w-full h-full object-cover" /> : (r.student?.name || "!")[0]}
-      </div>
-      {r.student ? (
-        <>
-          <p data-testid="gate-result-name" className="mt-5 text-3xl font-bold text-white tracking-tight">{r.student.name}</p>
-          <p className="mt-1 text-white/70 flex items-center gap-1.5">{r.guru && <GraduationCap className="w-4 h-4" />}{r.guru ? "Guru" : `Kelas ${r.student.kelas || "-"}`} · Kecocokan {r.code}{r.confirmed ? " · terverifikasi digit" : ""}</p>
-          <p data-testid="gate-result-label" className={`mt-4 px-4 py-1.5 rounded-full text-sm font-semibold ${r.kind === "dup" ? "bg-white/15 text-white" : "bg-[#30d158] text-black"}`}>{r.kind === "dup" ? `Sudah tercatat ${fmt(r.at)}` : `Hadir · ${fmt(r.at)}`}</p>
-        </>
-      ) : <p data-testid="gate-result-error" className="mt-5 text-xl font-semibold text-white">{r.message}</p>}
+    <div className="flex bg-sky-50 rounded-full p-1 ring-1 ring-sky-100" data-testid="face-log-tabs">
+      {[["siswa", "Siswa", Users, log.siswa.length], ["guru", "Guru", GraduationCap, log.guru.length]].map(([k, l, I, n]) => (
+        <button key={k} data-testid={`face-log-tab-${k}`} onClick={() => setTab(k)}
+          className={`px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-colors ${tab === k ? "bg-white text-sky-700 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}>
+          <I className="w-3.5 h-3.5" />{l}<span className="tabular-nums opacity-70">{n}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -45,36 +60,23 @@ export default function FaceAttendance() {
   const [cams, setCams] = useState([]);
   const [camId, setCamId] = useState("");
   const { videoRef, canvasRef, apiRef, state, error, retry } = useFaceCamera(camId);
-  const [hint, setHint] = useState("Arahkan wajah ke lingkaran");
+  const [hint, setHint] = useState("Arahkan wajah ke bingkai");
   const [progress, setProgress] = useState(0);
   const [fid, setFid] = useState("searching");
   const [current, setCurrent] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [newId, setNewId] = useState(null);
   const [liveness, setLiveness] = useState(false);
   const [isFull, setIsFull] = useState(false);
   const [pending, setPending] = useState(null);
   const [pinBusy, setPinBusy] = useState(false);
+  const [tab, setTab] = useState("siswa");
+  const { log, load } = useLiveLogs();
   const station = useRef(getStation()).current;
   const wrapRef = useRef(null);
   const busy = useRef(false);
   const buf = useRef([]);
   const blink = useRef({ open: false, blinked: false });
   const clearT = useRef(null);
-  const topRef = useRef(null);
 
-  const load = useCallback(() => {
-    const d = todayWib();
-    api.get(`/attendance/stats?date=${d}`).then(r => setStats(r.data)).catch(() => {});
-    api.get(`/attendance?date=${d}`).then(r => {
-      setRows(r.data);
-      const top = r.data[0]?.id;
-      if (top && topRef.current && top !== topRef.current) { setNewId(top); setTimeout(() => setNewId(null), 2500); }
-      topRef.current = top;
-    }).catch(() => {});
-  }, []);
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
   useEffect(() => { listCameras().then(setCams); }, [state]);
   useEffect(() => {
     const onFs = () => setIsFull(document.fullscreenElement === wrapRef.current);
@@ -82,11 +84,12 @@ export default function FaceAttendance() {
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
-  const reset = () => { buf.current = []; blink.current = { open: false, blinked: false }; setProgress(0); setTimeout(() => { busy.current = false; setFid("searching"); }, 2200); };
+  const reset = () => { buf.current = []; blink.current = { open: false, blinked: false }; setProgress(0); setTimeout(() => { busy.current = false; setFid("searching"); setHint("Arahkan wajah ke bingkai"); }, 2200); };
   const show = (res) => {
     beep(res.kind !== "err");
-    setCurrent(res); setFid(res.kind === "err" ? "fail" : "success");
-    setHint(res.kind === "err" ? "Tidak dikenali" : res.kind === "dup" ? "Sudah tercatat" : "Berhasil");
+    setCurrent({ ...res, key: `${Date.now()}` }); setFid(res.kind === "err" ? "fail" : "success");
+    setHint(res.kind === "err" ? "Wajah belum dikenali" : res.kind === "dup" ? "Sudah tercatat" : "Berhasil!");
+    if (res.guru) setTab("guru"); else if (res.student) setTab("siswa");
     clearTimeout(clearT.current);
     clearT.current = setTimeout(() => setCurrent(null), 3800);
   };
@@ -122,9 +125,9 @@ export default function FaceAttendance() {
       if (!busy.current && video?.readyState >= 2) {
         try {
           const dets = await detectFaces(apiRef.current, video);
-          if (dets.length === 0) { buf.current = []; setProgress(0); setFid("searching"); setHint("Arahkan wajah ke lingkaran"); }
-          else if (dets.length > 1) { buf.current = []; setProgress(0); setHint("Satu orang saja di depan kamera"); }
-          else if (dets[0].detection.box.width < video.videoWidth * 0.18) { buf.current = []; setProgress(0); setHint("Dekatkan wajah"); }
+          if (dets.length === 0) { buf.current = []; setProgress(0); setFid("searching"); setHint("Arahkan wajah ke bingkai"); }
+          else if (dets.length > 1) { buf.current = []; setProgress(0); setHint("Satu orang saja ya"); }
+          else if (dets[0].detection.box.width < video.videoWidth * 0.18) { buf.current = []; setProgress(0); setHint("Mendekat sedikit"); }
           else {
             setFid("scanning");
             const ear = eyeAspect(dets[0].landmarks);
@@ -134,7 +137,7 @@ export default function FaceAttendance() {
             setProgress(buf.current.length / STABLE_FRAMES * (liveness && !blink.current.blinked ? 0.75 : 1));
             if (liveness && !blink.current.blinked) setHint("Kedipkan mata");
             else if (buf.current.length >= STABLE_FRAMES) { setHint("Mengenali…"); await submit(meanDescriptor(buf.current)); }
-            else setHint("Tahan sebentar");
+            else setHint("Tahan sebentar…");
           }
         } catch { /* skip frame */ }
       }
@@ -151,54 +154,62 @@ export default function FaceAttendance() {
 
   if (user && !OPS.includes(user.role)) return <p className="text-center text-slate-500 py-20" data-testid="face-access-denied">Halaman ini khusus Admin Absensi / admin sekolah.</p>;
 
+  const chip = "px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-colors ring-1";
+  const table = tab === "guru"
+    ? <LiveScanTable who="Guru" rows={log.guru} stats={log.gStats} newId={log.newId} tabs={<LogTabs tab={tab} setTab={setTab} log={log} />} />
+    : <LiveScanTable rows={log.siswa} stats={log.sStats} newId={log.newId} tabs={<LogTabs tab={tab} setTab={setTab} log={log} />} />;
+
   return (
     <div className="space-y-6" data-testid="face-attendance-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Face ID · Siswa & Guru</p>
           <h1 className="font-heading text-3xl font-extrabold text-slate-900 flex items-center gap-2"><ScanFace className="w-8 h-8 text-sky-600" />Presensi Wajah</h1>
-          <p className="mt-1 text-sm text-slate-500">Satu kamera untuk semua. Sistem otomatis membedakan siswa dan guru, dan meminta konfirmasi digit bila ada wajah yang sangat mirip.</p>
+          <p className="mt-1 text-sm text-slate-500 max-w-2xl">Satu kamera untuk siswa dan guru. Catatan siswa masuk ke Presensi Siswa, catatan guru masuk ke halaman Absensi Guru.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Link to="/attendance" data-testid="face-back-barcode" className="px-4 py-2.5 rounded-xl border-2 border-slate-200 bg-white font-semibold text-slate-700 hover:border-sky-400 flex items-center gap-2 transition-colors"><ScanBarcode className="w-4 h-4" />Mode Barcode</Link>
-          <Link to="/face-enroll" data-testid="face-go-enroll" className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-semibold hover:bg-sky-600 flex items-center gap-2 transition-colors"><UserPlus className="w-4 h-4" />Daftarkan Wajah</Link>
+          <Link to="/attendance" data-testid="face-back-barcode" className="px-4 py-2.5 rounded-full border border-slate-200 bg-white font-semibold text-slate-700 hover:border-sky-400 flex items-center gap-2 transition-colors"><ScanBarcode className="w-4 h-4" />Mode Barcode</Link>
+          <Link to="/teacher-attendance" data-testid="face-go-teacher-log" className="px-4 py-2.5 rounded-full border border-slate-200 bg-white font-semibold text-slate-700 hover:border-sky-400 flex items-center gap-2 transition-colors"><ClipboardCheck className="w-4 h-4" />Absensi Guru</Link>
+          <Link to="/face-enroll" data-testid="face-go-enroll" className="px-4 py-2.5 rounded-full bg-slate-900 text-white font-semibold hover:bg-sky-600 flex items-center gap-2 transition-colors"><UserPlus className="w-4 h-4" />Daftarkan Wajah</Link>
         </div>
       </div>
 
-      <div ref={wrapRef} className={`bg-black text-white p-6 sm:p-8 relative ${isFull ? "h-screen flex flex-col overflow-hidden" : "rounded-[2.5rem] shadow-2xl"}`}>
+      <div ref={wrapRef} className={`bg-gradient-to-b from-sky-50 via-white to-white p-6 sm:p-8 relative ${isFull ? "h-screen flex flex-col overflow-hidden" : "rounded-[2.5rem] border border-slate-200 shadow-sm"}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
           <div>
-            <p className="font-semibold text-lg">{station.name}</p>
-            <span className={`mt-0.5 inline-flex items-center gap-1.5 text-xs font-medium ${state === "ready" ? "text-[#30d158]" : state === "error" ? "text-[#ff453a]" : "text-[#ffd60a]"}`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />{state === "ready" ? "Live" : state === "error" ? "Kamera bermasalah" : "Menyiapkan…"}
+            <p className="font-heading font-extrabold text-xl text-slate-900">{station.name}</p>
+            <span className={`mt-0.5 inline-flex items-center gap-1.5 text-xs font-semibold ${state === "ready" ? "text-emerald-600" : state === "error" ? "text-rose-600" : "text-amber-600"}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />{state === "ready" ? "Kamera aktif" : state === "error" ? "Kamera bermasalah" : "Menyiapkan…"}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {cams.length > 1 && (
-              <label className="flex items-center gap-2 bg-white/10 rounded-full px-3 py-2 text-xs font-semibold">
+              <label className={`${chip} bg-white ring-slate-200 text-slate-700`}>
                 <Camera className="w-4 h-4" />
                 <select data-testid="face-camera-select" value={camId} onChange={e => setCamId(e.target.value)} className="bg-transparent outline-none max-w-[160px]">
-                  <option value="" className="text-slate-900">Kamera default</option>
-                  {cams.map((c, i) => <option key={c.deviceId} value={c.deviceId} className="text-slate-900">{c.label || `Kamera ${i + 1}`}</option>)}
+                  <option value="">Kamera default</option>
+                  {cams.map((c, i) => <option key={c.deviceId} value={c.deviceId}>{c.label || `Kamera ${i + 1}`}</option>)}
                 </select>
               </label>
             )}
-            <button data-testid="face-liveness-toggle" onClick={() => setLiveness(v => !v)} className={`px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-colors ${liveness ? "bg-[#30d158] text-black" : "bg-white/10 hover:bg-white/20"}`}><Eye className="w-4 h-4" />Anti-Foto {liveness ? "ON" : "OFF"}</button>
-            <button data-testid="face-fullscreen-button" onClick={toggleFull} className="px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5 transition-colors">{isFull ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}{isFull ? "Keluar" : "Layar Penuh"}</button>
+            <button data-testid="face-liveness-toggle" onClick={() => setLiveness(v => !v)} className={`${chip} ${liveness ? "bg-emerald-500 text-white ring-emerald-500" : "bg-white text-slate-700 ring-slate-200 hover:ring-sky-400"}`}><Eye className="w-4 h-4" />Anti-Foto {liveness ? "ON" : "OFF"}</button>
+            <button data-testid="face-fullscreen-button" onClick={toggleFull} className={`${chip} bg-white text-slate-700 ring-slate-200 hover:ring-sky-400`}>{isFull ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}{isFull ? "Keluar" : "Layar Penuh"}</button>
+            {isFull && <Clock />}
           </div>
         </div>
         <div className={`grid lg:grid-cols-2 gap-8 items-center ${isFull ? "shrink-0" : ""}`}>
-          <div className="relative py-2">
-            <FaceIdStage videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} onRetry={retry} progress={progress} status={fid} hint={hint}
-              sub={fid === "searching" ? "Posisikan wajah di dalam lingkaran" : null} />
-            {pending && <DigitPad busy={pinBusy} onSubmit={confirmPin} onCancel={() => { setPending(null); reset(); }} />}
+          <div className="relative">
+            <FaceScanFrame videoRef={videoRef} canvasRef={canvasRef} state={state} error={error} onRetry={retry} progress={progress} status={fid} hint={hint}
+              sub={fid === "searching" ? "Posisikan wajah di dalam bingkai, lalu tahan sebentar" : null}>
+              {pending && <DigitPad busy={pinBusy} onSubmit={confirmPin} onCancel={() => { setPending(null); reset(); }} />}
+            </FaceScanFrame>
           </div>
-          <div className={isFull ? "h-[46vh]" : "min-h-[360px] h-full"}><ResultPanel r={current} /></div>
+          <div className={isFull ? "h-[52vh]" : "min-h-[420px] h-full"}><PresenceCard r={current} mode="face" /></div>
         </div>
-        {isFull && <LiveScanTable rows={rows} stats={stats} newId={newId} />}
+        {isFull && table}
       </div>
 
-      {!isFull && <div className="bg-slate-950 text-white rounded-3xl p-1 flex flex-col max-h-[520px]"><LiveScanTable rows={rows} stats={stats} newId={newId} /></div>}
+      {!isFull && table}
     </div>
   );
 }
