@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle, ScanFace } from "lucide-react";
+import { UserPlus, IdCard, Printer, Trash2, X, Pencil, Search, AlertTriangle, CheckCircle2, XCircle, ScanFace, FileSpreadsheet } from "lucide-react";
 import StudentIdCard from "@/components/StudentIdCard";
 import { BulkDeleteModal } from "@/components/accounts/BulkDeleteModal";
+import { ImportStudentsModal } from "@/components/accounts/ImportStudentsModal";
 
 const ROLES = [
   {v:"siswa", l:"Siswa"}, {v:"guru", l:"Guru / Wali Kelas"}, {v:"kepsek", l:"Kepala Sekolah"},
@@ -33,6 +34,8 @@ export default function MasterAccounts() {
   const [statusFilter, setStatusFilter] = useState("");
   const [kelasFilter, setKelasFilter] = useState("");
   const [bulk, setBulk] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [limit, setLimit] = useState(100);
   const kelasOpts = [...new Set(users.map(u => u.kelas).filter(Boolean))].sort();
   const [faces, setFaces] = useState({});
   const navigate = useNavigate();
@@ -69,6 +72,10 @@ export default function MasterAccounts() {
             className="px-4 py-2.5 bg-white border-2 border-slate-200 rounded-xl font-semibold flex items-center gap-2 hover:border-sky-400 transition-all">
             <Printer className="w-4 h-4"/>Cetak Kartu Massal
           </a>
+          <button data-testid="import-students-button" onClick={()=>setImporting(true)}
+            className="px-4 py-2.5 bg-white border-2 border-emerald-200 text-emerald-700 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-colors">
+            <FileSpreadsheet className="w-4 h-4"/>Impor Excel
+          </button>
           <button data-testid="bulk-delete-button" onClick={()=>setBulk(true)}
             className="px-4 py-2.5 bg-white border-2 border-rose-200 text-rose-600 rounded-xl font-semibold flex items-center gap-2 hover:bg-rose-50 transition-colors">
             <Trash2 className="w-4 h-4"/>Hapus Massal
@@ -118,7 +125,7 @@ export default function MasterAccounts() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map(u=>{
+              {filtered.slice(0, limit).map(u=>{
                 const active = u.is_active !== false;
                 return (
                 <tr key={u.id} className="hover:bg-slate-50 transition-colors" data-testid={`account-row-${u.id}`}>
@@ -168,12 +175,16 @@ export default function MasterAccounts() {
             </tbody>
           </table>
         </div>
+        {filtered.length > limit && (
+          <button data-testid="accounts-show-more" onClick={()=>setLimit(l=>l+200)} className="w-full py-3 border-t border-slate-100 text-sm font-semibold text-sky-600 hover:bg-sky-50">Tampilkan lebih banyak ({filtered.length - limit} lagi)</button>
+        )}
       </div>
 
       {showCreate && <CreateModal onClose={()=>setShowCreate(false)} onCreated={()=>{load(); setShowCreate(false);}}/>}
       {editFor && <EditModal user={editFor} onClose={()=>setEditFor(null)} onSaved={()=>{load(); setEditFor(null);}}/>}
       {cardFor && <CardModal student={cardFor} onClose={()=>setCardFor(null)}/>}
       {bulk && <BulkDeleteModal users={users} kelasOpts={kelasOpts} onClose={()=>setBulk(false)} onDone={()=>{setBulk(false); load();}}/>}
+      {importing && <ImportStudentsModal kelasOpts={kelasOpts} onClose={()=>setImporting(false)} onDone={load}/>}
       {delFor && <DeleteConfirm user={delFor} onClose={()=>setDelFor(null)} onConfirm={doDelete}/>}
     </div>
   );

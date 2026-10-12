@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "@/lib/apiClient";
+import { useAuth } from "@/context/AuthContext";
+import { TeacherMonthly } from "@/components/attendance/TeacherMonthly";
 import { toast } from "sonner";
 import { GraduationCap, Download, Archive, ChevronLeft, ChevronRight, Clock, CheckCircle2, AlertCircle, UserX, FolderArchive } from "lucide-react";
 
@@ -119,7 +121,8 @@ function Storage() {
 }
 
 export default function TeacherAttendance() {
-  const [tab, setTab] = useState("today");
+  const { user } = useAuth();
+  const [tab, setTab] = useState(user?.role === "kepsek" ? "monthly" : "today");
   const [data, setData] = useState(null);
   const [start, setStart] = useState(todayWib());
   const load = useCallback(() => api.get("/teacher-attendance").then(r => setData(r.data)).catch(() => {}), []);
@@ -142,12 +145,13 @@ export default function TeacherAttendance() {
         <Stat icon={GraduationCap} label="Belum Absen" value={s.belum ?? 0} tone="bg-slate-100 text-slate-700" />
       </div>
       <div className="flex gap-1.5">
-        {[["today", "Hari Ini"], ["week", "Rekap Mingguan"], ["storage", "Storage Rekap"]].map(([k, l]) => (
+        {[["today", "Hari Ini"], ["week", "Rekap Mingguan"], ["monthly", "Grafik Bulanan"], ["storage", "Storage Rekap"]].map(([k, l]) => (
           <button key={k} data-testid={`teacher-tab-${k}`} onClick={() => setTab(k)} className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${tab === k ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-600"}`}>{l}</button>
         ))}
       </div>
       {tab === "today" && (data ? <Today data={data} onManual={manual} /> : <p className="text-slate-400 text-sm">Memuat…</p>)}
       {tab === "week" && <Week start={start} setStart={setStart} />}
+      {tab === "monthly" && <TeacherMonthly />}
       {tab === "storage" && <Storage />}
     </div>
   );

@@ -44,7 +44,7 @@ from html import escape
 from urllib.parse import urlparse, urlencode
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Union, Dict
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Header, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form, Header, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, RedirectResponse
 import re
 from starlette.middleware.cors import CORSMiddleware
@@ -622,7 +622,7 @@ async def me(user=Depends(get_current_user)):
 async def list_users(role: Optional[str] = None, user=Depends(get_current_user)):
     q = dscope(user)
     if role: q["role"] = role
-    users = await db.users.find(q, {"password_hash": 0, "_id": 0}).to_list(1000)
+    users = await db.users.find(q, {"password_hash": 0, "_id": 0}).to_list(20000)
     return users
 
 @api.post("/users")
@@ -1396,6 +1396,8 @@ async def _archive_week(is_demo, monday, generated_by, kind="siswa"):
            "summary": totals, "generated_at": now_iso(), "generated_by": generated_by,
            "file_b64": base64.b64encode(data).decode()}
     await db.attendance_archives.insert_one(arc)
+    if kind == "guru" and docs:
+        await db.teacher_attendance_history.insert_many([{k: d.get(k) for k in TEACHER_HIST_FIELDS} for d in docs])
     await coll.delete_many({"date": {"$gte": days[0], "$lte": days[6]}, **scope})
     return arc
 
@@ -6511,6 +6513,218 @@ async def inventory_lookup(code: str, user=Depends(get_current_user)):
     item["outstanding"] = int(out[0]["n"]) if out else 0
     item["total"] = int(item.get("stock", 0)) + item["outstanding"]
     return item
+
+# ---------------- REKAP BULANAN ABSENSI GURU ----------------
+TEACHER_HIST_FIELDS = ("id", "student_id", "student_name", "nip", "date", "status", "late", "time", "method", "scanned_at", "is_demo")
+MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+def _att_counts(recs: list) -> dict:
+    c = {k: len([r for r in recs if r.get("status") == k]) for k in STATUS_ORDER}
+    c["terlambat"] = len([r for r in recs if r.get("status") == "hadir" and r.get("late")])
+    c["tepat_waktu"] = c["hadir"] - c["terlambat"]
+    return c
+
+def _avg_time(recs: list) -> Optional[str]:
+    mins = [int(t[:2]) * 60 + int(t[3:5]) for t in (r.get("time") for r in recs if r.get("status") == "hadir") if t and len(t) >= 5]
+    return f"{sum(mins) // len(mins) // 60:02d}:{sum(mins) // len(mins) % 60:02d}" if mins else None
+
+@api.get("/teacher-attendance/monthly")
+async def teacher_att_monthly(year: Optional[int] = None, month: Optional[str] = None, user=Depends(require_roles(*TEACHER_ATT_ROLES))):
+    now = datetime.now(WIB)
+    year = year or now.year
+    month = month or (now.strftime("%Y-%m") if year == now.year else f"{year}-12")
+    q = {"date": {"$gte": f"{year}-01-01", "$lte": f"{year}-12-31"}, **dscope(user)}
+    proj = {"_id": 0, **{k: 1 for k in TEACHER_HIST_FIELDS}}
+    seen, docs = set(), []
+    for d in await db.teacher_attendance.find(q, proj).to_list(100000) + await db.teacher_attendance_history.find(q, proj).to_list(100000):
+        key = (d.get("student_id"), d.get("date"))
+        if key not in seen:
+            seen.add(key)
+            docs.append(d)
+    teachers = await db.users.find({"role": "guru", **dscope(user)}, {"_id": 0, "id": 1, "name": 1, "nip": 1, "photo": 1}).sort("name", 1).to_list(2000)
+    months = []
+    for i in range(12):
+        key = f"{year}-{i + 1:02d}"
+        recs = [d for d in docs if d["date"].startswith(key)]
+        days = len({d["date"] for d in recs})
+        c = _att_counts(recs)
+        slots = days * len(teachers)
+        months.append({"month": key, "label": MONTH_LABELS[i], **c, "days": days,
+                       "rate": round(c["hadir"] / slots * 100, 1) if slots else 0,
+                       "late_rate": round(c["terlambat"] / c["hadir"] * 100, 1) if c["hadir"] else 0})
+    mrecs = [d for d in docs if d["date"].startswith(month)]
+    mdays = sorted({d["date"] for d in mrecs})
+    per_teacher = []
+    for t in teachers:
+        recs = [d for d in mrecs if d.get("student_id") == t["id"]]
+        c = _att_counts(recs)
+        per_teacher.append({**t, **c, "tercatat": len(recs), "rata_jam_datang": _avg_time(recs),
+                            "rate": round(c["hadir"] / len(mdays) * 100, 1) if mdays else 0})
+    per_teacher.sort(key=lambda x: (-x["terlambat"], x["name"]))
+    daily = [{"date": d, "label": d[8:], **_att_counts([r for r in mrecs if r["date"] == d])} for d in mdays]
+    return {"year": year, "month": month, "teachers_total": len(teachers), "months": months,
+            "month_summary": {**_att_counts(mrecs), "days": len(mdays), "rata_jam_datang": _avg_time(mrecs)},
+            "per_teacher": per_teacher, "daily": daily}
+
+# ---------------- IMPOR SISWA MASSAL (EXCEL) ----------------
+IMPORT_MAX_ROWS = 3000
+IMPORT_DEFAULT_PW = "siswa2026@"
+IMPORT_HEADERS = {"nama": "name", "nama siswa": "name", "nama lengkap": "name", "name": "name", "email": "email", "e-mail": "email",
+                  "alamat email": "email", "nisn": "nisn", "nis": "nis", "nomor wa": "phone", "no wa": "phone", "no. wa": "phone",
+                  "nomor whatsapp": "phone", "no whatsapp": "phone", "whatsapp": "phone", "wa": "phone", "no hp": "phone",
+                  "nomor hp": "phone", "no. hp": "phone", "phone": "phone", "kelas": "kelas", "jurusan": "jurusan"}
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PHONE_RE = re.compile(r"\+?[0-9][0-9 ()-]{7,17}")
+
+def _cell_str(v, kind: str = "") -> str:
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    s = str(v).strip()
+    if kind == "nisn" and s.isdigit() and 8 <= len(s) < 10:
+        s = s.zfill(10)
+    if kind == "phone":
+        s = re.sub(r"\s+", "", s)
+        if s.isdigit() and s.startswith("8"):
+            s = "0" + s
+    return s
+
+def _parse_student_file(raw: bytes, filename: str) -> list:
+    if filename.lower().endswith(".csv"):
+        import csv
+        text = raw.decode("utf-8-sig", errors="replace")
+        rows = list(csv.reader(io.StringIO(text), delimiter=";" if text.count(";") > text.count(",") else ","))
+    else:
+        import openpyxl
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(400, "File tidak dapat dibaca. Gunakan format .xlsx atau .csv")
+        rows = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+    hdr_idx, cols = None, {}
+    for i, r in enumerate(rows[:15]):
+        m = {}
+        for j, h in enumerate(r):
+            key = re.sub(r"\s+", " ", str(h or "").replace("*", "").strip().lower())
+            if key in IMPORT_HEADERS and IMPORT_HEADERS[key] not in m:
+                m[IMPORT_HEADERS[key]] = j
+        if "name" in m and "email" in m:
+            hdr_idx, cols = i, m
+            break
+    if hdr_idx is None:
+        raise HTTPException(400, "Kolom 'Nama' dan 'Email' tidak ditemukan. Gunakan template yang disediakan.")
+    out = []
+    for n, r in enumerate(rows[hdr_idx + 1:], start=hdr_idx + 2):
+        def get(k):
+            return _cell_str(r[cols[k]] if k in cols and cols[k] < len(r) else None, k)
+        rec = {"row": n, "name": get("name"), "email": get("email").lower(), "nisn": get("nisn"), "nis": get("nis"),
+               "phone": get("phone"), "kelas": get("kelas"), "jurusan": get("jurusan")}
+        if any(rec[k] for k in ("name", "email", "nisn", "nis", "phone")):
+            out.append(rec)
+    if len(out) > IMPORT_MAX_ROWS:
+        raise HTTPException(400, f"Maksimal {IMPORT_MAX_ROWS} siswa per file (file berisi {len(out)} baris)")
+    if not out:
+        raise HTTPException(400, "File tidak berisi data siswa")
+    return out
+
+async def _validate_import(recs: list, default_kelas: str) -> list:
+    emails = [r["email"] for r in recs if r["email"]]
+    nisns = [r["nisn"] for r in recs if r["nisn"]]
+    niss = [r["nis"] for r in recs if r["nis"]]
+    ex = await db.users.find({"$or": [{"email": {"$in": emails}}, {"nisn": {"$in": nisns}}, {"nis": {"$in": niss}}]},
+                             {"_id": 0, "email": 1, "nisn": 1, "nis": 1}).to_list(20000)
+    ex_email = {u.get("email") for u in ex}
+    ex_nisn = {u.get("nisn") for u in ex if u.get("nisn")}
+    ex_nis = {u.get("nis") for u in ex if u.get("nis")}
+    seen = {"email": {}, "nisn": {}, "nis": {}}
+    for r in recs:
+        r["kelas"] = r["kelas"] or default_kelas
+        errs = []
+        if not r["name"]:
+            errs.append("Nama kosong")
+        if not EMAIL_RE.match(r["email"] or ""):
+            errs.append("Email tidak valid")
+        if not re.fullmatch(r"\d{6,12}", r["nisn"] or ""):
+            errs.append("NISN wajib angka 6–12 digit")
+        if r["nis"] and not re.fullmatch(r"[0-9A-Za-z./-]{2,20}", r["nis"]):
+            errs.append("NIS tidak valid")
+        if not PHONE_RE.fullmatch(r["phone"] or ""):
+            errs.append("Nomor WA tidak valid")
+        if not r["kelas"]:
+            errs.append("Kelas belum ditentukan")
+        for k, label in (("email", "Email"), ("nisn", "NISN"), ("nis", "NIS")):
+            if r[k]:
+                if r[k] in seen[k]:
+                    errs.append(f"{label} duplikat dengan baris {seen[k][r[k]]}")
+                else:
+                    seen[k][r[k]] = r["row"]
+        exists = [lbl for lbl, hit in (("email", r["email"] in ex_email), ("NISN", r["nisn"] in ex_nisn),
+                                       ("NIS", bool(r["nis"]) and r["nis"] in ex_nis)) if hit]
+        r["status"] = "error" if errs else "exists" if exists else "ok"
+        r["errors"] = errs or ([f"Sudah terdaftar ({', '.join(exists)})"] if exists else [])
+    return recs
+
+def _import_summary(recs: list) -> dict:
+    return {"total": len(recs), "ok": len([r for r in recs if r["status"] == "ok"]),
+            "exists": len([r for r in recs if r["status"] == "exists"]), "error": len([r for r in recs if r["status"] == "error"])}
+
+async def _read_upload(file: UploadFile) -> bytes:
+    raw = await file.read()
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Ukuran file maksimal 8MB")
+    return raw
+
+@api.get("/users/import/template")
+async def import_template(user=Depends(require_roles("super_admin", "staff_tu"))):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data Siswa"
+    ws.append(["Nama", "Email", "NISN", "NIS", "Nomor WA", "Kelas"])
+    ws.append(["Andreas Sitorus", "andreas.sitorus@sman1laguboti.sch.id", "0081234567", "2026001", "081234567890", "X IPA 1"])
+    ws.append(["Maria Simanjuntak", "maria.simanjuntak@sman1laguboti.sch.id", "0081234568", "2026002", "081298765432", "X IPA 1"])
+    for col, w in zip("ABCDEF", (28, 40, 14, 12, 18, 12)):
+        ws.column_dimensions[col].width = w
+    for row in ws.iter_rows(min_row=1, max_row=1000, min_col=3, max_col=5):
+        for c in row:
+            c.number_format = "@"
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0284C7")
+    buf = io.BytesIO()
+    wb.save(buf)
+    return xlsx_response(buf.getvalue(), "Template_Impor_Siswa.xlsx")
+
+@api.post("/users/import/preview")
+async def import_preview(file: UploadFile = File(...), kelas: str = Form(""), user=Depends(require_roles("super_admin", "staff_tu"))):
+    recs = await _validate_import(_parse_student_file(await _read_upload(file), file.filename or ""), kelas.strip())
+    return {"summary": _import_summary(recs), "rows": recs}
+
+@api.post("/users/import")
+async def import_students(request: Request, file: UploadFile = File(...), kelas: str = Form(""), password: str = Form(IMPORT_DEFAULT_PW),
+                          user=Depends(require_roles("super_admin", "staff_tu"))):
+    pw = password.strip() or IMPORT_DEFAULT_PW
+    if len(pw) < 8:
+        raise HTTPException(400, "Password minimal 8 karakter")
+    recs = await _validate_import(_parse_student_file(await _read_upload(file), file.filename or ""), kelas.strip())
+    pw_hash = hash_pw(pw)  # same password for every imported account -> hash once (fast for 750+ rows)
+    now = now_iso()
+    docs = []
+    for r in (x for x in recs if x["status"] == "ok"):
+        uid = str(uuid.uuid4())
+        jur = r["jurusan"] or next((j for j in ("IPA", "IPS", "Bahasa") if j.lower() in r["kelas"].lower()), None)
+        docs.append(dstamp({"id": uid, "email": r["email"], "password_hash": pw_hash, "name": r["name"], "role": "siswa",
+                            "nisn": r["nisn"], "nis": r["nis"] or None, "kelas": r["kelas"], "jurusan": jur, "photo": None,
+                            "qr_code": f"SEKOLAHKU-{uid}", "parent_name": None, "parent_email": None, "parent_phone": None,
+                            "phone": r["phone"], "student_id": None, "subjects": [], "nip": None, "is_active": True,
+                            "created_at": now, "imported_at": now, "imported_by": user["name"]}, user))
+    for i in range(0, len(docs), 500):
+        await db.users.insert_many(docs[i:i + 500], ordered=False)
+    await audit("bulk_import_students", user["id"], None, request, {"created": len(docs), "skipped": len(recs) - len(docs)})
+    return {"ok": True, "created": len(docs), "summary": _import_summary(recs),
+            "skipped_rows": [{"row": r["row"], "name": r["name"], "email": r["email"], "status": r["status"], "errors": r["errors"]}
+                             for r in recs if r["status"] != "ok"]}
+
 
 @api.get("/users/{uid}")
 async def get_user(uid: str, user=Depends(require_roles("super_admin", "staff_tu", "kepsek"))):

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import api from "@/lib/apiClient";
-import { X, Maximize, Minimize, AlertTriangle, CheckCircle2, Clock3, PauseCircle, Search, FileSpreadsheet, FileText } from "lucide-react";
+import { X, Maximize, Minimize, AlertTriangle, CheckCircle2, Clock3, PauseCircle, Search, FileSpreadsheet, FileText, Volume2, VolumeX, Siren } from "lucide-react";
+import { toast } from "sonner";
 import { VortexLogo, mmss } from "./VortexLogo";
 import { downloadExamExport } from "./examExport";
 
@@ -13,12 +14,28 @@ const STATE = {
 };
 const ORDER = { melanggar: 0, mengerjakan: 1, belum: 2, selesai: 3 };
 
-function Tile({ s, left }) {
+function alarm(ctxRef) {
+  try {
+    const ctx = ctxRef.current || (ctxRef.current = new (window.AudioContext || window.webkitAudioContext)());
+    if (ctx.state === "suspended") ctx.resume();
+    [0, 0.22, 0.44].forEach((t, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "square"; o.frequency.value = i % 2 ? 660 : 880;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.2);
+      o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.21);
+    });
+  } catch { /* audio unavailable */ }
+}
+
+function Tile({ s, left, flash }) {
   const st = STATE[s.state];
   const pct = s.total ? Math.round((s.answered / s.total) * 100) : 0;
   const idle = s.state === "mengerjakan" && s.idle_seconds > 90;
   return (
-    <div data-testid={`proctor-tile-${s.id}`} data-state={s.state} className={`rounded-2xl border-2 p-4 transition-colors ${st.cls} ${s.violations > 0 && s.state === "mengerjakan" ? "border-amber-300" : ""}`}>
+    <div data-testid={`proctor-tile-${s.id}`} data-state={s.state} data-flash={flash ? "1" : "0"} className={`relative rounded-2xl border-2 p-4 transition-colors ${st.cls} ${s.violations > 0 && s.state === "mengerjakan" ? "border-amber-300" : ""} ${flash ? "!border-rose-500 !bg-rose-50 animate-[proctorFlash_0.9s_ease-in-out_4] shadow-[0_0_0_4px_rgba(244,63,94,0.25)]" : ""}`}>
+      {flash && <span data-testid={`proctor-new-${s.id}`} className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold uppercase tracking-wider shadow">Pelanggaran baru</span>}
       <div className="flex items-center gap-3">
         <span className="w-10 h-10 rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden flex items-center justify-center font-bold text-slate-600 shrink-0">
           {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : (s.name || "?")[0]}
@@ -51,12 +68,35 @@ export function LiveProctor({ exam, onClose }) {
   const [full, setFull] = useState(false);
   const [tick, setTick] = useState(0);
   const fetchedAt = useRef(Date.now());
+  const prev = useRef(null);
+  const audio = useRef(null);
+  const [sound, setSound] = useState(true);
+  const soundRef = useRef(true);
+  const [flash, setFlash] = useState({});
+  const [alerts, setAlerts] = useState([]);
   const ref = useRef(null);
 
-  const load = useCallback(() => api.get(`/exams/${exam.id}/live`).then(r => { fetchedAt.current = Date.now(); setD(r.data); setErr(""); })
+  const detect = (students) => {
+    const map = Object.fromEntries(students.map(s => [s.id, s.violations || 0]));
+    if (prev.current) {
+      const hit = students.filter(s => (s.violations || 0) > (prev.current[s.id] ?? 0));
+      if (hit.length) {
+        const now = Date.now();
+        setFlash(f => ({ ...f, ...Object.fromEntries(hit.map(s => [s.id, now])) }));
+        setAlerts(a => [...hit.map(s => ({ key: `${s.id}-${s.violations}`, id: s.id, name: s.name, count: s.violations, reason: s.last_violation?.reason || "pelanggaran", at: s.last_violation?.at })), ...a].slice(0, 6));
+        if (soundRef.current) alarm(audio);
+        toast.error(`${hit.map(s => s.name).join(", ")} melakukan pelanggaran`);
+      }
+    }
+    prev.current = map;
+  };
+  const load = useCallback(() => api.get(`/exams/${exam.id}/live`).then(r => { fetchedAt.current = Date.now(); detect(r.data.students); setD(r.data); setErr(""); })
     .catch(e => setErr(e.response?.data?.detail || "Gagal memuat data pengawasan")), [exam.id]);
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
   useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { soundRef.current = sound; }, [sound]);
+  useEffect(() => () => { audio.current?.close?.(); }, []);
+  const isFlash = (id) => flash[id] && Date.now() - flash[id] < 15000;
   useEffect(() => {
     const f = () => setFull(document.fullscreenElement === ref.current);
     document.addEventListener("fullscreenchange", f);
@@ -83,6 +123,7 @@ export function LiveProctor({ exam, onClose }) {
             <button data-testid="proctor-export-xlsx" onClick={() => downloadExamExport(exam, "xlsx")} className="px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5"><FileSpreadsheet className="w-4 h-4" />Excel</button>
             <button data-testid="proctor-export-pdf" onClick={() => downloadExamExport(exam, "pdf")} className="px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5"><FileText className="w-4 h-4" />PDF</button>
           </>}
+          <button data-testid="proctor-sound-toggle" onClick={() => { setSound(v => !v); if (!sound) alarm(audio); }} className={`px-3 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 ${sound ? "bg-rose-500 hover:bg-rose-600" : "bg-white/10 hover:bg-white/20"}`}>{sound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}Bunyi {sound ? "ON" : "OFF"}</button>
           <button data-testid="proctor-fullscreen" onClick={() => document.fullscreenElement ? document.exitFullscreen?.() : ref.current?.requestFullscreen?.().catch(() => {})} className="px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5">{full ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}{full ? "Keluar" : "Layar Penuh"}</button>
           <button data-testid="proctor-close" onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20"><X className="w-5 h-5" /></button>
         </div>
@@ -97,12 +138,21 @@ export function LiveProctor({ exam, onClose }) {
         <label className="ml-auto flex items-center gap-2 bg-slate-100 rounded-full px-4 py-2"><Search className="w-4 h-4 text-slate-400" />
           <input data-testid="proctor-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Cari siswa" className="bg-transparent outline-none text-sm w-40" /></label>
       </div>
+      {alerts.length > 0 && (
+        <div className="px-6 py-3 bg-rose-600 text-white flex items-center gap-3 flex-wrap" data-testid="proctor-alert-banner">
+          <Siren className="w-5 h-5 animate-pulse shrink-0" />
+          <div className="flex gap-2 flex-wrap flex-1 min-w-0">
+            {alerts.map(a => <span key={a.key} data-testid={`proctor-alert-${a.id}`} className="px-3 py-1 rounded-full bg-white/15 text-xs font-semibold">{a.name} · {a.reason} · {a.count}×{a.at ? ` · ${new Date(a.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>)}
+          </div>
+          <button data-testid="proctor-alert-clear" onClick={() => setAlerts([])} className="px-3 py-1 rounded-full bg-white text-rose-700 text-xs font-bold">Tandai dibaca</button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-6">
         {err && <p className="text-rose-600" data-testid="proctor-error">{err}</p>}
         {!d && !err && <p className="text-slate-400 italic">Memuat…</p>}
         {d && list.length === 0 && <p className="text-slate-400 italic text-center py-16">Tidak ada siswa pada filter ini.</p>}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3" data-testid="proctor-grid">
-          {list.map(s => <Tile key={s.id} s={s} left={s.remaining_seconds == null ? null : Math.max(0, s.remaining_seconds - elapsed)} />)}
+          {list.map(s => <Tile key={s.id} s={s} flash={isFlash(s.id)} left={s.remaining_seconds == null ? null : Math.max(0, s.remaining_seconds - elapsed)} />)}
         </div>
       </div>
     </div>,
