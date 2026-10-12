@@ -124,7 +124,7 @@ export function ExamEditor({ klass, subjects = [], initial, onClose, onDone }) {
               <label className="text-xs font-semibold text-slate-600 uppercase">Kelas Tujuan</label>
               {klass || isEdit ? <p className="mt-1 px-3 py-2.5 rounded-xl bg-slate-100 text-sm font-semibold">{klass?.name || initial?.kelas}</p> : (
                 <select data-testid="exam-class-select" value={classId} onChange={e => { setClassId(e.target.value); setSubject(""); }} className={`mt-1 ${vgInput}`}>
-                  <option value="">— Pilih kelas —</option>
+                  <option value="">{classes.length ? "— Pilih kelas —" : "Memuat kelas..."}</option>
                   {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               )}
