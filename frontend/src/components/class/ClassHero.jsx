@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
-import { School, Users, BookOpen, ClipboardList, BrainCircuit, ShieldCheck, UserCog, PiggyBank, Network, CalendarClock } from "lucide-react";
+import { School, Users, BookOpen, ClipboardList, BrainCircuit, ShieldCheck, UserCog, PiggyBank, Network, CalendarClock, CalendarDays, ClipboardCheck, Trophy, FileSpreadsheet, Megaphone, LayoutGrid, MessagesSquare } from "lucide-react";
 
 function CountUp({ value }) {
   const [n, setN] = useState(0);
@@ -64,8 +64,16 @@ export function ClassHero({ klass, counts, isTeacher, onReschedule }) {
 
 const TABS = [
   { k: "tugas", label: "Tugas", icon: ClipboardList, tone: "from-sky-500 to-sky-600" },
+  { k: "materi", label: "Materi", icon: BookOpen, tone: "from-cyan-500 to-sky-600" },
   { k: "quiz", label: "Mini-Quiz", icon: BrainCircuit, tone: "from-violet-500 to-fuchsia-500" },
   { k: "ujian", label: "Ujian", icon: ShieldCheck, tone: "from-indigo-500 to-indigo-700" },
+  { k: "jadwal", label: "Jadwal", icon: CalendarDays, tone: "from-blue-500 to-indigo-600" },
+  { k: "absensi", label: "Rekap Absensi", icon: ClipboardCheck, tone: "from-teal-500 to-emerald-600" },
+  { k: "rapor", label: "Rapor", icon: FileSpreadsheet, tone: "from-emerald-500 to-green-600" },
+  { k: "peringkat", label: "Peringkat", icon: Trophy, tone: "from-amber-400 to-orange-500" },
+  { k: "agenda", label: "Agenda", icon: Megaphone, tone: "from-rose-500 to-pink-600" },
+  { k: "denah", label: "Denah", icon: LayoutGrid, tone: "from-slate-500 to-slate-700" },
+  { k: "diskusi", label: "Diskusi", icon: MessagesSquare, tone: "from-fuchsia-500 to-purple-600" },
   { k: "kas", label: "Uang Kas", icon: PiggyBank, tone: "from-emerald-500 to-teal-500" },
   { k: "bph", label: "BPH", icon: Network, tone: "from-amber-500 to-orange-500" },
 ];

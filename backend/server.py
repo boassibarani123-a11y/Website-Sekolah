@@ -7444,6 +7444,396 @@ async def piket_tv(user=Depends(require_roles(*sorted(set(PIKET_VIEW) | set(GATE
             "today": today_sh, "upcoming": [x for x in shifts if x["date"] > today][:12],
             "recent": [{k: l.get(k) for k in ("id", "user_name", "kelas", "time", "direction", "late", "unauthorized", "method")} for l in logs[:8]]}
 
+# ==================== CLASS EXTRAS ====================
+# Materi, Jadwal, Rekap Absensi, Papan Peringkat, Rapor Ringkas,
+# Agenda & Pengumuman, Denah Tempat Duduk, Diskusi kelas.
+STUDENT_IN_CLASS_ROLES = ["siswa", "ketua_kelas", "ketua_osis"]
+CLASS_DAYS = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
+
+
+async def _load_class_or_404(cid: str) -> dict:
+    c = await db.classes.find_one({"id": cid}, {"_id": 0})
+    if not c:
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    return c
+
+
+async def _assert_class_manage(user: dict, klass: Optional[dict]):
+    """super_admin, or a guru who is homeroom / teaches a subject in the class."""
+    if user.get("role") == "super_admin":
+        return
+    if user.get("role") == "guru" and guru_can_access_class(user, klass):
+        return
+    raise HTTPException(403, "Hanya guru pengampu/wali kelas atau Super Admin yang dapat mengelola bagian ini")
+
+
+async def _class_students(klass: dict, user: dict) -> list:
+    return await db.users.find(
+        {"role": {"$in": STUDENT_IN_CLASS_ROLES}, "kelas": klass["name"], **dscope(user)},
+        {"_id": 0, "id": 1, "name": 1, "photo": 1, "nis": 1, "nisn": 1},
+    ).sort("name", 1).to_list(2000)
+
+
+async def _class_view_ok(cid: str, user: dict) -> dict:
+    klass = await _load_class_or_404(cid)
+    await assert_class_view(user, klass)
+    await assert_class_unlocked(user, klass)
+    return klass
+
+
+# ---------------- 1. MATERI & BAHAN AJAR ----------------
+class MaterialIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    subject: Optional[str] = None
+    link: Optional[str] = None
+    attachments: Optional[List[dict]] = None
+
+
+@api.get("/classes/{cid}/materials")
+async def list_materials(cid: str, subject: Optional[str] = None, user=Depends(get_current_user)):
+    await _class_view_ok(cid, user)
+    q = {"class_id": cid, **dscope(user)}
+    if subject and subject != "all":
+        q["subject"] = subject
+    return await db.class_materials.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api.post("/classes/{cid}/materials")
+async def create_material(cid: str, body: MaterialIn, user=Depends(require_roles("guru", "super_admin"))):
+    klass = await _load_class_or_404(cid)
+    await _assert_class_manage(user, klass)
+    doc = {"id": str(uuid.uuid4()), "class_id": cid, **body.model_dump(),
+           "teacher_id": user["id"], "teacher_name": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.class_materials.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/materials/{mid}")
+async def delete_material(mid: str, user=Depends(require_roles("guru", "super_admin"))):
+    m = await db.class_materials.find_one({"id": mid})
+    if not m:
+        raise HTTPException(404, "Materi tidak ditemukan")
+    if user["role"] != "super_admin" and m.get("teacher_id") != user["id"]:
+        raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus materi ini")
+    await db.class_materials.delete_one({"id": mid})
+    return {"ok": True}
+
+
+# ---------------- 2. JADWAL PELAJARAN ----------------
+class ScheduleIn(BaseModel):
+    day: int
+    start: str
+    end: str
+    subject: str
+    teacher_name: Optional[str] = ""
+    room: Optional[str] = ""
+
+
+@api.get("/classes/{cid}/schedule")
+async def list_schedule(cid: str, user=Depends(get_current_user)):
+    await _class_view_ok(cid, user)
+    rows = await db.class_schedule.find({"class_id": cid, **dscope(user)}, {"_id": 0}).to_list(500)
+    rows.sort(key=lambda r: (r.get("day", 0), r.get("start", "")))
+    return rows
+
+
+@api.post("/classes/{cid}/schedule")
+async def create_schedule(cid: str, body: ScheduleIn, user=Depends(require_roles("guru", "super_admin"))):
+    klass = await _load_class_or_404(cid)
+    await _assert_class_manage(user, klass)
+    if not 0 <= body.day <= 5:
+        raise HTTPException(400, "Hari tidak valid")
+    doc = {"id": str(uuid.uuid4()), "class_id": cid, **body.model_dump(), "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.class_schedule.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/schedule/{sid}")
+async def delete_schedule(sid: str, user=Depends(require_roles("guru", "super_admin"))):
+    s = await db.class_schedule.find_one({"id": sid})
+    if not s:
+        raise HTTPException(404, "Jadwal tidak ditemukan")
+    klass = await db.classes.find_one({"id": s.get("class_id")})
+    await _assert_class_manage(user, klass)
+    await db.class_schedule.delete_one({"id": sid})
+    return {"ok": True}
+
+
+# ---------------- 3. REKAP ABSENSI KELAS ----------------
+@api.get("/classes/{cid}/attendance-recap")
+async def class_attendance_recap(cid: str, start: Optional[str] = None, end: Optional[str] = None, user=Depends(get_current_user)):
+    klass = await _class_view_ok(cid, user)
+    students = await _class_students(klass, user)
+    q = {"kelas": klass["name"], **dscope(user)}
+    if start or end:
+        dq = {}
+        if start: dq["$gte"] = start
+        if end: dq["$lte"] = end
+        q["date"] = dq
+    docs = await db.attendance.find(q, {"_id": 0, "student_id": 1, "status": 1, "date": 1}).to_list(50000)
+    by = {}
+    for d in docs:
+        b = by.setdefault(d["student_id"], {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0})
+        st = d.get("status") or "alpa"
+        if st in b:
+            b[st] += 1
+    rows = []
+    for s in students:
+        b = by.get(s["id"], {"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0})
+        total = sum(b.values())
+        rows.append({"student_id": s["id"], "name": s["name"], "photo": s.get("photo"),
+                     **b, "total": total, "percent": round(b["hadir"] / total * 100, 1) if total else 0})
+    return {"class_name": klass["name"], "days": sorted({d["date"] for d in docs if d.get("date")}), "rows": rows}
+
+
+# ---------------- 4/5. SKOR TERPADU (RAPOR & PERINGKAT) ----------------
+async def _class_scores(klass: dict, user: dict, subject: Optional[str] = None) -> list:
+    cid, cname = klass["id"], klass["name"]
+    students = await _class_students(klass, user)
+    sm = {s["id"]: {"student_id": s["id"], "name": s["name"], "photo": s.get("photo"),
+                    "tugas": [], "quiz": [], "ujian": []} for s in students}
+    by_class = {"$or": [{"class_id": cid}, {"kelas": cname}]}
+
+    def match_subj(d):
+        return (not subject or subject == "all") or d.get("subject") == subject
+
+    assigns = await db.assignments.find({"$and": [dscope(user), by_class]}, {"_id": 0, "id": 1, "subject": 1}).to_list(2000)
+    aids = [a["id"] for a in assigns if match_subj(a)]
+    if aids:
+        async for s in db.submissions.find({"assignment_id": {"$in": aids}, "grade": {"$ne": None}}, {"_id": 0, "student_id": 1, "grade": 1}):
+            if s["student_id"] in sm:
+                sm[s["student_id"]]["tugas"].append(s["grade"])
+
+    quizzes = await db.quizzes.find({"$and": [dscope(user), by_class]}, {"_id": 0, "id": 1, "subject": 1}).to_list(2000)
+    qids = [q["id"] for q in quizzes if match_subj(q)]
+    if qids:
+        async for a in db.quiz_attempts.find({"quiz_id": {"$in": qids}}, {"_id": 0, "student_id": 1, "percent": 1}):
+            if a["student_id"] in sm:
+                sm[a["student_id"]]["quiz"].append(a.get("percent") or 0)
+
+    exams = await db.exams.find({"$and": [dscope(user), by_class]}, {"_id": 0, "id": 1, "subject": 1}).to_list(2000)
+    eids = [e["id"] for e in exams if match_subj(e)]
+    if eids:
+        async for a in db.exam_attempts.find({"exam_id": {"$in": eids}}, {"_id": 0, "student_id": 1, "percent": 1}):
+            if a["student_id"] in sm:
+                sm[a["student_id"]]["ujian"].append(a.get("percent") or 0)
+
+    att_docs = await db.attendance.find({"kelas": cname, **dscope(user)}, {"_id": 0, "student_id": 1, "status": 1}).to_list(50000)
+    att = {}
+    for d in att_docs:
+        t = att.setdefault(d["student_id"], {"h": 0, "n": 0})
+        t["n"] += 1
+        t["h"] += 1 if d.get("status") == "hadir" else 0
+
+    avg = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
+    rows = []
+    for sid, v in sm.items():
+        a = att.get(sid)
+        att_pct = round(a["h"] / a["n"] * 100, 1) if a and a["n"] else None
+        tugas, quiz, ujian = avg(v["tugas"]), avg(v["quiz"]), avg(v["ujian"])
+        comps = [x for x in (tugas, quiz, ujian) if x is not None]
+        rows.append({"student_id": sid, "name": v["name"], "photo": v["photo"],
+                     "tugas": tugas, "quiz": quiz, "ujian": ujian, "kehadiran": att_pct,
+                     "nilai": round(sum(comps) / len(comps), 1) if comps else None,
+                     "n_tugas": len(v["tugas"]), "n_quiz": len(v["quiz"]), "n_ujian": len(v["ujian"])})
+    return rows
+
+
+@api.get("/classes/{cid}/report-card")
+async def class_report_card(cid: str, subject: Optional[str] = None, user=Depends(get_current_user)):
+    klass = await _class_view_ok(cid, user)
+    rows = await _class_scores(klass, user, subject)
+    rows.sort(key=lambda r: (r["name"] or "").lower())
+    return {"class_name": klass["name"], "subject": subject, "subjects": klass.get("subjects", []), "rows": rows}
+
+
+@api.get("/classes/{cid}/leaderboard")
+async def class_leaderboard(cid: str, user=Depends(get_current_user)):
+    klass = await _class_view_ok(cid, user)
+    rows = await _class_scores(klass, user, None)
+    for r in rows:
+        parts = [r[k] for k in ("tugas", "quiz", "ujian", "kehadiran") if r.get(k) is not None]
+        r["poin"] = round(sum(parts) / len(parts), 1) if parts else 0
+    rows.sort(key=lambda r: (-r["poin"], (r["name"] or "").lower()))
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return {"class_name": klass["name"], "rows": rows}
+
+
+# ---------------- 6. AGENDA & PENGUMUMAN KELAS ----------------
+class ClassAnnounceIn(BaseModel):
+    title: str
+    body: Optional[str] = ""
+    pinned: bool = False
+
+
+class ClassAgendaIn(BaseModel):
+    title: str
+    date: str
+    time: Optional[str] = ""
+    kind: Optional[str] = "acara"
+
+
+@api.get("/classes/{cid}/announcements")
+async def list_class_announcements(cid: str, user=Depends(get_current_user)):
+    await _class_view_ok(cid, user)
+    rows = await db.class_announcements.find({"class_id": cid, **dscope(user)}, {"_id": 0}).sort("created_at", -1).to_list(300)
+    rows.sort(key=lambda r: (not r.get("pinned"),))
+    return rows
+
+
+@api.post("/classes/{cid}/announcements")
+async def create_class_announcement(cid: str, body: ClassAnnounceIn, user=Depends(require_roles("guru", "super_admin", "ketua_kelas"))):
+    klass = await _load_class_or_404(cid)
+    if user["role"] == "ketua_kelas":
+        if user.get("kelas") != klass["name"]:
+            raise HTTPException(403, "Bukan ketua kelas ini")
+    else:
+        await _assert_class_manage(user, klass)
+    doc = {"id": str(uuid.uuid4()), "class_id": cid, **body.model_dump(),
+           "author_id": user["id"], "author_name": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.class_announcements.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/class-announcements/{aid}")
+async def delete_class_announcement(aid: str, user=Depends(get_current_user)):
+    a = await db.class_announcements.find_one({"id": aid})
+    if not a:
+        raise HTTPException(404, "Pengumuman tidak ditemukan")
+    if user["role"] not in ("super_admin", "guru") and a.get("author_id") != user["id"]:
+        raise HTTPException(403, "Tidak diizinkan")
+    await db.class_announcements.delete_one({"id": aid})
+    return {"ok": True}
+
+
+@api.get("/classes/{cid}/agenda")
+async def list_class_agenda(cid: str, user=Depends(get_current_user)):
+    await _class_view_ok(cid, user)
+    rows = await db.class_agenda.find({"class_id": cid, **dscope(user)}, {"_id": 0}).to_list(500)
+    rows.sort(key=lambda r: (r.get("date", ""), r.get("time", "")))
+    return rows
+
+
+@api.post("/classes/{cid}/agenda")
+async def create_class_agenda(cid: str, body: ClassAgendaIn, user=Depends(require_roles("guru", "super_admin", "ketua_kelas"))):
+    klass = await _load_class_or_404(cid)
+    if user["role"] == "ketua_kelas":
+        if user.get("kelas") != klass["name"]:
+            raise HTTPException(403, "Bukan ketua kelas ini")
+    else:
+        await _assert_class_manage(user, klass)
+    doc = {"id": str(uuid.uuid4()), "class_id": cid, **body.model_dump(),
+           "author_name": user["name"], "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.class_agenda.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/class-agenda/{eid}")
+async def delete_class_agenda(eid: str, user=Depends(require_roles("guru", "super_admin", "ketua_kelas"))):
+    e = await db.class_agenda.find_one({"id": eid})
+    if not e:
+        raise HTTPException(404, "Agenda tidak ditemukan")
+    klass = await db.classes.find_one({"id": e.get("class_id")})
+    if user["role"] == "ketua_kelas":
+        if not klass or user.get("kelas") != klass.get("name"):
+            raise HTTPException(403, "Tidak diizinkan")
+    else:
+        await _assert_class_manage(user, klass)
+    await db.class_agenda.delete_one({"id": eid})
+    return {"ok": True}
+
+
+# ---------------- 7. DENAH TEMPAT DUDUK ----------------
+class SeatingIn(BaseModel):
+    rows: int = 5
+    cols: int = 6
+    seats: Dict[str, Optional[str]] = {}
+
+
+@api.get("/classes/{cid}/seating")
+async def get_seating(cid: str, user=Depends(get_current_user)):
+    klass = await _class_view_ok(cid, user)
+    doc = await db.class_seating.find_one({"class_id": cid}, {"_id": 0})
+    students = await _class_students(klass, user)
+    return {"layout": doc or {"class_id": cid, "rows": 5, "cols": 6, "seats": {}}, "students": students}
+
+
+@api.put("/classes/{cid}/seating")
+async def set_seating(cid: str, body: SeatingIn, user=Depends(require_roles("guru", "super_admin"))):
+    klass = await _load_class_or_404(cid)
+    await _assert_class_manage(user, klass)
+    seats = {k: v for k, v in (body.seats or {}).items() if v}
+    data = {"class_id": cid, "rows": max(1, min(12, body.rows)), "cols": max(1, min(12, body.cols)),
+            "seats": seats, "updated_at": now_iso(), "updated_by": user["name"]}
+    await db.class_seating.replace_one({"class_id": cid}, {**data, "is_demo": bool(user.get("is_demo"))}, upsert=True)
+    return data
+
+
+# ---------------- 8. DISKUSI / TANYA-JAWAB KELAS ----------------
+class DiscussionIn(BaseModel):
+    title: str
+    body: Optional[str] = ""
+    subject: Optional[str] = None
+
+
+class ReplyIn(BaseModel):
+    body: str
+
+
+@api.get("/classes/{cid}/discussions")
+async def list_discussions(cid: str, subject: Optional[str] = None, user=Depends(get_current_user)):
+    await _class_view_ok(cid, user)
+    q = {"class_id": cid, **dscope(user)}
+    if subject and subject != "all":
+        q["subject"] = subject
+    rows = await db.class_discussions.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for r in rows:
+        r["reply_count"] = len(r.get("replies", []))
+    return rows
+
+
+@api.post("/classes/{cid}/discussions")
+async def create_discussion(cid: str, body: DiscussionIn, user=Depends(get_current_user)):
+    await _class_view_ok(cid, user)
+    doc = {"id": str(uuid.uuid4()), "class_id": cid, **body.model_dump(),
+           "author_id": user["id"], "author_name": user["name"], "author_role": user["role"],
+           "replies": [], "created_at": now_iso()}
+    dstamp(doc, user)
+    await db.class_discussions.insert_one(doc); doc.pop("_id", None)
+    return doc
+
+
+@api.post("/discussions/{did}/reply")
+async def reply_discussion(did: str, body: ReplyIn, user=Depends(get_current_user)):
+    d = await db.class_discussions.find_one({"id": did})
+    if not d:
+        raise HTTPException(404, "Diskusi tidak ditemukan")
+    klass = await db.classes.find_one({"id": d.get("class_id")}, {"_id": 0})
+    await assert_class_view(user, klass)
+    reply = {"id": str(uuid.uuid4()), "body": body.body, "author_id": user["id"],
+             "author_name": user["name"], "author_role": user["role"], "created_at": now_iso()}
+    await db.class_discussions.update_one({"id": did}, {"$push": {"replies": reply}})
+    return reply
+
+
+@api.delete("/discussions/{did}")
+async def delete_discussion(did: str, user=Depends(get_current_user)):
+    d = await db.class_discussions.find_one({"id": did})
+    if not d:
+        raise HTTPException(404, "Diskusi tidak ditemukan")
+    if user["role"] not in ("super_admin", "guru") and d.get("author_id") != user["id"]:
+        raise HTTPException(403, "Tidak diizinkan")
+    await db.class_discussions.delete_one({"id": did})
+    return {"ok": True}
+
+
+
 app.include_router(api)
 
 @app.on_event("shutdown")

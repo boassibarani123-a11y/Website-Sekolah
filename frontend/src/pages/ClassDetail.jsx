@@ -12,6 +12,7 @@ import { ClassUnlock } from "@/components/ClassUnlock";
 import { ClassBPH } from "@/components/ClassBPH";
 import { ClassExam } from "@/components/ClassExam";
 import { ClassHero, ClassTabs, useClassCounts } from "@/components/class/ClassHero";
+import { ClassMateri, ClassJadwal, ClassRekapAbsensi, ClassLeaderboard, ClassRapor, ClassAgenda, ClassDenah, ClassDiskusi } from "@/components/class/ClassExtras";
 import { SafeHtml, stripHtml } from "@/lib/safeHtml";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -155,6 +156,7 @@ export default function ClassDetail() {
 
       <ClassTabs tab={tab} setTab={setTab} counts={counts}/>
 
+      {["tugas","quiz","ujian","materi","rapor","diskusi"].includes(tab) && (
       <div className="flex flex-wrap items-center gap-2" data-testid="subject-filters">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Filter Mapel</span>
         <button onClick={()=>setSubject("all")} data-testid="subject-filter-all"
@@ -169,6 +171,7 @@ export default function ClassDetail() {
         ))}
         {subjects.length===0 && <span className="text-xs text-slate-400 italic">Belum ada mapel di kelas ini</span>}
       </div>
+      )}
 
       <div key={tab} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
 
@@ -178,8 +181,17 @@ export default function ClassDetail() {
         </div>
       )}
 
-      {tab === "bph" ? <ClassBPH klass={klass}/> : tab === "kas" ? <ClassKas klass={klass}/>
+      {tab === "bph" ? <ClassBPH klass={klass}/>
+        : tab === "kas" ? <ClassKas klass={klass}/>
         : tab === "ujian" ? <ClassExam klass={klass} subject={subject} teachSubjects={teachSubjects} isTeacher={isTeacher} canManage={canManage}/>
+        : tab === "materi" ? <ClassMateri klass={klass} subject={subject} canManage={canManage} teachSubjects={teachSubjects}/>
+        : tab === "jadwal" ? <ClassJadwal klass={klass} canManage={canManage}/>
+        : tab === "absensi" ? <ClassRekapAbsensi klass={klass}/>
+        : tab === "rapor" ? <ClassRapor klass={klass} subject={subject}/>
+        : tab === "peringkat" ? <ClassLeaderboard klass={klass}/>
+        : tab === "agenda" ? <ClassAgenda klass={klass}/>
+        : tab === "denah" ? <ClassDenah klass={klass} canManage={canManage}/>
+        : tab === "diskusi" ? <ClassDiskusi klass={klass} subject={subject} teachSubjects={teachSubjects}/>
         : tab === "tugas"
         ? <TugasTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>
         : <QuizTab klass={klass} subject={subject} subjects={subjects} teachSubjects={teachSubjects} isTeacher={isTeacher} isStudent={isStudent} canManage={canManage}/>}
