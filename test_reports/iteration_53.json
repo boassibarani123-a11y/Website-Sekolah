@@ -1,0 +1,42 @@
+{
+  "summary": "Iter53 verified realtime proctor SSE, Bank Soal CRUD + ACL + UI, 5-digit face-confirm validation, and pretty Excel exports across 9 endpoints. Backend: 25/25 pytest pass in /app/backend/tests/test_iter53_realtime_bank_face_excel.py (JUnit at /app/test_reports/pytest/iter53.xml). Covered: (a) /api/question-bank list/from-exam dedupe/use increments used_count/delete/siswa 403; (b) GET /api/exams/{eid}/live shape + 403 siswa; GET /api/exams/{eid}/live/stream returns text/event-stream with 'retry: 2000' + 'event: live' within <2s, siswa 403; (c) /api/attendance/face-confirm now rejects 4-digit (422) and 6-digit (422) and accepts 5-digit payload, backend prompt mentions '5 angka NIS'; (d) 9 pretty exports (users/users-staff/attendance/attendance_week/social-fund/inventory/ppdb/library/piket) all return valid xlsx with LAPORAN/REKAP/DAFTAR title in row 2 and 2F6FD6 blue header (row 6, or row 5 for weekly matrix format); exam export has both 'Nilai Ujian' + 'Analisis Butir' sheets; /api/users/import/template still plain (header in row 1 starts with 'Nama'). Frontend (Playwright): Live Proctor opens from exam-live-{id}, proctor-connection[data-mode='live'] after SSE connects, 2 tiles rendered without manual refresh. ExamAnalysis modal shows analysis-select-good + analysis-save-bank + analysis-selected-count (updates to 1 after clicking analysis-select-1). Exam editor exam-open-bank -> bank-picker-modal with bank-search/subject-filter/type-filter present; 2 bank items visible, selecting enables bank-use-button. Piket page (/piket, super_admin): 13/14 testids present (piket-mine-steps missing because super_admin has no scheduled shift - conditional render, acceptable). piket-create-button opens modal with piket-teacher-select + piket-save-button. Week view: 7 day rows + 6 add buttons rendered.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "DashboardLayout (any page)", "issues": ["React hydration warning: '<span> cannot be a child of <...>' originating around DashboardLayout.jsx line 100 / an <option> element. Cosmetic console noise, doesn't affect rendering."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter53_realtime_bank_face_excel.py",
+    "/app/test_reports/pytest/iter53.xml"
+  ],
+  "action_items": [
+    "(low) Clean up the <span>-in-<option> (or similar) nesting in DashboardLayout.jsx:100 to silence the React hydration warning seen on every page load.",
+    "(info) piket-mine-steps is only rendered when the current user has an upcoming shift. Confirm this is the intended behaviour; otherwise show a stepper placeholder to make the review spec reproducible."
+  ],
+  "critical_code_review_comments": [
+    "server.py:6587-6605 exam_live_stream polls Mongo every 1s per client with no shared pub/sub. For a classroom of 30+ students x multiple proctors this will linearly multiply DB load. Consider a single ticker per exam using asyncio.Event / change streams.",
+    "server.py:6516 _bank_scope merges dscope() twice for super_admin (dscope on top-level and inside the dict). Harmless but confusing; drop the second spread for the super_admin branch.",
+    "server.py:6537 duplicate detection only compares exact normalized text ('q'.strip().lower()). Will keep near-duplicates with minor whitespace / punctuation differences. Fine for v1 but worth revisiting (fingerprint on alnum-only).",
+    "LiveProctor.jsx:99 EventSource is constructed with { withCredentials: true } which only forwards cookies. If the user authenticated via Bearer token only (no cookie), the stream will 401 and silently fall through to polling. Logging the mode='polling' fallback already helps; consider surfacing a one-time toast.",
+    "DigitPad.jsx:8 the auto-submit effect fires on every v change; it's gated by length===LEN but still re-runs onSubmit if parent re-renders without resetting v. Reset v after onSubmit to guarantee single-shot submission.",
+    "server.py is now 6985 lines - exam/vortex-guard block still a strong refactor candidate (also flagged in iter50/51/52)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter53_realtime_bank_face_excel.py",
+    "/app/test_reports/iteration_53.json",
+    "/app/test_reports/pytest/iter53.xml"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "~95% (all core flows verified; piket-mine-steps missing only because super_admin had no scheduled shift today)"},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged. No new accounts created.",
+  "seed_data_creation": "Ephemeral: a few additional bank-soal items were saved from 'Uji Analisis' then one was deleted to verify the delete path. Existing 'Uji Analisis' exam + VG2026 token + siswa submission preserved.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter53_realtime_bank_face_excel.py. SSE test waits up to 6s for the first 'event: live' frame. For future proctor tests, verify realtime UPDATE propagation by starting an exam as a siswa in a second session and asserting the first session's tile transitions to state='mengerjakan' within ~2s - skipped here because it needs 2 concurrent Playwright contexts. The pretty_excel header assertion accepts header on row 5 (matrix) or row 6 (standard) with fgColor 2F6FD6.",
+  "rca of the issue": "N/A - no defects detected."
+}

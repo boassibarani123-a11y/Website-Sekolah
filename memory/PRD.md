@@ -51,3 +51,11 @@ Admin (super_admin), Guru, Siswa (+ other existing roles from repo)
 ## Backlog
 - P1: bulk import 500+ siswa (needs file), Brevo email activation, websocket proctor dashboard
 - P2: AI question generation, WhatsApp notifications, backend module split
+
+## Update 2026-06 — Realtime proctor, Bank Soal, Face NIS, Piket UI, Excel style
+- Live proctor via SSE GET /api/exams/{eid}/live/stream (push on change, ping/resync 20s, auto fallback to 4s polling); LiveProctor shows connection mode
+- Bank Soal: collection question_bank; POST /question-bank/from-exam (dedupe, stores P/D stats), GET /question-bank, POST /question-bank/use, DELETE; UI in Analisis modal (select + "Pilih soal berkualitas") and editor picker "Ambil dari Bank Soal"
+- Face ID lookalike confirm: exactly 5 digits = NIS (siswa) / last 5 of NIP (guru); DigitPad 5 dots
+- Piket Gerbang redesign: guide strip, gate status, step indicator, today timeline, stats with hints, weekly agenda list + legend
+- Excel: write_report_sheet/pretty_excel structured style (centered title + logo, blue header, section rows per group, grey subtotals, blue totals/summary, Rp format); grouping per export; exam export analysis sheet uses same style
+- iteration_53: backend 25/25, frontend flows pass
