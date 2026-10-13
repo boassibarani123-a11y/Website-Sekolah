@@ -20,6 +20,13 @@ Super Admin, Staff TU, Guru, Siswa, Admin Absensi/Satpam
 - AI: _ai_text now uses Claude claude-sonnet-4-5-20250929 via Emergent key; POST /api/ai/exam-generate (PG + esai from material), GET /api/ai/status; "Buat dengan AI" in exam editor
 - Seed script scripts/seed_test_data.py; iteration_55: backend 17/17, frontend 9/9 flows pass
 
+## Implemented (2026-10-13, iterasi 2)
+- Piket TV: right panel rotates (10s) to "Belum Kembali dari Izin Keluar" (ik_out in /api/piket/tv), overdue highlighted
+- Absensi (Presensi Barcode & Wajah) dark theme via .att-dark scope
+- Vortex Guard mobile: auto fullscreen on start + tap re-enter, portrait orientation lock (Android), Wake Lock, iPhone Guided Access note
+- New school logo (transparent 1024px) + PWA icons
+- scripts/update-vps.sh + DEPLOY_VPS_UPDATE.md (main23); iteration_56 all pass
+
 ## Backlog
 - P1: Isi BREVO_API_KEY + BREVO_SENDER_EMAIL (verified sender) to activate email
 - P1: Load real 500+ student Excel data
