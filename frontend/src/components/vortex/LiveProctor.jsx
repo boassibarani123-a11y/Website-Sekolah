@@ -67,7 +67,7 @@ export function LiveProctor({ exam, onClose }) {
   const [q, setQ] = useState("");
   const [full, setFull] = useState(false);
   const [tick, setTick] = useState(0);
-  const fetchedAt = useRef(Date.now());
+  const fetchedAt = useRef(0);
   const prev = useRef(null);
   const audio = useRef(null);
   const [sound, setSound] = useState(true);
@@ -90,9 +90,20 @@ export function LiveProctor({ exam, onClose }) {
     }
     prev.current = map;
   };
-  const load = useCallback(() => api.get(`/exams/${exam.id}/live`).then(r => { fetchedAt.current = Date.now(); detect(r.data.students); setD(r.data); setErr(""); })
-    .catch(e => setErr(e.response?.data?.detail || "Gagal memuat data pengawasan")), [exam.id]);
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [load]);
+  const [mode, setMode] = useState("connecting");
+  const apply = (data) => { fetchedAt.current = Date.now(); detect(data.students); setD(data); setErr(""); };
+  const load = useCallback(() => api.get(`/exams/${exam.id}/live`).then(r => apply(r.data))
+    .catch(e => setErr(e.response?.data?.detail || "Gagal memuat data pengawasan")), [exam.id]); // eslint-disable-line
+  useEffect(() => {
+    let poll = null, fails = 0;
+    const es = new EventSource(`${process.env.REACT_APP_BACKEND_URL}/api/exams/${exam.id}/live/stream`, { withCredentials: true });
+    const startPoll = () => { if (!poll) { setMode("polling"); load(); poll = setInterval(load, 4000); } };
+    es.addEventListener("live", (e) => { fails = 0; setMode("live"); if (poll) { clearInterval(poll); poll = null; } apply(JSON.parse(e.data)); });
+    es.addEventListener("ping", () => { fails = 0; setMode("live"); });
+    es.onerror = () => { fails += 1; if (fails >= 2 || es.readyState === EventSource.CLOSED) startPoll(); };
+    const guard = setTimeout(() => { if (!fetchedAt.current || Date.now() - fetchedAt.current > 5000) startPoll(); }, 5000);
+    return () => { es.close(); clearInterval(poll); clearTimeout(guard); };
+  }, [exam.id, load]); // eslint-disable-line
   useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { soundRef.current = sound; }, [sound]);
   useEffect(() => () => { audio.current?.close?.(); }, []);
@@ -102,7 +113,7 @@ export function LiveProctor({ exam, onClose }) {
     document.addEventListener("fullscreenchange", f);
     return () => document.removeEventListener("fullscreenchange", f);
   }, []);
-  const elapsed = Math.floor((Date.now() - fetchedAt.current) / 1000) + tick * 0;
+  const elapsed = fetchedAt.current ? Math.floor((Date.now() - fetchedAt.current) / 1000) + tick * 0 : 0;
   const list = useMemo(() => (d?.students || [])
     .filter(s => (filter === "semua" || s.state === filter) && (!q || s.name.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.violations || 0) - (a.violations || 0) || a.name.localeCompare(b.name)), [d, filter, q]);
@@ -115,7 +126,7 @@ export function LiveProctor({ exam, onClose }) {
           <VortexLogo size="sm" dark />
           <div className="min-w-0">
             <p className="font-heading font-bold truncate">{exam.title}</p>
-            <p className="text-xs text-teal-200 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />Pengawas langsung · Kelas {exam.kelas} · diperbarui tiap 4 detik</p>
+            <p data-testid="proctor-connection" data-mode={mode} className="text-xs text-teal-200 flex items-center gap-1.5"><span className={`w-1.5 h-1.5 rounded-full animate-pulse ${mode === "live" ? "bg-emerald-400" : mode === "polling" ? "bg-amber-400" : "bg-slate-400"}`} />Pengawas langsung · Kelas {exam.kelas} · {mode === "live" ? "Real-time (tersambung)" : mode === "polling" ? "Mode cadangan · tiap 4 detik" : "Menyambungkan…"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

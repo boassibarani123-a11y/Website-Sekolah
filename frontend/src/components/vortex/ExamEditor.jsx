@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
 import { toast } from "sonner";
-import { X, Trash2, Timer, Lock, AlertTriangle, CalendarClock, Shuffle, ListChecks, AlignLeft, Plus } from "lucide-react";
+import { X, Trash2, Timer, Lock, AlertTriangle, CalendarClock, Shuffle, ListChecks, AlignLeft, Plus, Library } from "lucide-react";
 import { VortexLogo, vgInput, toLocalInput } from "./VortexLogo";
+import { QuestionBankPicker } from "./QuestionBankPicker";
 
 const blankMc = () => ({ type: "mc", q: "", options: ["", "", "", ""], answer: 0 });
 const blankEssay = () => ({ type: "essay", q: "", options: [], answer: 0 });
@@ -80,6 +81,7 @@ export function ExamEditor({ klass, subjects = [], initial, onClose, onDone }) {
   const [shuffleO, setShuffleO] = useState(initial?.shuffle_options ?? true);
   const [kkm, setKkm] = useState(initial?.kkm ?? 75);
   const [busy, setBusy] = useState(false);
+  const [bankOpen, setBankOpen] = useState(false);
 
   useEffect(() => { if (!klass) api.get("/classes").then(r => setClasses(r.data)).catch(() => {}); }, [klass]);
   const selClass = klass || classes.find(c => c.id === classId);
@@ -165,7 +167,8 @@ export function ExamEditor({ klass, subjects = [], initial, onClose, onDone }) {
             <label className="flex items-center gap-2"><input data-testid="exam-shuffle-options" type="checkbox" checked={shuffleO} onChange={e => setShuffleO(e.target.checked)} className="accent-teal-700" /><Shuffle className="w-3.5 h-3.5 text-slate-500" />Acak urutan opsi</label>
           </div>
           <div className="flex items-center justify-between pt-2 border-t">
-            <p className="font-heading font-bold text-sm">Bank Soal <span className="text-slate-400 font-normal">({qs.length})</span></p>
+            <p className="font-heading font-bold text-sm">Daftar Soal <span className="text-slate-400 font-normal">({qs.length})</span></p>
+            <button data-testid="exam-open-bank" onClick={() => setBankOpen(true)} className="px-3 py-1.5 rounded-lg bg-teal-50 text-teal-800 hover:bg-teal-100 text-xs font-semibold flex items-center gap-1.5"><Library className="w-3.5 h-3.5" />Ambil dari Bank Soal</button>
           </div>
           {qs.map((q, qi) => (
             <QuestionCard key={qi} q={q} qi={qi} onChange={nq => setQs(qs.map((x, i) => i === qi ? nq : x))} onRemove={() => setQs(qs.filter((_, i) => i !== qi))} />
@@ -175,6 +178,8 @@ export function ExamEditor({ klass, subjects = [], initial, onClose, onDone }) {
             <button data-testid="exam-add-essay" onClick={() => setQs([...qs, blankEssay()])} className="py-2 border-2 border-dashed border-slate-300 rounded-xl text-sm font-semibold text-slate-600 hover:border-teal-600 hover:text-teal-700 flex items-center justify-center gap-1.5 transition-colors"><Plus className="w-4 h-4" /><AlignLeft className="w-4 h-4" />Esai</button>
           </div>
         </div>
+        {bankOpen && <QuestionBankPicker subject={subject} onClose={() => setBankOpen(false)}
+          onPick={(picked) => { setQs([...qs.filter(q => q.q.trim()), ...picked]); setBankOpen(false); }} />}
         <div className="p-5 border-t">
           <button data-testid="save-exam-button" disabled={busy} onClick={submit} className="w-full py-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-semibold disabled:opacity-60 transition-colors">{busy ? "Menyimpan..." : isEdit ? "Simpan Perubahan" : "Terbitkan Ujian"}</button>
         </div>

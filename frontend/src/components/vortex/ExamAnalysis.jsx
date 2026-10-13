@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/apiClient";
-import { X, AlertTriangle, ChevronDown, FileSpreadsheet, BarChart3 } from "lucide-react";
+import { X, AlertTriangle, ChevronDown, FileSpreadsheet, BarChart3, Library, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { VortexLogo } from "./VortexLogo";
 import { downloadExamExport } from "./examExport";
@@ -71,11 +72,15 @@ function OptionBars({ it }) {
   );
 }
 
-function ItemRow({ it }) {
+const isGood = (it) => it.type === "essay" ? it.graded > 0 : it.responses > 0 && !it.flags.length && it.discrimination_label !== "Jelek";
+
+function ItemRow({ it, checked, onToggle }) {
   const [open, setOpen] = useState(false);
   const mc = it.type === "mc";
   return (
-    <div className={`border rounded-xl bg-white ${it.flags.length ? "border-rose-200" : "border-slate-200"}`} data-testid={`analysis-item-${it.no}`}>
+    <div className={`border rounded-xl bg-white flex items-start ${it.flags.length ? "border-rose-200" : "border-slate-200"} ${checked ? "ring-2 ring-teal-600/40" : ""}`} data-testid={`analysis-item-${it.no}`}>
+      <label className="pl-3 pt-4 cursor-pointer" title="Pilih untuk bank soal"><input type="checkbox" data-testid={`analysis-select-${it.no}`} checked={checked} onChange={onToggle} className="w-4 h-4 accent-teal-700" /></label>
+      <div className="flex-1 min-w-0">
       <button disabled={!mc} onClick={() => setOpen(!open)} className="w-full p-3 flex items-center gap-3 text-left">
         <span className="font-heading font-black text-slate-400 w-7 shrink-0">{it.no}</span>
         <div className="min-w-0 flex-1">
@@ -91,7 +96,30 @@ function ItemRow({ it }) {
         </div>
         {mc && <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />}
       </button>
-      {open && <div className="border-t px-4 pb-3 bg-slate-50 rounded-b-xl"><OptionBars it={it} /></div>}
+      {open && <div className="border-t px-4 pb-3 bg-slate-50 rounded-br-xl"><OptionBars it={it} /></div>}
+      </div>
+    </div>
+  );
+}
+
+function BankBar({ examId, items, sel, setSel }) {
+  const [busy, setBusy] = useState(false);
+  const good = items.filter(isGood).map(i => i.no);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post("/question-bank/from-exam", { exam_id: examId, q_indices: sel.map(n => n - 1) });
+      toast.success(`${r.data.saved} soal disimpan ke Bank Soal${r.data.skipped ? ` · ${r.data.skipped} sudah ada` : ""}`);
+      setSel([]);
+    } catch (e) { toast.error(e.response?.data?.detail || "Gagal menyimpan ke bank soal"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center gap-2 flex-wrap rounded-xl bg-teal-50 border border-teal-200 p-3" data-testid="analysis-bank-bar">
+      <Library className="w-4 h-4 text-teal-700" />
+      <p className="text-xs text-teal-900 flex-1 min-w-[160px]"><b data-testid="analysis-selected-count">{sel.length}</b> soal dipilih untuk Bank Soal</p>
+      <button data-testid="analysis-select-good" onClick={() => setSel(good)} disabled={!good.length} className="px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-800 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"><Sparkles className="w-3.5 h-3.5" />Pilih soal berkualitas ({good.length})</button>
+      <button data-testid="analysis-save-bank" onClick={save} disabled={busy || !sel.length} className="px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold disabled:opacity-50">{busy ? "Menyimpan..." : "Simpan ke Bank Soal"}</button>
     </div>
   );
 }
@@ -99,6 +127,8 @@ function ItemRow({ it }) {
 export function ExamAnalysis({ exam, onClose }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  const [sel, setSel] = useState([]);
+  const toggle = (no) => setSel(x => x.includes(no) ? x.filter(n => n !== no) : [...x, no]);
   useEffect(() => { api.get(`/exams/${exam.id}/analysis`).then(r => setData(r.data)).catch(e => setErr(e.response?.data?.detail || "Gagal memuat analisis")); }, [exam.id]);
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" data-testid="exam-analysis-modal">
@@ -121,8 +151,9 @@ export function ExamAnalysis({ exam, onClose }) {
               <p className="font-heading font-bold text-sm">Analisis Butir Soal</p>
               <p data-testid="analysis-problem-count" className="text-xs text-rose-600 font-semibold">{data.problem_count} soal perlu ditinjau</p>
             </div>
-            <p className="text-[11px] text-slate-500">P = tingkat kesukaran (proporsi benar; &gt;0,70 Mudah, 0,30–0,70 Sedang, &lt;0,30 Sukar). D = daya beda kelompok atas vs bawah 27% (≥0,30 Baik, 0,20–0,29 Cukup, &lt;0,20 Jelek). Klik soal PG untuk melihat sebaran jawaban.</p>
-            <div className="space-y-2" data-testid="analysis-items">{data.items.map(it => <ItemRow key={it.no} it={it} />)}</div>
+            <p className="text-[11px] text-slate-500">P = tingkat kesukaran (proporsi benar; &gt;0,70 Mudah, 0,30–0,70 Sedang, &lt;0,30 Sukar). D = daya beda kelompok atas vs bawah 27% (≥0,30 Baik, 0,20–0,29 Cukup, &lt;0,20 Jelek). Klik soal PG untuk melihat sebaran jawaban. Centang soal yang baik untuk disimpan ke Bank Soal.</p>
+            <BankBar examId={exam.id} items={data.items} sel={sel} setSel={setSel} />
+            <div className="space-y-2" data-testid="analysis-items">{data.items.map(it => <ItemRow key={it.no} it={it} checked={sel.includes(it.no)} onToggle={() => toggle(it.no)} />)}</div>
           </>}
         </div>
       </div>

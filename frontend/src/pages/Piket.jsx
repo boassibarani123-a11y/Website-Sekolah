@@ -8,15 +8,20 @@ import { PiketHero } from "@/components/piket/PiketHero";
 import { PiketWeek } from "@/components/piket/PiketWeek";
 import { PiketModal } from "@/components/piket/PiketModal";
 import { PiketReport } from "@/components/piket/PiketReport";
+import { PiketGuide, TodayTimeline } from "@/components/piket/PiketGuide";
 import { addDays, mondayOf } from "@/components/piket/piketUtils";
 
 const ADMIN = ["super_admin", "kepsek", "staff_tu"];
 
-function Stat({ icon: Icon, label, value, tone, testid }) {
+function Stat({ icon: Icon, label, hint, value, tone, testid }) {
   return (
-    <div data-testid={testid} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-      <span className={`w-11 h-11 rounded-xl flex items-center justify-center ${tone}`}><Icon className="w-5 h-5" /></span>
-      <div><p className="font-heading text-2xl font-extrabold text-slate-900 tabular-nums">{value}</p><p className="text-xs text-slate-500">{label}</p></div>
+    <div data-testid={testid} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${tone}`}><Icon className="w-5 h-5" /></span>
+        <p className="font-heading text-2xl font-extrabold text-slate-900 tabular-nums">{value}</p>
+      </div>
+      <p className="mt-2 text-xs font-semibold text-slate-700">{label}</p>
+      <p className="text-[11px] text-slate-400">{hint}</p>
     </div>
   );
 }
@@ -34,12 +39,14 @@ export default function Piket() {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState("jadwal");
+  const [todayShifts, setTodayShifts] = useState([]);
   const offset = useRef(0);
 
   const load = useCallback(() => {
     api.get(`/piket/shifts?start=${weekStart}&end=${addDays(weekStart, 6)}`).then(r => setShifts(r.data)).catch(() => {});
+    api.get(`/piket/shifts?start=${today}&end=${today}`).then(r => setTodayShifts(r.data)).catch(() => {});
     api.get("/piket/now").then(r => { offset.current = new Date(r.data.server_now).getTime() - Date.now(); setNowData(r.data); }).catch(() => {});
-  }, [weekStart]);
+  }, [weekStart, today]);
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now() + offset.current), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { if (canManage) api.get("/piket/teachers").then(r => setTeachers(r.data)).catch(() => {}); }, [canManage]);
@@ -65,7 +72,7 @@ export default function Piket() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-heading text-3xl font-extrabold text-slate-900 flex items-center gap-2"><ShieldCheck className="w-8 h-8 text-sky-600" />Piket Gerbang</h1>
-          <p className="mt-1 text-sm text-slate-500">Jadwal shift guru penjaga gerbang, check-in/out berbasis waktu, dan pemantauan real-time.</p>
+          <p className="mt-1 text-sm text-slate-500">Siapa yang menjaga gerbang, kapan jadwalnya, dan apakah penjaga sudah hadir — dalam satu layar.</p>
         </div>
         {canManage && (
           <button data-testid="piket-create-button" onClick={() => setModal({ date: today < weekStart ? weekStart : today })}
@@ -73,13 +80,18 @@ export default function Piket() {
         )}
       </div>
 
+      <PiketGuide />
+
       <PiketHero data={nowData} now={now} onPresence={presence} busy={busy} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Stat testid="piket-stat-total" icon={ListChecks} label="Shift minggu ini" value={stats.total} tone="bg-sky-100 text-sky-600" />
-        <Stat testid="piket-stat-hadir" icon={CheckCircle2} label="Sudah check-in" value={stats.hadir} tone="bg-emerald-100 text-emerald-600" />
-        <Stat testid="piket-stat-telat" icon={AlarmClock} label="Terlambat" value={stats.telat} tone="bg-orange-100 text-orange-600" />
-        <Stat testid="piket-stat-absen" icon={XCircle} label="Tidak hadir" value={stats.absen} tone="bg-rose-100 text-rose-600" />
+      <div className="grid lg:grid-cols-5 gap-5">
+        <div className="lg:col-span-3 grid grid-cols-2 gap-4 content-start">
+          <Stat testid="piket-stat-total" icon={ListChecks} label="Shift minggu ini" hint="Jumlah jadwal pada minggu yang dipilih" value={stats.total} tone="bg-sky-100 text-sky-600" />
+          <Stat testid="piket-stat-hadir" icon={CheckCircle2} label="Sudah check-in" hint="Penjaga yang sudah hadir" value={stats.hadir} tone="bg-emerald-100 text-emerald-600" />
+          <Stat testid="piket-stat-telat" icon={AlarmClock} label="Terlambat" hint="Check-in lewat 10 menit dari jadwal" value={stats.telat} tone="bg-orange-100 text-orange-600" />
+          <Stat testid="piket-stat-absen" icon={XCircle} label="Tidak hadir" hint="Shift berakhir tanpa check-in" value={stats.absen} tone="bg-rose-100 text-rose-600" />
+        </div>
+        <div className="lg:col-span-2"><TodayTimeline shifts={todayShifts} /></div>
       </div>
 
       {canManage && (

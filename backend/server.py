@@ -287,7 +287,7 @@ SLATE_900 = "0F172A"
 SLATE_50 = "F8FAFC"
 
 # Clean minimal report palette (restrained color, not monotone)
-HEAD_BG = "1E293B"  # slate-800 header band
+HEAD_BG = "2F6FD6"  # blue header band (matches structured report style)
 ACCENT = "0284C7"   # sky-600 thin accent line
 ZEBRA = "F8FAFC"    # very light gray alternate row
 GRID = "E2E8F0"     # light cell border
@@ -298,124 +298,166 @@ def _border(color="E2E8F0"):
     s = Side(style="thin", color=color)
     return Border(left=s, right=s, top=s, bottom=s)
 
+XL_BLUE = "2F6FD6"      # header & highlight band
+XL_SECTION = "DCE6F7"   # group/section row
+XL_SUBTOTAL = "E5E7EB"  # group subtotal row
+XL_LINE = "8C9BB0"      # thin cell grid
+XL_MONEY = '"Rp"#,##0;-"Rp"#,##0'
+XL_LOGO = os.path.join(os.path.dirname(__file__), "..", "frontend", "public", "school-logo.png")
+
+def _xl_cell(ws, r, c, v=None, bold=False, color=INK, fill=None, align="left", fmt=None, size=10, italic=False):
+    cell = ws.cell(row=r, column=c, value=v)
+    cell.font = Font(name="Calibri", size=size, bold=bold, italic=italic, color=color)
+    cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=True)
+    cell.border = _border(XL_LINE)
+    if fill:
+        cell.fill = PatternFill("solid", fgColor=fill)
+    if fmt:
+        cell.number_format = fmt
+    return cell
+
+def _xl_band(ws, r, c0, n, label, fill, color, values=None, money_cols=(), columns=(), align="right"):
+    """Full-width row: merged label + optional per-column values (subtotal / highlight rows)."""
+    values = values or {}
+    idx = [columns.index(k) for k in values if k in columns]
+    span = (min(idx) if idx else n) or 1
+    for ci in range(n):
+        key = columns[ci] if ci < len(columns) else None
+        v = values.get(key) if key in values else None
+        _xl_cell(ws, r, c0 + ci, v, bold=True, color=color, fill=fill, align="right",
+                 fmt=XL_MONEY if key in money_cols and isinstance(v, (int, float)) else None)
+    if span > 1:
+        ws.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c0 + span - 1)
+    ws.cell(row=r, column=c0, value=label).alignment = Alignment(horizontal=align, vertical="center", indent=1)
+    ws.row_dimensions[r].height = 20
+
+def write_report_sheet(ws, title: str, subtitle: str, columns: list, rows: list, summary: Optional[dict] = None,
+                       group_by: Optional[str] = None, sum_cols: tuple = (), money_cols: tuple = (),
+                       brand: str = "SMA NEGERI 1 LAGUBOTI"):
+    """Structured report: centered title block, blue header, section rows per group, grey subtotals, blue totals."""
+    columns = list(columns)
+    rows = [dict(r) for r in rows]
+    if "No" not in columns:
+        columns = ["No"] + columns
+    if group_by and group_by in columns:
+        columns.remove(group_by)  # shown as section header instead
+    n = len(columns)
+    CO = 2
+    first_col, last_col = get_column_letter(CO), get_column_letter(CO + n - 1)
+    ws.column_dimensions["A"].width = 2.6
+    ws.column_dimensions[get_column_letter(CO + n)].width = 2.6
+    ws.row_dimensions[1].height = 10
+    for i, (txt, size) in enumerate(((f"LAPORAN {title.upper()}" if not title.upper().startswith(("LAPORAN", "REKAP", "DAFTAR")) else title.upper(), 14),
+                                     (brand, 12), (subtitle, 10))):
+        r = 2 + i
+        ws.merge_cells(f"{first_col}{r}:{last_col}{r}")
+        c = ws.cell(row=r, column=CO, value=txt)
+        c.font = Font(name="Calibri", size=size, bold=i < 2, italic=i == 2, color=INK if i < 2 else MUTE)
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.row_dimensions[r].height = 22 if i < 2 else 18
+    if os.path.exists(XL_LOGO):
+        try:
+            from openpyxl.drawing.image import Image as XLImage
+            img = XLImage(XL_LOGO)
+            img.height, img.width = 52, 46
+            ws.add_image(img, f"{last_col}2")
+        except Exception:
+            pass
+    ws.row_dimensions[5].height = 8
+    hr = 6
+    for i, col in enumerate(columns):
+        _xl_cell(ws, hr, CO + i, col, bold=True, color="FFFFFF", fill=XL_BLUE, align="center", size=10.5)
+    ws.row_dimensions[hr].height = 30
+
+    def put_row(r, row, no):
+        for ci, key in enumerate(columns):
+            v = no if key == "No" else row.get(key)
+            num = isinstance(v, (int, float)) and not isinstance(v, bool)
+            _xl_cell(ws, r, CO + ci, v if v not in (None, "") else "-",
+                     align="center" if key == "No" else "right" if num else "left",
+                     fmt=XL_MONEY if key in money_cols and num else None)
+        ws.row_dimensions[r].height = 20
+
+    def sums(items):
+        return {k: round(sum(x.get(k) or 0 for x in items if isinstance(x.get(k), (int, float))), 2) for k in sum_cols}
+
+    r = hr + 1
+    if not rows:
+        ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + n - 1)
+        for ci in range(n):
+            _xl_cell(ws, r, CO + ci)
+        e = ws.cell(row=r, column=CO, value="Belum ada data untuk ditampilkan.")
+        e.font = Font(italic=True, color="94A3B8"); e.alignment = Alignment(horizontal="center", vertical="center")
+        r += 1
+    elif group_by:
+        groups = {}
+        for row in rows:
+            groups.setdefault(str(row.get(group_by) or "-"), []).append(row)
+        for gi, (gname, items) in enumerate(sorted(groups.items(), key=lambda x: x[0]), 1):
+            _xl_cell(ws, r, CO, gi, bold=True, fill=XL_SECTION, align="center")
+            for ci in range(1, n):
+                _xl_cell(ws, r, CO + ci, None, bold=True, fill=XL_SECTION)
+            if n > 1:
+                ws.merge_cells(start_row=r, start_column=CO + 1, end_row=r, end_column=CO + n - 1)
+                ws.cell(row=r, column=CO + 1, value=f"{gname}  ({len(items)} data)")
+            ws.row_dimensions[r].height = 20
+            r += 1
+            for ii, row in enumerate(items, 1):
+                put_row(r, row, row.get("No") or f"{gi}.{ii:03d}")
+                r += 1
+            _xl_band(ws, r, CO, n, f"Total {gname}" if sum_cols else f"Jumlah {gname}: {len(items)} data", XL_SUBTOTAL, INK, sums(items), money_cols, columns)
+            r += 1
+    else:
+        for ii, row in enumerate(rows, 1):
+            put_row(r, row, row.get("No") or ii)
+            r += 1
+    if sum_cols and rows:
+        _xl_band(ws, r, CO, n, "TOTAL KESELURUHAN", XL_BLUE, "FFFFFF", sums(rows), money_cols, columns, align="center")
+        r += 1
+    if summary:
+        r += 1
+        for k, v in summary.items():
+            for ci in range(n):
+                _xl_cell(ws, r, CO + ci, None, bold=True, color="FFFFFF", fill=XL_BLUE)
+            split = max(1, n - 2) if n > 2 else 1
+            ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + split - 1) if split > 1 else None
+            ws.cell(row=r, column=CO, value=k).alignment = Alignment(horizontal="center", vertical="center")
+            if n > split:
+                if n - split > 1:
+                    ws.merge_cells(start_row=r, start_column=CO + split, end_row=r, end_column=CO + n - 1)
+                vc = ws.cell(row=r, column=CO + split, value=v)
+                vc.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+                if isinstance(v, (int, float)) and any(w in k for w in ("Rp", "Saldo", "Denda", "Pemasukan", "Pengeluaran")):
+                    vc.number_format = XL_MONEY
+            ws.row_dimensions[r].height = 20
+            r += 1
+    ws.row_dimensions[r].height = 10
+    for i, key in enumerate(columns):
+        lens = [len(str(key))] + [len(str(x.get(key) if x.get(key) is not None else "")) for x in rows[:200]]
+        w = min(max(10, max(lens) + 4), 48)
+        if key == "No":
+            w = 9 if group_by else 6
+        ws.column_dimensions[get_column_letter(CO + i)].width = w
+    ws.sheet_view.showGridLines = False
+    ws.freeze_panes = f"{first_col}{hr + 1}"
+    ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.5, bottom=0.5)
+    ws.print_options.horizontalCentered = True
+    ws.page_setup.orientation = "landscape" if n > 6 else "portrait"
+    ws.page_setup.fitToWidth = 1
+    ws.print_title_rows = f"{hr}:{hr}"
+
 def pretty_excel(title: str, subtitle: str, columns: list, rows: list,
                  summary: Optional[dict] = None, sheet_name: str = "Laporan",
-                 brand: str = "SMA NEGERI 1 LAGUBOTI") -> bytes:
-    """Branded Excel report with a clean whitespace margin around the content block.
-    Unified theme (sky title bar, slate meta bar, zebra rows, connected summary bands)."""
+                 brand: str = "SMA NEGERI 1 LAGUBOTI", group_by: Optional[str] = None,
+                 sum_cols: tuple = (), money_cols: tuple = (), extra_sheets: Optional[list] = None) -> bytes:
+    """Unified structured Excel report. extra_sheets: list of dicts with write_report_sheet kwargs + 'sheet_name'."""
     wb = Workbook()
     ws = wb.active
     ws.title = sheet_name[:31]
-    CO = 2  # content starts at column B (column A = left margin)
-    n_cols = len(columns)
-    first_col = get_column_letter(CO)
-    last_col = get_column_letter(CO + n_cols - 1)
-
-    # Edge margins (whitespace gap around the table)
-    ws.column_dimensions["A"].width = 2.6
-    ws.column_dimensions[get_column_letter(CO + n_cols)].width = 2.6
-    ws.row_dimensions[1].height = 12
-
-    # Title row (row 2)
-    tr = 2
-    ws.merge_cells(f"{first_col}{tr}:{last_col}{tr}")
-    c = ws.cell(row=tr, column=CO, value=f"{brand}  -  {title}")
-    c.font = Font(name="Calibri", size=15, bold=True, color=INK)
-    c.alignment = Alignment(horizontal="left", vertical="center")
-    ws.row_dimensions[tr].height = 28
-
-    # Subtitle row (row 3) — muted text + thin accent underline
-    ws.merge_cells(f"{first_col}{tr+1}:{last_col}{tr+1}")
-    c2 = ws.cell(row=tr + 1, column=CO, value=subtitle)
-    c2.font = Font(name="Calibri", size=9.5, italic=True, color=MUTE)
-    c2.alignment = Alignment(horizontal="left", vertical="center")
-    for _ci in range(n_cols):
-        ws.cell(row=tr + 1, column=CO + _ci).border = Border(bottom=Side(style="medium", color=ACCENT))
-    ws.row_dimensions[tr + 1].height = 20
-
-    # Spacer (row 4)
-    ws.row_dimensions[tr + 2].height = 8
-
-    # Header row (row 5)
-    hdr_row = tr + 3
-    for i in range(n_cols):
-        cell = ws.cell(row=hdr_row, column=CO + i, value=columns[i])
-        cell.font = Font(name="Calibri", size=10.5, bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor=HEAD_BG)
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = _border(HEAD_BG)
-    ws.row_dimensions[hdr_row].height = 30
-
-    # Data rows (or placeholder when empty)
-    if not rows:
-        r = hdr_row + 1
-        ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + n_cols - 1)
-        e = ws.cell(row=r, column=CO, value="Belum ada data untuk ditampilkan.")
-        e.font = Font(name="Calibri", size=10, italic=True, color="94A3B8")
-        e.alignment = Alignment(horizontal="center", vertical="center")
-        for ci in range(n_cols):
-            ws.cell(row=r, column=CO + ci).border = _border()
-        ws.row_dimensions[r].height = 24
-    for ri, row in enumerate(rows):
-        r = hdr_row + 1 + ri
-        fill = PatternFill("solid", fgColor=ZEBRA) if ri % 2 == 1 else None
-        for ci in range(n_cols):
-            key = columns[ci]
-            val = row.get(key) if isinstance(row, dict) else row[ci]
-            cell = ws.cell(row=r, column=CO + ci, value=val if val is not None else "-")
-            cell.font = Font(name="Calibri", size=10, color=INK)
-            cell.alignment = Alignment(horizontal="left" if ci == 0 else "center", vertical="center", wrap_text=True)
-            cell.border = _border()
-            if fill: cell.fill = fill
-        ws.row_dimensions[r].height = 22
-
-    # Summary section — full-width connected bands, no truncated labels
-    if summary:
-        gap = hdr_row + max(len(rows), 1) + 2
-        ws.merge_cells(start_row=gap, start_column=CO, end_row=gap, end_column=CO + n_cols - 1)
-        s = ws.cell(row=gap, column=CO, value="RINGKASAN")
-        s.font = Font(bold=True, color=INK, size=10.5)
-        s.alignment = Alignment(horizontal="left", vertical="center")
-        for ci in range(n_cols):
-            ws.cell(row=gap, column=CO + ci).border = Border(bottom=Side(style="thin", color=ACCENT))
-        ws.row_dimensions[gap].height = 20
-        split = max(1, n_cols // 2)
-        for i, (k, v) in enumerate(summary.items()):
-            r = gap + 1 + i
-            for ci in range(n_cols):
-                ws.cell(row=r, column=CO + ci).border = _border()
-            if split >= 2:
-                ws.merge_cells(start_row=r, start_column=CO, end_row=r, end_column=CO + split - 1)
-            kc = ws.cell(row=r, column=CO, value=k)
-            kc.font = Font(color=MUTE, size=10)
-            kc.alignment = Alignment(horizontal="left", indent=1, vertical="center")
-            if split + 1 <= n_cols:
-                ws.merge_cells(start_row=r, start_column=CO + split, end_row=r, end_column=CO + n_cols - 1)
-            vc = ws.cell(row=r, column=CO + min(split, n_cols - 1), value=v)
-            vc.font = Font(bold=True, color=INK, size=10.5)
-            vc.alignment = Alignment(horizontal="right", indent=1, vertical="center")
-            ws.row_dimensions[r].height = 20
-        last_content = gap + len(summary)
-    else:
-        last_content = hdr_row + max(len(rows), 1)
-    ws.row_dimensions[last_content + 1].height = 10  # bottom margin
-
-    # Column widths — fit header + data, readable minimum
-    for i in range(n_cols):
-        lens = [len(str(columns[i]))]
-        for r in rows[:150]:
-            v = r.get(columns[i]) if isinstance(r, dict) else r[i]
-            lens.append(len(str(v if v is not None else "")))
-        width = min(max(13, max(lens) + 4), 44)
-        if i == 0:
-            width = max(width, 18)
-        ws.column_dimensions[get_column_letter(CO + i)].width = width
-
-    ws.sheet_view.showGridLines = False
-    ws.freeze_panes = f"{first_col}{hdr_row+1}"
-    ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.6, bottom=0.6)
-    ws.print_options.horizontalCentered = True
-
+    write_report_sheet(ws, title, subtitle, columns, rows, summary, group_by, tuple(sum_cols), tuple(money_cols), brand)
+    for ex in extra_sheets or []:
+        ex = dict(ex)
+        write_report_sheet(wb.create_sheet(ex.pop("sheet_name")[:31]), brand=brand, **ex)
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
     return buf.getvalue()
@@ -691,7 +733,7 @@ async def staff_export(user=Depends(require_roles("super_admin", "kepsek", "staf
     summary = {"Total Guru & Staff": len(docs), **{STAFF_LABELS.get(k, k): v for k, v in c.items()}}
     data = pretty_excel("Daftar Guru & Staff",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T', ' ')}",
-                        columns, rows, summary, "Guru & Staff")
+                        columns, rows, summary, "Guru & Staff", group_by="Divisi")
     return xlsx_response(data, "Daftar_Guru_Staff.xlsx")
 
 # ---------------- CLASSES (Kelas) ----------------
@@ -1232,7 +1274,7 @@ async def export_attendance(date: Optional[str] = None, user=Depends(get_current
                "Izin": counter.get("izin",0), "Sakit": counter.get("sakit",0), "Alpa": counter.get("alpa",0)}
     data = pretty_excel(f"Laporan Presensi {date or 'Semua Tanggal'}",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Presensi")
+                        columns, rows, summary, "Presensi", group_by="Kelas")
     return xlsx_response(data, f"Presensi_{date or 'all'}.xlsx")
 
 # ---------------- WEEKLY ATTENDANCE RECAP & AUTO-ARCHIVE ----------------
@@ -1297,7 +1339,7 @@ def weekly_attendance_excel(label, subtitle, days, students, daily, totals, who=
     c.font = Font(size=15, bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor=HEAD_BG)
     c.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[2].height = 30
     ws.merge_cells(f"{first}3:{last}3"); c2 = ws.cell(3, CO, subtitle)
-    c2.font = Font(size=10, italic=True, color="FFFFFF"); c2.fill = PatternFill("solid", fgColor=SLATE_900)
+    c2.font = Font(size=10, italic=True, color="1E3A8A"); c2.fill = PatternFill("solid", fgColor="DCE6F7")
     c2.alignment = Alignment(horizontal="left", vertical="center", indent=1); ws.row_dimensions[3].height = 20
     ws.row_dimensions[4].height = 6
     hr = 5
@@ -1332,7 +1374,7 @@ def weekly_attendance_excel(label, subtitle, days, students, daily, totals, who=
     fr = hr + max(len(students), 1) + 1
     ws.merge_cells(start_row=fr, start_column=CO, end_row=fr, end_column=CO + 2)
     for ci in range(3):
-        cell = ws.cell(fr, CO + ci); cell.fill = PatternFill("solid", fgColor=SLATE_900); cell.border = _border()
+        cell = ws.cell(fr, CO + ci); cell.fill = PatternFill("solid", fgColor=HEAD_BG); cell.border = _border()
     t = ws.cell(fr, CO, "TOTAL HADIR HARIAN"); t.font = Font(bold=True, color="FFFFFF"); t.alignment = Alignment(horizontal="right", vertical="center", indent=1)
     for di, dd in enumerate(days):
         cell = ws.cell(fr, DAY_C + di, daily[dd]["hadir"]); cell.font = Font(bold=True, color=SKY_600)
@@ -3795,17 +3837,17 @@ async def export_sf(user=Depends(get_current_user)):
     docs = await db.social_fund.find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     columns = ["Tanggal", "Sumber/Kelas", "Tipe", "Jumlah (Rp)", "Keterangan", "Dicatat Oleh"]
     rows = [{"Tanggal": d.get("created_at","")[:10], "Sumber/Kelas": d.get("kelas") or "-",
-             "Tipe": (d.get("type") or "").upper(), "Jumlah (Rp)": f"{d.get('amount',0):,.0f}",
+             "Tipe": "PEMASUKAN" if d.get("type") == "masuk" else "PENGELUARAN", "Jumlah (Rp)": d.get("amount", 0) or 0,
              "Keterangan": d.get("note") or "-", "Dicatat Oleh": d.get("recorded_by") or "-"} for d in docs]
     masuk = sum(d.get("amount",0) for d in docs if d.get("type")=="masuk")
     keluar = sum(d.get("amount",0) for d in docs if d.get("type")=="keluar")
     summary = {"Total Transaksi": len(docs),
-               "Pemasukan (Rp)": f"{masuk:,.0f}",
-               "Pengeluaran (Rp)": f"{keluar:,.0f}",
-               "Saldo Akhir (Rp)": f"{masuk-keluar:,.0f}"}
+               "Pemasukan (Rp)": masuk,
+               "Pengeluaran (Rp)": keluar,
+               "Saldo Akhir (Rp)": masuk - keluar}
     data = pretty_excel("Laporan Dana Sosial OSIS",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Dana Sosial")
+                        columns, rows, summary, "Dana Sosial", group_by="Tipe", sum_cols=("Jumlah (Rp)",), money_cols=("Jumlah (Rp)",))
     return xlsx_response(data, "Dana_Sosial_OSIS.xlsx")
 
 @api.get("/classes/{cid}/kas/export")
@@ -3816,17 +3858,17 @@ async def export_kas(cid: str, user=Depends(get_current_user)):
     docs = await db.uang_kas.find(q, {"_id": 0}).sort("created_at", -1).to_list(5000)
     columns = ["Tanggal", "Kelas", "Tipe", "Jumlah (Rp)", "Keterangan", "Dicatat Oleh"]
     rows = [{"Tanggal": d.get("created_at","")[:10], "Kelas": d.get("kelas") or "-",
-             "Tipe": (d.get("type") or "").upper(), "Jumlah (Rp)": f"{d.get('amount',0):,.0f}",
+             "Tipe": "PEMASUKAN" if d.get("type") == "masuk" else "PENGELUARAN", "Jumlah (Rp)": d.get("amount", 0) or 0,
              "Keterangan": d.get("note") or "-", "Dicatat Oleh": d.get("recorded_by") or "-"} for d in docs]
     masuk = sum(d.get("amount",0) for d in docs if d.get("type")=="masuk")
     keluar = sum(d.get("amount",0) for d in docs if d.get("type")=="keluar")
     summary = {"Total Transaksi": len(docs),
-               "Pemasukan (Rp)": f"{masuk:,.0f}",
-               "Pengeluaran (Rp)": f"{keluar:,.0f}",
-               "Saldo Kas (Rp)": f"{masuk-keluar:,.0f}"}
+               "Pemasukan (Rp)": masuk,
+               "Pengeluaran (Rp)": keluar,
+               "Saldo Kas (Rp)": masuk - keluar}
     data = pretty_excel(f"Laporan Uang Kas {kelas or 'Semua Kelas'}",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Uang Kas")
+                        columns, rows, summary, "Uang Kas", group_by="Tipe", sum_cols=("Jumlah (Rp)",), money_cols=("Jumlah (Rp)",))
     return xlsx_response(data, f"Uang_Kas_{(kelas or 'all').replace(' ','_')}.xlsx")
 
 @api.get("/inventory/export")
@@ -3848,7 +3890,7 @@ async def export_inventory(user=Depends(get_current_user)):
     summary = {"Total Item": len(docs), "Total Stok": sum(d.get("stock", 0) for d in docs)}
     data = pretty_excel("Laporan Inventaris Sekolah",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Inventaris")
+                        columns, rows, summary, "Inventaris", group_by="Kategori", sum_cols=("Stok Tersedia", "Dipinjam", "Total"))
     return xlsx_response(data, "Inventaris_Sekolah.xlsx")
 
 @api.get("/users/export")
@@ -3856,14 +3898,14 @@ async def export_users(role: Optional[str] = None, user=Depends(require_roles("s
     q = {"role": role} if role else {}
     docs = await db.users.find(q, {"password_hash": 0, "_id": 0}).to_list(2000)
     columns = ["Nama", "Email", "Role", "Kelas", "NISN", "Ortu (Nama)", "Ortu (Email)", "Bergabung"]
-    rows = [{"Nama": d.get("name"), "Email": d.get("email"), "Role": d.get("role"),
+    rows = [{"Nama": d.get("name"), "Email": d.get("email"), "Role": (d.get("role") or "-").replace("_", " ").title(),
              "Kelas": d.get("kelas") or "-", "NISN": d.get("nisn") or "-",
              "Ortu (Nama)": d.get("parent_name") or "-", "Ortu (Email)": d.get("parent_email") or "-",
              "Bergabung": d.get("created_at","")[:10]} for d in docs]
     summary = {"Total Akun": len(docs)}
     data = pretty_excel(f"Daftar Akun {(role or 'Semua Role').upper()}",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Akun")
+                        columns, rows, summary, "Akun", group_by="Kelas" if role else "Role")
     return xlsx_response(data, f"Akun_{role or 'semua'}.xlsx")
 
 # ---------------- PPDB (Public Registration) ----------------
@@ -4005,7 +4047,7 @@ async def ppdb_export(user=Depends(require_roles("super_admin","kepsek","staff_t
                "TIDAK LOLOS": st.get("tidak_lolos",0), "PENDING": st.get("pending",0)}
     data = pretty_excel("Laporan PPDB - Penerimaan Peserta Didik Baru",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "PPDB")
+                        columns, rows, summary, "PPDB", group_by="Status")
     return xlsx_response(data, "PPDB_Rekap.xlsx")
 
 # ==================== SMART LIBRARY (PERPUSTAKAAN PINTAR) ====================
@@ -4273,7 +4315,7 @@ async def export_loans(user=Depends(LIB_MANAGE)):
                "Total Denda": sum(int(d.get("fine", 0) or 0) for d in docs)}
     data = pretty_excel("Laporan Sirkulasi Perpustakaan",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Sirkulasi")
+                        columns, rows, summary, "Sirkulasi", group_by="Status", sum_cols=("Telat (hari)", "Denda"), money_cols=("Denda",))
     return xlsx_response(data, "Perpustakaan_Sirkulasi.xlsx")
 
 # ---- RESERVATIONS ----
@@ -5745,7 +5787,7 @@ async def piket_report_export(month: str, user=Depends(require_roles(*PIKET_ADMI
     summary = {"Total Shift": len(shifts), "Total Hadir": sum(r["hadir"] for r in rep),
                "Total Terlambat": sum(r["terlambat"] for r in rep), "Total Tidak Hadir": sum(r["tidak_hadir"] for r in rep)}
     data = pretty_excel(f"Laporan Piket Gerbang {month}", f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T', ' ')}",
-                        columns, rows, summary, "Piket")
+                        columns, rows, summary, "Piket", sum_cols=("Total Shift", "Hadir", "Tepat Waktu", "Terlambat", "Total Menit Telat", "Tidak Hadir", "Mendatang", "Durasi Jaga (jam)"))
     return xlsx_response(data, f"Laporan_Piket_{month}.xlsx")
 
 # ---------------- FACE RECOGNITION (presensi cadangan) ----------------
@@ -5815,7 +5857,7 @@ class FaceScanIn(BaseModel):
     station_name: Optional[str] = Field(default=None, max_length=40)
 
 class FaceConfirmIn(FaceScanIn):
-    digits: str = Field(min_length=4, max_length=4)
+    digits: str = Field(pattern=r"^\d{5}$")
 
 @api.get("/face/students")
 async def face_students(kelas: Optional[str] = None, q: Optional[str] = None, role: str = "siswa", user=Depends(require_roles(*SCAN_ROLES))):
@@ -5903,17 +5945,22 @@ async def face_scan(body: FaceScanIn, user=Depends(require_roles(*SCAN_ROLES))):
     cands, best = await _face_candidates(vec)
     if len(cands) > 1:
         return {"ok": False, "needs_confirm": True, "candidate_count": len(cands),
-                "message": "Wajah sangat mirip dengan pengguna lain. Masukkan 4 digit terakhir NISN/NIS/NIP."}
+                "message": "Wajah sangat mirip dengan pengguna lain. Masukkan 5 angka NIS untuk verifikasi."}
     return await _face_record(cands[0], best, body, user)
 
 @api.post("/attendance/face-confirm")
 async def face_confirm(body: FaceConfirmIn, user=Depends(require_roles(*SCAN_ROLES))):
     vec = _face_vec(body.descriptor)
     cands, best = await _face_candidates(vec)
-    people = await db.users.find({"id": {"$in": cands}}, {"_id": 0, "id": 1, "nisn": 1, "nis": 1, "nip": 1}).to_list(20)
-    hit = [p for p in people if any(str(p.get(k) or "")[-4:] == body.digits for k in ("nisn", "nis", "nip") if p.get(k))]
+    people = await db.users.find({"id": {"$in": cands}}, {"_id": 0, "id": 1, "role": 1, "nis": 1, "nip": 1}).to_list(20)
+    def code(p):  # siswa: NIS (5 angka); guru: 5 angka terakhir NIP
+        raw = re.sub(r"\D", "", str(p.get("nip" if p.get("role") == "guru" else "nis") or ""))
+        return raw[-5:] if raw else ""
+    hit = [p for p in people if code(p) and code(p) == body.digits]
     if len(hit) != 1:
-        raise HTTPException(400, "Digit tidak cocok dengan wajah yang terdeteksi")
+        if not any(code(p) for p in people):
+            raise HTTPException(400, "NIS belum terdaftar pada akun ini. Hubungi admin untuk melengkapi NIS.")
+        raise HTTPException(400, "NIS tidak cocok dengan wajah yang terdeteksi")
     return await _face_record(hit[0]["id"], best, body, user, confirmed=True)
 
 # ---------------- BULK DELETE AKUN ----------------
@@ -6359,8 +6406,8 @@ async def exam_export(eid: str, format: str = "xlsx", user=Depends(require_roles
                                  headers={"Content-Disposition": f'attachment; filename="{fname}.pdf"'})
     data = pretty_excel(f"Rekap Nilai Ujian · {ex.get('title')}",
                         f"Kelas {ex.get('kelas')} · {ex.get('subject') or '-'} · Diekspor oleh {user['name']} pada {datetime.now(WIB).strftime('%d-%m-%Y %H:%M')} WIB",
-                        list(rows[0].keys()) if rows else ["No", "Nama Siswa"], rows, summary, "Nilai Ujian")
-    data = _append_analysis_sheet(data, _exam_analysis(ex, list(attempts.values()), len(students)))
+                        list(rows[0].keys()) if rows else ["No", "Nama Siswa"], rows, summary, "Nilai Ujian",
+                        extra_sheets=[_analysis_sheet(_exam_analysis(ex, list(attempts.values()), len(students)))])
     return xlsx_response(data, f"{fname}.xlsx")
 
 def _median(vals: list) -> float:
@@ -6440,37 +6487,125 @@ async def exam_analysis(eid: str, user=Depends(require_roles("guru", "super_admi
     out["exam"] = {"id": ex["id"], "title": ex.get("title"), "kelas": ex.get("kelas"), "subject": ex.get("subject")}
     return out
 
-def _append_analysis_sheet(data: bytes, an: dict) -> bytes:
-    from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(data))
-    ws = wb.create_sheet("Analisis Butir")
+def _analysis_sheet(an: dict) -> dict:
     st = an["stats"]
-    ws.append(["Analisis Butir Soal"])
-    ws["A1"].font = Font(bold=True, size=14)
-    ws.append([f"Peserta {st['participants']} / {st['roster']} · Rata-rata {st['avg']} · Median {st['median']} · "
-               f"Tertinggi {st['max']} · Terendah {st['min']} · KKM {st['kkm']} · Tuntas {st['passed']} ({st['pass_rate']}%)"])
-    ws.append([])
-    hdr = ["No", "Tipe", "Pertanyaan", "Respon", "Benar", "Tingkat Kesukaran", "Kategori", "Daya Beda", "Kategori Daya Beda", "Sebaran Opsi", "Rata Esai", "Catatan"]
-    ws.append(hdr)
-    for c in ws[4]:
-        c.font = Font(bold=True, color="FFFFFF")
-        c.fill = PatternFill("solid", fgColor=HEAD_BG)
+    rows = []
     for it in an["items"]:
         mc = it["type"] == "mc"
-        ws.append([it["no"], "PG" if mc else "Esai", it["q"], it["responses"], it.get("correct", "-") if mc else "-",
-                   it.get("difficulty", "-") if mc else "-", it.get("difficulty_label", "-") if mc else "-",
-                   it.get("discrimination", "-") if mc else "-", it.get("discrimination_label", "-") if mc else "-",
-                   ", ".join(f"{o['label']}{'*' if o['is_key'] else ''}={o['count']}" for o in it.get("options", [])) if mc else "-",
-                   it.get("avg_score") if not mc and it.get("avg_score") is not None else "-", ", ".join(it["flags"]) or "-"])
-    for col, w in zip("ABCDEFGHIJKL", (6, 8, 50, 9, 9, 12, 12, 11, 14, 28, 10, 28)):
-        ws.column_dimensions[col].width = w
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+        rows.append({"Tipe": "Pilihan Ganda" if mc else "Esai", "No": it["no"], "Pertanyaan": it["q"], "Respon": it["responses"],
+                     "Benar": it.get("correct") if mc else "-", "Kesukaran (P)": it.get("difficulty") if mc else "-",
+                     "Kategori P": it.get("difficulty_label") if mc else "-", "Daya Beda (D)": it.get("discrimination") if mc else "-",
+                     "Kategori D": it.get("discrimination_label") if mc else "-",
+                     "Sebaran Opsi": ", ".join(f"{o['label']}{'*' if o['is_key'] else ''}={o['count']}" for o in it.get("options", [])) if mc else "-",
+                     "Rata Esai": it.get("avg_score") if not mc and it.get("avg_score") is not None else "-",
+                     "Catatan": ", ".join(it["flags"]) or "-"})
+    summary = {"Peserta": f"{st['participants']} / {st['roster']}", "Rata-rata": st["avg"], "Median": st["median"],
+               "Tertinggi": st["max"], "Terendah": st["min"], f"Tuntas (KKM {st['kkm']})": f"{st['passed']} siswa ({st['pass_rate']}%)",
+               "Soal Perlu Ditinjau": an["problem_count"]}
+    return {"sheet_name": "Analisis Butir", "title": "Analisis Butir Soal", "subtitle": "* = kunci jawaban · P: >0,70 Mudah, 0,30-0,70 Sedang, <0,30 Sukar · D: >=0,30 Baik, 0,20-0,29 Cukup, <0,20 Jelek",
+            "columns": ["No", "Tipe", "Pertanyaan", "Respon", "Benar", "Kesukaran (P)", "Kategori P", "Daya Beda (D)", "Kategori D", "Sebaran Opsi", "Rata Esai", "Catatan"],
+            "rows": rows, "summary": summary, "group_by": "Tipe"}
+
+# ---------------- BANK SOAL (Vortex Guard) ----------------
+class BankFromExamIn(BaseModel):
+    exam_id: str
+    q_indices: List[int] = Field(min_length=1, max_length=200)
+
+def _bank_scope(user: dict) -> dict:
+    return dscope(user) if user["role"] == "super_admin" else {"owner_id": user["id"], **dscope(user)}
+
+@api.get("/question-bank")
+async def list_question_bank(subject: Optional[str] = None, q: Optional[str] = None, type: Optional[str] = None,
+                             user=Depends(require_roles("guru", "super_admin"))):
+    mq = _bank_scope(user)
+    if subject:
+        mq["subject"] = subject
+    if type in ("mc", "essay"):
+        mq["type"] = type
+    if q:
+        mq["q"] = {"$regex": re.escape(q), "$options": "i"}
+    items = await db.question_bank.find(mq, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    subjects = sorted({s for s in await db.question_bank.distinct("subject", _bank_scope(user)) if s})
+    return {"items": items, "subjects": subjects}
+
+@api.post("/question-bank/from-exam")
+async def bank_from_exam(body: BankFromExamIn, user=Depends(require_roles("guru", "super_admin"))):
+    ex = await _exam_viewer(body.exam_id, user)
+    qs = ex.get("questions") or []
+    _, attempts, _ = await _exam_roster(ex, user)
+    stats = {it["no"] - 1: it for it in _exam_analysis(ex, list(attempts.values()), 0)["items"]}
+    existing = {d["q"].strip().lower() for d in await db.question_bank.find({"owner_id": user["id"]}, {"_id": 0, "q": 1}).to_list(5000)}
+    saved, skipped = 0, 0
+    for i in sorted(set(body.q_indices)):
+        if not 0 <= i < len(qs):
+            continue
+        q = qs[i]
+        key = (q.get("q") or "").strip().lower()
+        if not key or key in existing:
+            skipped += 1
+            continue
+        st = stats.get(i, {})
+        doc = {"id": str(uuid.uuid4()), "owner_id": user["id"], "owner_name": user["name"], "subject": ex.get("subject"),
+               "kelas": ex.get("kelas"), "type": q.get("type", "mc"), "q": q.get("q"), "options": q.get("options") or [],
+               "answer": q.get("answer", 0), "source_exam_id": ex["id"], "source_exam_title": ex.get("title"),
+               "difficulty": st.get("difficulty"), "difficulty_label": st.get("difficulty_label"),
+               "discrimination": st.get("discrimination"), "discrimination_label": st.get("discrimination_label"),
+               "avg_score": st.get("avg_score"), "responses": st.get("responses", 0), "flags": st.get("flags", []),
+               "used_count": 0, "created_at": now_iso()}
+        dstamp(doc, user)
+        await db.question_bank.insert_one(doc)
+        existing.add(key)
+        saved += 1
+    return {"saved": saved, "skipped": skipped}
+
+class BankUseIn(BaseModel):
+    ids: List[str] = Field(min_length=1, max_length=200)
+
+@api.post("/question-bank/use")
+async def bank_use(body: BankUseIn, user=Depends(require_roles("guru", "super_admin"))):
+    items = await db.question_bank.find({"id": {"$in": body.ids}, **_bank_scope(user)}, {"_id": 0}).to_list(200)
+    await db.question_bank.update_many({"id": {"$in": [i["id"] for i in items]}}, {"$inc": {"used_count": 1}})
+    order = {i: n for n, i in enumerate(body.ids)}
+    items.sort(key=lambda x: order.get(x["id"], 0))
+    return [{"type": i["type"], "q": i["q"], "options": i.get("options") or [], "answer": i.get("answer", 0)} for i in items]
+
+@api.delete("/question-bank/{bid}")
+async def bank_delete(bid: str, user=Depends(require_roles("guru", "super_admin"))):
+    r = await db.question_bank.delete_one({"id": bid, **_bank_scope(user)})
+    if not r.deleted_count:
+        raise HTTPException(404, "Soal tidak ditemukan di bank soal")
+    return {"ok": True}
 
 @api.get("/exams/{eid}/live")
 async def exam_live(eid: str, user=Depends(require_roles("guru", "super_admin"))):
+    return await _live_payload(await _exam_viewer(eid, user), user)
+
+@api.get("/exams/{eid}/live/stream")
+async def exam_live_stream(eid: str, request: Request, user=Depends(require_roles("guru", "super_admin"))):
     ex = await _exam_viewer(eid, user)
+
+    async def gen():
+        last, idle, t0 = None, 0, asyncio.get_event_loop().time()
+        yield "retry: 2000\n\n"
+        while not await request.is_disconnected() and asyncio.get_event_loop().time() - t0 < 4 * 3600:
+            payload = await _live_payload(ex, user)
+            sig = _json.dumps([{k: v for k, v in st.items() if k not in ("remaining_seconds", "idle_seconds")} for st in payload["students"]]
+                              + [payload["exam"]["status"]], sort_keys=True, default=str)
+            if sig != last:
+                last, idle = sig, 0
+                yield f"event: live\ndata: {_json.dumps(payload, default=str)}\n\n"
+            else:
+                idle += 1
+                if idle % 20 == 0:  # periodic resync of timers + keep-alive
+                    last = None
+                    yield f"event: ping\ndata: {_json.dumps({'server_now': payload['server_now']})}\n\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+
+async def _live_payload(ex: dict, user: dict) -> dict:
+    eid = ex["id"]
     students, attempts, sessions = await _exam_roster(ex, user)
     now = datetime.now(timezone.utc)
     max_v = int(ex.get("max_violations", 3) or 3)
