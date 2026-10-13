@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Boxes, Search, LayoutGrid, List, AlertTriangle, MapPin, QrCode, CheckSquare, Square } from "lucide-react";
-import { CondBadge, CONDITIONS } from "./invUi";
+import { CondBadge, CONDITIONS, UnitBadge, UnitChips, unitOf } from "./invUi";
 
 function ItemCard({ i, selected, onSelect, onOpen, onBorrow, selectable }) {
   return (
@@ -20,6 +20,7 @@ function ItemCard({ i, selected, onSelect, onOpen, onBorrow, selectable }) {
         </div>
         <h3 className="font-heading font-bold text-slate-900 mt-3 leading-snug">{i.name}</h3>
         <p className="text-xs text-slate-500 mt-0.5">{i.category}{i.code ? ` · ${i.code}` : ""}</p>
+        {unitOf(i) !== "Umum" && <div className="mt-1"><UnitBadge u={unitOf(i)} testid={`inv-unit-badge-${i.id}`} /></div>}
         <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1"><MapPin className="w-3 h-3" />{i.location || "Tanpa lokasi"}</p>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-xl bg-emerald-50 py-2"><p className="text-[10px] font-semibold uppercase text-emerald-600">Tersedia</p><p data-testid={`stock-available-${i.id}`} className="font-heading font-extrabold text-emerald-700">{i.stock}</p></div>
@@ -45,7 +46,7 @@ function ItemTable({ list, selected, onSelect, onOpen, selectable }) {
           {list.map(i => (
             <tr key={i.id} data-testid={`inv-row-${i.id}`} className={`border-t border-slate-100 hover:bg-sky-50/40 cursor-pointer ${selected.has(i.id) ? "bg-sky-50" : ""}`} onClick={() => onOpen(i)}>
               {selectable && <td className="pl-4" onClick={e => { e.stopPropagation(); onSelect(i.id); }}>{selected.has(i.id) ? <CheckSquare className="w-4 h-4 text-sky-600" /> : <Square className="w-4 h-4 text-slate-300" />}</td>}
-              <td className="px-4 py-3"><p className="font-semibold text-slate-900">{i.name}</p><p className="text-xs text-slate-500">{i.category}</p></td>
+              <td className="px-4 py-3"><p className="font-semibold text-slate-900">{i.name}</p><p className="text-xs text-slate-500 flex items-center gap-1.5">{i.category}{unitOf(i) !== "Umum" && <UnitBadge u={unitOf(i)} />}</p></td>
               <td className="px-3 py-3 font-mono text-xs text-slate-600">{i.code || "—"}</td>
               <td className="px-3 py-3 text-slate-600">{i.location || "—"}</td>
               <td className="px-3 py-3"><CondBadge c={i.condition} />{i.low_stock && <AlertTriangle className="inline w-3.5 h-3.5 ml-1.5 text-rose-500" />}</td>
@@ -63,12 +64,14 @@ function ItemTable({ list, selected, onSelect, onOpen, selectable }) {
 export function ItemsView({ items, rooms, isStaff, onOpen, onBorrow, onPrint, initialRoom = "all" }) {
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("all");
+  const [unit, setUnit] = useState("all");
   const [cond, setCond] = useState("all");
   const [room, setRoom] = useState(initialRoom);
   const [view, setView] = useState("grid");
   const [selected, setSelected] = useState(new Set());
   const categories = useMemo(() => [...new Set(items.map(i => i.category).filter(Boolean))].sort(), [items]);
-  const list = items.filter(i => (cat === "all" || i.category === cat) && (cond === "all" || (i.condition || "Baik") === cond) &&
+  const unitCounts = items.reduce((a, i) => ({ ...a, all: a.all + 1, [unitOf(i)]: (a[unitOf(i)] || 0) + 1 }), { all: 0 });
+  const list = items.filter(i => (unit === "all" || unitOf(i) === unit) && (cat === "all" || i.category === cat) && (cond === "all" || (i.condition || "Baik") === cond) &&
     (room === "all" || (i.location || "") === room) &&
     (!search || `${i.name} ${i.code || ""}`.toLowerCase().includes(search.toLowerCase())));
   const toggle = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -82,6 +85,7 @@ export function ItemsView({ items, rooms, isStaff, onOpen, onBorrow, onPrint, in
           <AlertTriangle className="w-4 h-4" />{low} barang stoknya menipis / habis. Segera lakukan pengadaan.
         </div>
       )}
+      <UnitChips value={unit} onChange={setUnit} counts={unitCounts} />
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

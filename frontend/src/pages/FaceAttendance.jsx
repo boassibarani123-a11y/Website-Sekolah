@@ -7,7 +7,8 @@ import { useAuth } from "@/context/AuthContext";
 import { LiveScanTable } from "@/components/attendance/LiveScanTable";
 import { PresenceCard } from "@/components/attendance/PresenceCard";
 import { Clock } from "@/components/attendance/GateDisplay";
-import { beep, getStation, todayWib } from "@/components/attendance/scannerUtils";
+import { beep, alarm, getStation, todayWib, getGateDir, saveGateDir, gateKind } from "@/components/attendance/scannerUtils";
+import { GateDirToggle } from "@/components/attendance/GateDirToggle";
 import { FaceScanFrame } from "@/components/face/FaceScanFrame";
 import { DigitPad } from "@/components/face/DigitPad";
 import { useFaceCamera } from "@/components/face/useFaceCamera";
@@ -71,6 +72,9 @@ export default function FaceAttendance() {
   const [tab, setTab] = useState("siswa");
   const { log, load } = useLiveLogs();
   const station = useRef(getStation()).current;
+  const [dir, setDirState] = useState(getGateDir);
+  const dirRef = useRef(dir); dirRef.current = dir;
+  const setDir = (d) => { saveGateDir(d); setDirState(d); };
   const wrapRef = useRef(null);
   const busy = useRef(false);
   const buf = useRef([]);
@@ -86,19 +90,19 @@ export default function FaceAttendance() {
 
   const reset = () => { buf.current = []; blink.current = { open: false, blinked: false }; setProgress(0); setTimeout(() => { busy.current = false; setFid("searching"); setHint("Arahkan wajah ke bingkai"); }, 2200); };
   const show = (res) => {
-    beep(res.kind !== "err");
+    if (res.kind === "alert") alarm(); else beep(res.kind !== "err");
     setCurrent({ ...res, key: `${Date.now()}` }); setFid(res.kind === "err" ? "fail" : "success");
-    setHint(res.kind === "err" ? "Wajah belum dikenali" : res.kind === "dup" ? "Sudah tercatat" : "Berhasil!");
+    setHint(res.kind === "err" ? "Wajah belum dikenali" : res.kind === "dup" ? "Sudah tercatat" : res.kind === "alert" ? "Keluar tanpa izin!" : "Berhasil!");
     if (res.guru) setTab("guru"); else if (res.student) setTab("siswa");
     clearTimeout(clearT.current);
     clearT.current = setTimeout(() => setCurrent(null), 3800);
   };
-  const okResult = (d) => ({ kind: d.duplicate ? "dup" : "ok", student: d.student, at: d.scanned_at, code: `${d.confidence}%`, guru: d.kind === "guru", confirmed: d.confirmed });
+  const okResult = (d) => ({ kind: gateKind(d), gate: d.gate, student: d.student, at: d.scanned_at, code: `${d.confidence}%`, guru: d.kind === "guru", confirmed: d.confirmed });
 
   const submit = useCallback(async (descriptor) => {
     busy.current = true;
     try {
-      const r = await api.post("/attendance/face-scan", { descriptor, station_id: station.id, station_name: station.name });
+      const r = await api.post("/attendance/face-scan", { descriptor, direction: dirRef.current, station_id: station.id, station_name: station.name });
       if (r.data.needs_confirm) { setFid("confirm"); setHint("Konfirmasi identitas"); beep(false); setPending(descriptor); return; }
       show(okResult(r.data)); load();
     } catch (e) {
@@ -110,7 +114,7 @@ export default function FaceAttendance() {
   const confirmPin = async (digits) => {
     setPinBusy(true);
     try {
-      const r = await api.post("/attendance/face-confirm", { descriptor: pending, digits, station_id: station.id, station_name: station.name });
+      const r = await api.post("/attendance/face-confirm", { descriptor: pending, digits, direction: dirRef.current, station_id: station.id, station_name: station.name });
       show(okResult(r.data)); load();
     } catch (e) { show({ kind: "err", at: new Date().toISOString(), message: e.response?.data?.detail || "Digit tidak cocok" }); }
     setPinBusy(false); setPending(null); reset();
@@ -192,6 +196,7 @@ export default function FaceAttendance() {
                 </select>
               </label>
             )}
+            <GateDirToggle value={dir} onChange={setDir} />
             <button data-testid="face-liveness-toggle" onClick={() => setLiveness(v => !v)} className={`${chip} ${liveness ? "bg-emerald-500 text-white ring-emerald-500" : "bg-white text-slate-700 ring-slate-200 hover:ring-sky-400"}`}><Eye className="w-4 h-4" />Anti-Foto {liveness ? "ON" : "OFF"}</button>
             <button data-testid="face-fullscreen-button" onClick={toggleFull} className={`${chip} bg-white text-slate-700 ring-slate-200 hover:ring-sky-400`}>{isFull ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}{isFull ? "Keluar" : "Layar Penuh"}</button>
             {isFull && <Clock />}

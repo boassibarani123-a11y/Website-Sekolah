@@ -7,7 +7,7 @@ import { CondBadge, ROLE_LABEL, loanLabel, qrValue } from "./invUi";
 import { ActivityList } from "./ActivityView";
 
 function Detail({ item }) {
-  const rows = [["Kode", item.code || "—"], ["Kategori", item.category || "—"], ["Ruangan", item.location || "—"], ["Batas menipis", item.min_stock ?? 0],
+  const rows = [["Kode", item.code || "—"], ["Kategori peminjaman", item.unit || "Umum"], ["Kategori", item.category || "—"], ["Ruangan", item.location || "—"], ["Batas menipis", item.min_stock ?? 0],
     ["Unit rusak (riwayat)", item.damaged_units || 0], ["Unit hilang (riwayat)", item.lost_units || 0]];
   return (
     <div className="space-y-5">

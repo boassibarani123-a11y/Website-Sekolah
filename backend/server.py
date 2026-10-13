@@ -1172,6 +1172,7 @@ class ScanIn(BaseModel):
     method: str = "qr"  # qr | barcode | manual
     station_id: Optional[str] = Field(default=None, max_length=64)
     station_name: Optional[str] = Field(default=None, max_length=40)
+    direction: Optional[str] = None  # auto | masuk | keluar (log gerbang)
 
 class StationIn(BaseModel):
     station_id: str = Field(min_length=4, max_length=64)
@@ -1197,6 +1198,17 @@ async def scan(body: ScanIn, user=Depends(require_roles(*SCAN_ROLES))):
         raise HTTPException(404, "NISN tidak dikenali" if body.nisn else "QR tidak dikenali")
     if student.get("is_active") is False:
         raise HTTPException(403, "Akun siswa dinonaktifkan")
+    if body.direction in ("masuk", "keluar", "auto") and body.status == "hadir":
+        gate = await gate_event(student, body.direction, body.method, body.station_name, user)
+        if gate["direction"] == "keluar":
+            return {"ok": True, "student": strip(student), "status": "hadir", "gate": gate, "scanned_at": gate["at"],
+                    "duplicate": bool(gate.get("repeat"))}
+        res = await _attendance_upsert(student, body, user)
+        res["gate"] = gate
+        return res
+    return await _attendance_upsert(student, body, user)
+
+async def _attendance_upsert(student: dict, body: ScanIn, user: dict) -> dict:
     today = _today_wib()
     station = {"station_id": body.station_id, "station_name": (body.station_name or "").strip() or None}
     rec = {"id": str(uuid.uuid4()), "student_id": student["id"], "student_name": student["name"],
@@ -1648,6 +1660,7 @@ class InventoryItem(BaseModel):
     min_stock: Optional[int] = 0         # ambang batas stok menipis
     description: Optional[str] = None
     image: Optional[str] = None          # foto barang (URL dari /api/upload)
+    unit: Optional[str] = "Umum"         # kategori peminjaman: Umum | Lab Biologi | Lab Komputer
 
 class InventoryUpdate(BaseModel):
     name: Optional[str] = None
@@ -1659,20 +1672,28 @@ class InventoryUpdate(BaseModel):
     min_stock: Optional[int] = None
     description: Optional[str] = None
     image: Optional[str] = None
+    unit: Optional[str] = None
 
 class BorrowRequest(BaseModel):
     item_id: str
     quantity: int = 1
     purpose: str
     return_date: str
+    subject: Optional[str] = None      # lab: mata pelajaran / kegiatan praktikum
+    use_date: Optional[str] = None     # lab: tanggal pemakaian
+    start_time: Optional[str] = None   # lab: jam mulai (HH:MM)
+    end_time: Optional[str] = None     # lab: jam selesai (HH:MM)
 
 INV_CONDITIONS = ("Baik", "Perbaikan", "Rusak", "Hilang")
+INV_UNITS = ("Umum", "Lab Biologi", "Lab Komputer")
 INV_FIELD_LABEL = {"name": "Nama", "category": "Kategori", "stock": "Stok", "condition": "Kondisi",
-                   "location": "Lokasi", "code": "Kode", "min_stock": "Min. stok"}
+                   "location": "Lokasi", "code": "Kode", "min_stock": "Min. stok", "unit": "Kategori peminjaman"}
 
 def _inv_validate(data: dict):
     if data.get("condition") is not None and data["condition"] not in INV_CONDITIONS:
         raise HTTPException(400, "Kondisi barang tidak valid")
+    if data.get("unit") is not None and data["unit"] not in INV_UNITS:
+        raise HTTPException(400, "Kategori peminjaman tidak valid")
     if data.get("stock") is not None and int(data["stock"]) < 0:
         raise HTTPException(400, "Stok tidak boleh negatif")
 
@@ -1746,7 +1767,15 @@ async def create_borrow(body: BorrowRequest, user=Depends(get_current_user)):
     if body.quantity < 1: raise HTTPException(400, "Jumlah minimal 1")
     if body.quantity > int(item.get("stock", 0)):
         raise HTTPException(400, f"Stok tidak cukup. Tersedia: {item.get('stock', 0)}")
-    doc = {"id": str(uuid.uuid4()), "item_id": body.item_id, "item_name": item["name"],
+    unit = item.get("unit") or "Umum"
+    lab = {}
+    if unit != "Umum":
+        if not (body.subject or "").strip() or not body.use_date or not body.start_time or not body.end_time:
+            raise HTTPException(400, "Peminjaman laboratorium wajib mengisi mata pelajaran/kegiatan, tanggal, dan jam pemakaian")
+        if body.end_time <= body.start_time:
+            raise HTTPException(400, "Jam selesai harus setelah jam mulai")
+        lab = {"subject": body.subject.strip(), "use_date": body.use_date, "start_time": body.start_time, "end_time": body.end_time}
+    doc = {"id": str(uuid.uuid4()), "item_id": body.item_id, "item_name": item["name"], "unit": unit, **lab,
            "quantity": body.quantity, "purpose": body.purpose, "return_date": body.return_date,
            "requester_id": user["id"], "requester_name": user["name"],
            "requester_role": user.get("role"), "requester_kelas": user.get("kelas"),
@@ -3878,11 +3907,11 @@ async def export_inventory(user=Depends(get_current_user)):
                 {"$group": {"_id": "$item_id", "n": {"$sum": "$quantity"}}}]
     agg = await db.borrow_requests.aggregate(pipeline).to_list(1000)
     out_map = {a["_id"]: a["n"] for a in agg}
-    columns = ["Kode", "Nama Barang", "Kategori", "Kondisi", "Lokasi", "Stok Tersedia", "Dipinjam", "Total", "Min. Stok", "Keterangan"]
+    columns = ["Kode", "Nama Barang", "Kategori Peminjaman", "Kategori", "Kondisi", "Lokasi", "Stok Tersedia", "Dipinjam", "Total", "Min. Stok", "Keterangan"]
     rows = []
     for d in sorted(docs, key=lambda x: (x.get("name") or "").lower()):
         out = int(out_map.get(d["id"], 0))
-        rows.append({"Kode": d.get("code") or "-", "Nama Barang": d.get("name"),
+        rows.append({"Kode": d.get("code") or "-", "Nama Barang": d.get("name"), "Kategori Peminjaman": d.get("unit") or "Umum",
                      "Kategori": d.get("category") or "-", "Kondisi": d.get("condition") or "-",
                      "Lokasi": d.get("location") or "-", "Stok Tersedia": d.get("stock", 0),
                      "Dipinjam": out, "Total": int(d.get("stock", 0)) + out,
@@ -3890,7 +3919,7 @@ async def export_inventory(user=Depends(get_current_user)):
     summary = {"Total Item": len(docs), "Total Stok": sum(d.get("stock", 0) for d in docs)}
     data = pretty_excel("Laporan Inventaris Sekolah",
                         f"Diekspor oleh {user['name']} pada {now_iso()[:19].replace('T',' ')}",
-                        columns, rows, summary, "Inventaris", group_by="Kategori", sum_cols=("Stok Tersedia", "Dipinjam", "Total"))
+                        columns, rows, summary, "Inventaris", group_by="Kategori Peminjaman", sum_cols=("Stok Tersedia", "Dipinjam", "Total"))
     return xlsx_response(data, "Inventaris_Sekolah.xlsx")
 
 @api.get("/users/export")
@@ -5855,6 +5884,7 @@ class FaceScanIn(BaseModel):
     descriptor: List[float]
     station_id: Optional[str] = Field(default=None, max_length=64)
     station_name: Optional[str] = Field(default=None, max_length=40)
+    direction: Optional[str] = None  # auto | masuk | keluar
 
 class FaceConfirmIn(FaceScanIn):
     digits: str = Field(pattern=r"^\d{5}$")
@@ -5931,10 +5961,15 @@ async def _face_record(sid: str, dist: float, body: FaceScanIn, user: dict, conf
         raise HTTPException(404, "Wajah tidak dikenali")
     conf = round(max(0.0, 1 - dist) * 100, 1)
     if person["role"] == "guru":
-        r = await record_teacher_attendance(person, user, "hadir", "face", body.station_id, body.station_name)
+        gate = await gate_event(person, body.direction, "face", body.station_name, user) if body.direction else None
+        if gate and gate["direction"] == "keluar":
+            r = {"duplicate": bool(gate.get("repeat")), "scanned_at": gate["at"]}
+        else:
+            r = await record_teacher_attendance(person, user, "hadir", "face", body.station_id, body.station_name)
+        r["gate"] = gate
         return {"ok": True, "kind": "guru", "student": {"id": person["id"], "name": person["name"], "photo": person.get("photo"), "kelas": "Guru", "nip": person.get("nip")},
                 "status": "hadir", "confidence": conf, "confirmed": confirmed, **r}
-    res = await scan(ScanIn(qr_code=person.get("qr_code"), nisn=person.get("nisn"), method="face",
+    res = await scan(ScanIn(qr_code=person.get("qr_code"), nisn=person.get("nisn"), method="face", direction=body.direction,
                             station_id=body.station_id, station_name=body.station_name), user)
     res.update(confidence=conf, kind="siswa", confirmed=confirmed)
     return res
@@ -6976,6 +7011,152 @@ async def get_user(uid: str, user=Depends(require_roles("super_admin", "staff_tu
         raise HTTPException(404, "Akun tidak ditemukan")
     return doc
 
+
+# ---------------- GERBANG: LOG MASUK/KELUAR + DETEKSI KELUAR TANPA IZIN ----------------
+GATE_DEFAULTS = {"jam_masuk": "07:15", "jam_pulang": "14:30", "jam_pulang_guru": "15:00", "repeat_seconds": 60}
+GATE_VIEW_ROLES = ("super_admin", "kepsek", "staff_tu", "admin_absensi", "guru")
+GATE_ALERT_ROLES = ("super_admin", "kepsek", "admin_absensi")
+SISWA_ROLES = ("siswa", "ketua_kelas", "ketua_osis")
+
+class GateSettingsIn(BaseModel):
+    jam_masuk: str = Field(pattern=HHMM)
+    jam_pulang: str = Field(pattern=HHMM)
+    jam_pulang_guru: str = Field(pattern=HHMM)
+
+async def _gate_settings() -> dict:
+    doc = await db.gate_settings.find_one({"id": "gate"}, {"_id": 0}) or {}
+    return {**GATE_DEFAULTS, **{k: v for k, v in doc.items() if k in GATE_DEFAULTS}}
+
+async def _gate_alert_targets(person: dict) -> List[str]:
+    """Wali kelas + admin absensi/kepsek/super admin + guru piket yang sedang bertugas."""
+    ids = {u["id"] for u in await db.users.find({"role": {"$in": list(GATE_ALERT_ROLES)}}, {"_id": 0, "id": 1}).to_list(200)}
+    if person.get("kelas"):
+        c = await db.classes.find_one({"name": person["kelas"]}, {"_id": 0, "homeroom_teacher_id": 1})
+        if c and c.get("homeroom_teacher_id"):
+            ids.add(c["homeroom_teacher_id"])
+    today = _today_wib()
+    for sh in await db.piket_shifts.find({"date": today}, {"_id": 0}).to_list(50):
+        if piket_out(sh)["status"] in ("bertugas", "terlambat"):
+            ids.add(sh["teacher_id"])
+    return list(ids)
+
+async def _gate_parent_ids(person: dict) -> List[str]:
+    q = [{"role": "orang_tua", "student_id": person["id"]}]
+    if person.get("parent_email"):
+        q.append({"email": person["parent_email"]})
+    return [u["id"] for u in await db.users.find({"$or": q}, {"_id": 0, "id": 1}).to_list(10)]
+
+async def gate_event(person: dict, requested: Optional[str], method: str, station_name: Optional[str], operator: dict) -> dict:
+    """Catat satu kejadian di gerbang. Menentukan arah (masuk/keluar), keterlambatan, dan pelanggaran keluar tanpa izin."""
+    now = datetime.now(WIB)
+    today, hhmm = now.date().isoformat(), now.strftime("%H:%M")
+    cfg = await _gate_settings()
+    is_guru = person.get("role") == "guru"
+    last = await db.gate_logs.find_one({"user_id": person["id"], "date": today}, {"_id": 0}, sort=[("at", -1)])
+    if last and (now - datetime.fromisoformat(last["at"])).total_seconds() < cfg["repeat_seconds"] \
+            and requested in (None, "", "auto", last["direction"]):
+        return {**last, "repeat": True}
+    if requested in ("masuk", "keluar"):
+        direction = requested
+    elif last:
+        direction = "keluar" if last["direction"] == "masuk" else "masuk"
+    else:
+        coll = db.teacher_attendance if is_guru else db.attendance
+        had = await coll.find_one({"student_id": person["id"], "date": today, "status": "hadir"}, {"_id": 0, "id": 1})
+        direction = "keluar" if had else "masuk"
+    log = {"id": str(uuid.uuid4()), "user_id": person["id"], "user_name": person["name"], "role": "guru" if is_guru else "siswa",
+           "kelas": "Guru" if is_guru else person.get("kelas"), "photo": person.get("photo"), "date": today, "time": hhmm,
+           "at": now.isoformat(), "direction": direction, "method": method, "station_name": station_name, "operator": operator["name"],
+           "late": False, "early": False, "unauthorized": False, "izin_id": None, "izin_reason": None, "note": None,
+           "is_demo": bool(operator.get("is_demo"))}
+    if direction == "masuk":
+        first_in = not await db.gate_logs.find_one({"user_id": person["id"], "date": today, "direction": "masuk"}, {"_id": 0, "id": 1})
+        log["late"] = first_in and hhmm > cfg["jam_masuk"]
+        if last and last["direction"] == "keluar":
+            mins = int((now - datetime.fromisoformat(last["at"])).total_seconds() // 60)
+            log["note"] = f"Kembali setelah {mins} menit di luar"
+            if last.get("izin_id"):
+                log["izin_id"] = last["izin_id"]
+                await db.ik_requests.update_one({"id": last["izin_id"], "status": "approved"},
+                                                {"$set": {"status": "returned", "returned_at": now_iso(), "returned_by": f"Gerbang ({operator['name']})"}})
+    else:
+        cutoff = cfg["jam_pulang_guru"] if is_guru else cfg["jam_pulang"]
+        log["early"] = hhmm < cutoff
+        if log["early"] and not is_guru:
+            ik = await db.ik_requests.find_one({"student_id": person["id"], "date": today, "status": "approved"}, {"_id": 0})
+            if ik:
+                log.update(izin_id=ik["id"], izin_reason=ik.get("reason"), note=f"Izin keluar disetujui {ik.get('approved_by') or ''}".strip())
+            else:
+                log["unauthorized"] = True
+                log["note"] = f"Keluar tanpa izin sebelum jam pulang ({cutoff})"
+        elif log["early"]:
+            log["note"] = f"Pulang lebih awal dari jadwal ({cutoff})"
+    await db.gate_logs.insert_one(dict(log))
+    verb = "MASUK" if direction == "masuk" else "KELUAR"
+    extra = " (terlambat)" if log["late"] else ""
+    await notify([person["id"]], f"Tercatat {verb} sekolah {hhmm}", f"Anda tercatat {verb.lower()} gerbang pukul {hhmm} WIB via {method}{extra}.", "/notifications")
+    if not is_guru:
+        parents = await _gate_parent_ids(person)
+        if parents:
+            await notify(parents, f"{person['name']} {verb.lower()} sekolah {hhmm}",
+                         f"{person['name']} ({person.get('kelas') or '-'}) tercatat {verb.lower()} gerbang pukul {hhmm} WIB{extra}.", None)
+    if log["unauthorized"] or (is_guru and log["early"]):
+        title = f"PERINGATAN: {person['name']} keluar tanpa izin" if log["unauthorized"] else f"{person['name']} pulang lebih awal"
+        await notify([i for i in await _gate_alert_targets(person) if i != person["id"]], title,
+                     f"{person['name']} ({log['kelas'] or '-'}) keluar gerbang pukul {hhmm} WIB. {log['note']}.", "/gate-monitor")
+    return log
+
+async def _gate_overdue(today: str, now: datetime) -> list:
+    """Siswa yang keluar dengan izin tapi belum kembali melewati jam kembali yang disetujui."""
+    out = []
+    for ik in await db.ik_requests.find({"date": today, "status": "approved", "return_time": {"$ne": None}}, {"_id": 0}).to_list(500):
+        last = await db.gate_logs.find_one({"user_id": ik["student_id"], "date": today}, {"_id": 0}, sort=[("at", -1)])
+        if not last or last["direction"] != "keluar" or last.get("izin_id") != ik["id"] or now.strftime("%H:%M") <= ik["return_time"]:
+            continue
+        out.append({"izin_id": ik["id"], "user_id": ik["student_id"], "user_name": ik.get("student_name"), "kelas": ik.get("student_kelas") or ik.get("kelas"),
+                    "photo": ik.get("student_photo"), "out_at": last["time"], "return_time": ik["return_time"], "reason": ik.get("reason")})
+        if not ik.get("overdue_notified"):
+            await db.ik_requests.update_one({"id": ik["id"]}, {"$set": {"overdue_notified": True}})
+            person = await db.users.find_one({"id": ik["student_id"]}, {"_id": 0}) or {"id": ik["student_id"], "name": ik.get("student_name")}
+            await notify(await _gate_alert_targets(person) + await _gate_parent_ids(person),
+                         f"{person['name']} belum kembali dari izin",
+                         f"Izin keluar sampai {ik['return_time']} WIB, namun belum tercatat masuk kembali.", "/gate-monitor")
+    return out
+
+@api.get("/gate/settings")
+async def gate_settings_get(user=Depends(get_current_user)):
+    return await _gate_settings()
+
+@api.put("/gate/settings")
+async def gate_settings_put(body: GateSettingsIn, user=Depends(require_roles("super_admin", "admin_absensi", "kepsek"))):
+    await db.gate_settings.update_one({"id": "gate"}, {"$set": {"id": "gate", **body.model_dump(), "updated_by": user["name"]}}, upsert=True)
+    return await _gate_settings()
+
+@api.get("/gate/monitor")
+async def gate_monitor(date: Optional[str] = None, user=Depends(require_roles(*GATE_VIEW_ROLES))):
+    now = datetime.now(WIB)
+    today = date or now.date().isoformat()
+    logs = await db.gate_logs.find({"date": today}, {"_id": 0}).sort("at", -1).to_list(5000)
+    latest = {}
+    for lg in logs:  # sorted desc → first seen is latest
+        latest.setdefault(lg["user_id"], lg)
+    inside = [l for l in latest.values() if l["direction"] == "masuk"]
+    outside = [l for l in latest.values() if l["direction"] == "keluar"]
+    cfg = await _gate_settings()
+    overdue = await _gate_overdue(today, now) if today == now.date().isoformat() else []
+    return {"date": today, "settings": cfg, "server_time": now.strftime("%H:%M"),
+            "counts": {"masuk": sum(1 for l in logs if l["direction"] == "masuk"), "keluar": sum(1 for l in logs if l["direction"] == "keluar"),
+                       "inside": len(inside), "inside_siswa": sum(1 for l in inside if l["role"] == "siswa"), "inside_guru": sum(1 for l in inside if l["role"] == "guru"),
+                       "outside": len(outside), "unauthorized": sum(1 for l in logs if l["unauthorized"]), "late": sum(1 for l in logs if l["late"]),
+                       "overdue": len(overdue)},
+            "unauthorized": [l for l in logs if l["unauthorized"]],
+            "outside_now": [l for l in outside if l["early"]],
+            "overdue": overdue, "logs": logs[:500]}
+
+@api.get("/gate/me")
+async def gate_me(user=Depends(get_current_user)):
+    uid = user.get("student_id") if user["role"] == "orang_tua" else user["id"]
+    return await db.gate_logs.find({"user_id": uid}, {"_id": 0}).sort("at", -1).to_list(60)
 
 app.include_router(api)
 

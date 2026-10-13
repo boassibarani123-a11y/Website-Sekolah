@@ -6,14 +6,25 @@ import { VortexLogo, vgInput, mmss } from "./VortexLogo";
 
 const isAnswered = (a) => a !== null && a !== undefined && a !== -1 && a !== "";
 
-function useGuard({ active, onViolation, finishedRef, setLocked }) {
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+// iPhone Safari & in-app browsers can't fullscreen a page; they get a visibility-based guard instead.
+export const canFullscreen = () => {
+  const d = document.documentElement;
+  const enabled = document.fullscreenEnabled ?? document.webkitFullscreenEnabled;
+  return !!(d.requestFullscreen || d.webkitRequestFullscreen) && enabled !== false;
+};
+export const isTouchDevice = () => window.matchMedia?.("(pointer: coarse)").matches || navigator.maxTouchPoints > 1;
+
+function useGuard({ active, onViolation, finishedRef, setLocked, fsMode }) {
   useEffect(() => {
     if (!active) return;
-    const onVisibility = () => { if (document.hidden) { setLocked(true); onViolation("berpindah tab / meminimalkan jendela"); } };
-    const onBlur = () => { if (!document.hasFocus()) { setLocked(true); onViolation("jendela ujian kehilangan fokus"); } };
+    const touch = isTouchDevice();
+    const onVisibility = () => { if (document.hidden && !finishedRef.current) { setLocked(true); onViolation("berpindah aplikasi / tab atau meminimalkan layar"); } };
+    // Mobile browsers fire spurious blur (keyboard, toolbar, notification) — only desktop uses it.
+    const onBlur = () => { if (!touch && !document.hasFocus() && !finishedRef.current) { setLocked(true); onViolation("jendela ujian kehilangan fokus"); } };
     const onFs = () => {
-      if (finishedRef.current) return;
-      if (!document.fullscreenElement) { setLocked(true); onViolation("keluar dari mode layar penuh"); }
+      if (finishedRef.current || !fsMode) return;
+      if (!fsEl()) { setLocked(true); onViolation("keluar dari mode layar penuh"); }
       else if (document.hasFocus()) setLocked(false);
     };
     const block = (e) => e.preventDefault();
@@ -24,10 +35,11 @@ function useGuard({ active, onViolation, finishedRef, setLocked }) {
     const onPop = () => { window.history.pushState(null, "", window.location.href); onViolation("mencoba kembali ke halaman sebelumnya"); };
     const onUnload = (e) => { e.preventDefault(); e.returnValue = ""; };
     const blockEvs = ["contextmenu", "copy", "cut", "paste", "dragstart"];
+    const fsEvs = ["fullscreenchange", "webkitfullscreenchange"];
     window.history.pushState(null, "", window.location.href);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
-    document.addEventListener("fullscreenchange", onFs);
+    fsEvs.forEach(ev => document.addEventListener(ev, onFs));
     blockEvs.forEach(ev => document.addEventListener(ev, block));
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("popstate", onPop);
@@ -35,22 +47,26 @@ function useGuard({ active, onViolation, finishedRef, setLocked }) {
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
-      document.removeEventListener("fullscreenchange", onFs);
+      fsEvs.forEach(ev => document.removeEventListener(ev, onFs));
       blockEvs.forEach(ev => document.removeEventListener(ev, block));
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("popstate", onPop);
       window.removeEventListener("beforeunload", onUnload);
     };
-  }, [active, onViolation, finishedRef, setLocked]);
+  }, [active, onViolation, finishedRef, setLocked, fsMode]);
 }
 
 const exitFullscreen = () => {
   try { navigator.keyboard?.unlock?.(); } catch (e) { /* noop */ }
-  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* noop */ }
+  try { if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) { /* noop */ }
 };
 const enterFullscreen = () => {
-  const p = document.documentElement.requestFullscreen?.({ navigationUI: "hide" });
-  return Promise.resolve(p).then(() => navigator.keyboard?.lock?.().catch(() => {})).catch(() => {});
+  if (!canFullscreen()) return Promise.resolve();
+  const d = document.documentElement;
+  try {
+    const p = d.requestFullscreen ? d.requestFullscreen({ navigationUI: "hide" }) : d.webkitRequestFullscreen();
+    return Promise.resolve(p).then(() => navigator.keyboard?.lock?.().catch(() => {})).catch(() => {});
+  } catch (e) { return Promise.resolve(); }
 };
 
 function TokenGate({ exam, onClose, onStart, starting }) {
@@ -70,15 +86,17 @@ function TokenGate({ exam, onClose, onStart, starting }) {
           </div>
           <ul className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-[13px] text-slate-600 space-y-1.5">
             <li>• {exam.question_count} soal{exam.time_limit ? ` · durasi ${exam.time_limit} menit` : ""}</li>
-            <li>• Layar masuk mode <b>penuh</b>; jawaban tersimpan otomatis.</li>
-            <li>• Pindah tab / keluar layar penuh dicatat sebagai pelanggaran.</li>
+            {canFullscreen()
+              ? <li>• Layar masuk mode <b>penuh</b>; jawaban tersimpan otomatis.</li>
+              : <li data-testid="exam-mobile-mode-note">• Perangkat ini tidak mendukung layar penuh (mis. iPhone) — ujian berjalan di <b>mode aman seluler</b>; jawaban tersimpan otomatis.</li>}
+            <li>• Pindah tab / aplikasi, menutup layar, atau keluar layar penuh dicatat sebagai pelanggaran.</li>
             <li>• Maksimal <b>{maxV}×</b> pelanggaran, lalu ujian dikirim otomatis.</li>
           </ul>
           <div>
             <label className="text-xs font-semibold text-slate-600 uppercase flex items-center gap-1"><KeyRound className="w-3 h-3" />Token Ujian</label>
             <input data-testid="exam-start-password-input" type="password" autoFocus value={token}
               onChange={e => setToken(e.target.value)} onKeyDown={e => { if (e.key === "Enter") onStart(token); }}
-              placeholder="Masukkan token dari pengawas" className={`mt-1 ${vgInput} font-mono tracking-widest`} />
+              placeholder="Masukkan token dari pengawas" className={`mt-1 ${vgInput} font-mono tracking-widest text-base`} />
           </div>
           <button data-testid="exam-start-button" disabled={starting} onClick={() => onStart(token)}
             className="w-full py-3 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
@@ -112,7 +130,7 @@ function QuestionView({ q, i, answer, setAnswer }) {
       <p className="text-lg leading-relaxed text-slate-900 whitespace-pre-wrap">{q.q}</p>
       {q.type === "essay" ? (
         <textarea data-testid="exam-essay-answer" rows={8} value={answer || ""} onChange={e => setAnswer(e.target.value)}
-          placeholder="Tulis jawabanmu di sini..." className={`mt-6 ${vgInput} select-text leading-relaxed`} />
+          placeholder="Tulis jawabanmu di sini..." className={`mt-6 ${vgInput} select-text [-webkit-user-select:text] leading-relaxed text-base`} />
       ) : (
         <div className="mt-6 space-y-2.5">
           {q.options.map((o, oi) => (
@@ -128,14 +146,14 @@ function QuestionView({ q, i, answer, setAnswer }) {
   );
 }
 
-function LockOverlay({ violations, maxV, onResume }) {
+function LockOverlay({ violations, maxV, onResume, fsMode }) {
   return (
     <div data-testid="exam-lock-overlay" className="fixed inset-0 z-[70] bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center text-center text-white p-6">
       <div className="w-20 h-20 rounded-full bg-rose-600 flex items-center justify-center animate-pulse"><Lock className="w-10 h-10" /></div>
       <p className="mt-5 font-heading text-3xl font-black">Ujian Terkunci</p>
-      <p className="mt-2 text-slate-300 max-w-md">Vortex Guard mendeteksi Anda keluar dari layar penuh atau berpindah jendela. Pelanggaran: <b className="text-rose-400">{violations}/{maxV}</b>.</p>
+      <p className="mt-2 text-slate-300 max-w-md">Vortex Guard mendeteksi Anda {fsMode ? "keluar dari layar penuh atau berpindah jendela" : "meninggalkan halaman ujian (pindah aplikasi/tab)"}. Pelanggaran: <b className="text-rose-400">{violations}/{maxV}</b>.</p>
       <button data-testid="exam-resume-fullscreen" onClick={onResume}
-        className="mt-6 px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-500 font-bold flex items-center gap-2 transition-colors"><Maximize className="w-5 h-5" />Kembali ke Layar Penuh</button>
+        className="mt-6 px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-500 font-bold flex items-center gap-2 transition-colors"><Maximize className="w-5 h-5" />{fsMode ? "Kembali ke Layar Penuh" : "Lanjutkan Ujian"}</button>
     </div>
   );
 }
@@ -150,6 +168,7 @@ export function ExamTake({ exam, onClose, onDone }) {
   const [left, setLeft] = useState(null);
   const [violations, setViolations] = useState(0);
   const [locked, setLocked] = useState(false);
+  const [fsMode, setFsMode] = useState(true);
   const [savedAt, setSavedAt] = useState(null);
   const [confirm, setConfirm] = useState(false);
   const [result, setResult] = useState(null);
@@ -200,7 +219,7 @@ export function ExamTake({ exam, onClose, onDone }) {
     }
   }, [exam.id, submit, maxV]);
 
-  useGuard({ active: phase === "running", onViolation, finishedRef, setLocked });
+  useGuard({ active: phase === "running", onViolation, finishedRef, setLocked, fsMode });
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); exitFullscreen(); }, []);
 
   const start = async (token) => {
@@ -210,7 +229,10 @@ export function ExamTake({ exam, onClose, onDone }) {
     try {
       const r = await api.post(`/exams/${exam.id}/start`, { password: token.trim() });
       await fs;
-      if (!document.fullscreenElement) setLocked(true);
+      // Strict fullscreen only where it actually works; touch devices that refuse it fall back to mobile mode.
+      const strict = canFullscreen() && (!!fsEl() || !isTouchDevice());
+      setFsMode(strict);
+      setLocked(strict && !fsEl());
       const qs = r.data.questions || [];
       if (r.data.expired) { exitFullscreen(); toast.error("Waktu ujian sudah habis"); return; }
       setQuestions(qs);
@@ -253,8 +275,9 @@ export function ExamTake({ exam, onClose, onDone }) {
   const setAnswer = (v) => setAnswers(a => a.map((x, i) => i === current ? v : x));
   const warn = left !== null && left <= 300;
   return (
-    <div className="fixed inset-0 bg-[#F4F6F5] z-[60] overflow-y-auto select-none" data-testid="exam-running">
-      {locked && <LockOverlay violations={violations} maxV={maxV} onResume={() => enterFullscreen().then(() => { if (document.fullscreenElement) setLocked(false); })} />}
+    <div className="fixed inset-0 bg-[#F4F6F5] z-[60] overflow-y-auto overscroll-none select-none [-webkit-touch-callout:none]" data-testid="exam-running" data-guard-mode={fsMode ? "fullscreen" : "mobile"}>
+      {locked && <LockOverlay violations={violations} maxV={maxV} fsMode={fsMode}
+        onResume={() => fsMode ? enterFullscreen().then(() => { if (fsEl()) setLocked(false); }) : setLocked(false)} />}
       <header className="sticky top-0 z-10 bg-slate-950 text-white">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 px-5 py-3">
           <div className="flex items-center gap-4 min-w-0"><VortexLogo size="sm" dark /><span className="hidden sm:block text-slate-400 truncate text-sm">{exam.title}</span></div>

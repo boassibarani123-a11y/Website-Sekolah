@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { GateDisplay } from "@/components/attendance/GateDisplay";
 import { StationPanel } from "@/components/attendance/StationPanel";
-import { useScannerInput, beep, getStation, todayWib } from "@/components/attendance/scannerUtils";
+import { useScannerInput, beep, alarm, getStation, todayWib, getGateDir, saveGateDir, gateKind } from "@/components/attendance/scannerUtils";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const ATTENDANCE_ROLES = ["admin_absensi", "super_admin", "staff_tu", "kepsek"];
@@ -23,6 +23,8 @@ export default function Attendance() {
   const [scanning, setScanning] = useState(false);
   const [newId, setNewId] = useState(null);
   const [station, setStation] = useState(getStation);
+  const [dir, setDirState] = useState(getGateDir);
+  const setDir = (d) => { saveGateDir(d); setDirState(d); };
   const [current, setCurrent] = useState(null);
   const [history, setHistory] = useState([]);
   const [isFull, setIsFull] = useState(false);
@@ -66,18 +68,18 @@ export default function Attendance() {
   const gateScan = useCallback(async (code) => {
     let res;
     try {
-      const r = await api.post("/attendance/scan", { nisn: code, method: "barcode", status: "hadir", station_id: station.id, station_name: station.name });
-      res = { kind: r.data.duplicate ? "dup" : "ok", student: r.data.student, at: r.data.scanned_at, code };
+      const r = await api.post("/attendance/scan", { nisn: code, method: "barcode", status: "hadir", direction: dir, station_id: station.id, station_name: station.name });
+      res = { kind: gateKind(r.data), student: r.data.student, at: r.data.scanned_at, code, gate: r.data.gate };
     } catch (e) {
       res = { kind: "err", code, at: new Date().toISOString(), message: e.response?.data?.detail || "Gagal terhubung ke server" };
     }
     res.key = `${Date.now()}-${Math.random()}`;
-    beep(res.kind !== "err");
+    if (res.kind === "alert") alarm(); else beep(res.kind !== "err");
     setCurrent(res);
     setHistory(h => [res, ...h].slice(0, 8));
     clearTimeout(clearRef.current);
     clearRef.current = setTimeout(() => setCurrent(null), 4000);
-    if (res.kind === "ok") load();
+    if (res.kind === "ok" || res.kind === "alert") load();
   }, [station]); // eslint-disable-line
   useScannerInput(gateScan, !!isOperator);
 
@@ -187,7 +189,7 @@ export default function Attendance() {
       </div>
 
       <div ref={gateRef} className={isFull ? "gate-full bg-white" : ""}>
-        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull} rows={rows} stats={stats} newId={newId}/>
+        <GateDisplay current={current} history={history} station={station} onFullscreen={toggleFull} isFull={isFull} rows={rows} stats={stats} newId={newId} dir={dir} setDir={setDir}/>
       </div>
 
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">

@@ -51,6 +51,7 @@ import GuruStaff from "@/pages/GuruStaff";
 import Profile from "@/pages/Profile";
 import Piket from "@/pages/Piket";
 import FaceAttendance from "@/pages/FaceAttendance";
+import GateMonitor from "@/pages/GateMonitor";
 import FaceEnroll from "@/pages/FaceEnroll";
 import "@/index.css";
 
@@ -117,6 +118,7 @@ function AppInner() {
           <Route path="piket" element={<Piket/>}/>
           <Route path="face-attendance" element={<FaceAttendance/>}/>
           <Route path="face-enroll" element={<FaceEnroll/>}/>
+          <Route path="gate-monitor" element={<GateMonitor/>}/>
         </Route>
         <Route path="/print-cards" element={<Protected><PrintCards/></Protected>}/>
       </Routes>

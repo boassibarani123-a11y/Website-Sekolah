@@ -1,10 +1,12 @@
-import { CheckCircle2, AlertTriangle, XCircle, GraduationCap, ScanFace, ScanBarcode, BadgeCheck } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, GraduationCap, ScanFace, ScanBarcode, BadgeCheck, LogOut, ShieldAlert } from "lucide-react";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "");
 
 const TONE = {
   ok: { wrap: "bg-emerald-50 border-emerald-200", ring: "ring-emerald-400", pill: "bg-emerald-500 text-white", bar: "bg-emerald-400", Icon: CheckCircle2, title: "Selamat datang!" },
   dup: { wrap: "bg-amber-50 border-amber-200", ring: "ring-amber-400", pill: "bg-amber-400 text-amber-950", bar: "bg-amber-400", Icon: AlertTriangle, title: "Sudah absen hari ini" },
+  out: { wrap: "bg-sky-50 border-sky-200", ring: "ring-sky-400", pill: "bg-sky-600 text-white", bar: "bg-sky-400", Icon: LogOut, title: "Sampai jumpa!" },
+  alert: { wrap: "bg-rose-100 border-rose-500 animate-pulse", ring: "ring-rose-600", pill: "bg-rose-600 text-white", bar: "bg-rose-600", Icon: ShieldAlert, title: "Keluar tanpa izin!" },
   err: { wrap: "bg-rose-50 border-rose-200", ring: "ring-rose-400", pill: "bg-rose-500 text-white", bar: "bg-rose-400", Icon: XCircle, title: "Belum berhasil" },
 };
 
@@ -32,7 +34,10 @@ export function PresenceIdle({ mode = "face" }) {
 
 export function PresenceCard({ r, mode = "face" }) {
   if (!r) return <PresenceIdle mode={mode} />;
-  const t = TONE[r.kind] || TONE.ok;
+  const g = r.gate;
+  const tk = r.kind === "ok" && g?.direction === "keluar" ? "out" : r.kind;
+  const t = TONE[tk] || TONE.ok;
+  const dirLabel = g ? (g.direction === "keluar" ? "Keluar" : "Masuk") : "Hadir";
   const s = r.student;
   const isGuru = r.guru || s?.kelas === "Guru";
   return (
@@ -46,9 +51,14 @@ export function PresenceCard({ r, mode = "face" }) {
           <p className="mt-2 inline-flex items-center gap-1.5 text-slate-600 font-medium">
             {isGuru ? <><GraduationCap className="w-4 h-4" />Guru{s.nip ? ` · NIP ${s.nip}` : ""}</> : <>Kelas {s.kelas || "-"}{s.nisn ? ` · NISN ${s.nisn}` : ""}</>}
           </p>
-          <p data-testid="gate-result-label" className={`mt-5 px-6 py-2.5 rounded-full text-lg font-bold shadow-sm ${t.pill}`}>
-            {r.kind === "dup" ? `Sudah tercatat pukul ${fmt(r.at)}` : `Hadir · ${fmt(r.at)}`}
+          <p data-testid="gate-result-label" data-direction={g?.direction || "hadir"} className={`mt-5 px-6 py-2.5 rounded-full text-lg font-bold shadow-sm ${t.pill}`}>
+            {r.kind === "dup" ? `Sudah tercatat ${g ? dirLabel.toLowerCase() + " " : ""}pukul ${fmt(r.at)}` : `${dirLabel} · ${g?.time || fmt(r.at)}`}
           </p>
+          {g && !g.repeat && (g.late || g.note) && (
+            <p data-testid="gate-result-note" className={`mt-2 text-sm font-semibold ${g.unauthorized ? "text-rose-700" : g.late ? "text-orange-600" : "text-slate-600"}`}>
+              {g.late ? "Terlambat masuk. " : ""}{g.note || ""}{g.izin_reason ? ` · ${g.izin_reason}` : ""}
+            </p>
+          )}
           <p className="mt-3 text-xs text-slate-500 flex items-center gap-1.5">
             {mode === "face" ? <ScanFace className="w-3.5 h-3.5" /> : <ScanBarcode className="w-3.5 h-3.5" />}
             {mode === "face" ? `Face ID · kecocokan ${r.code}` : "Barcode kartu pelajar"}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Check, Ban, Undo2, User, Search, CalendarClock } from "lucide-react";
 import api from "@/lib/apiClient";
-import { ROLE_LABEL, loanLabel } from "./invUi";
+import { ROLE_LABEL, loanLabel, UnitChips, UnitBadge } from "./invUi";
 import { ReturnModal } from "./ItemForms";
 
 const FILTERS = ["Semua", "Menunggu Approval", "Disetujui", "Terlambat", "Dikembalikan", "Ditolak"];
@@ -10,16 +10,20 @@ const FILTERS = ["Semua", "Menunggu Approval", "Disetujui", "Terlambat", "Dikemb
 export function LoansView({ reqs, isStaff, onChange }) {
   const [f, setF] = useState("Semua");
   const [q, setQ] = useState("");
+  const [unit, setUnit] = useState("all");
+  const uOf = (r) => r.unit || "Umum";
   const [returning, setReturning] = useState(null);
   const act = async (id, status) => {
     try { await api.patch(`/borrow/${id}?status=${status}`); toast.success(`Permintaan ${status === "Disetujui" ? "disetujui" : "ditolak"}`); onChange(); }
     catch (e) { toast.error(e.response?.data?.detail || "Gagal"); }
   };
   const match = (r) => f === "Semua" || (f === "Terlambat" ? loanLabel(r).late : r.status === f);
-  const list = reqs.filter(r => match(r) && (!q || `${r.item_name} ${r.requester_name}`.toLowerCase().includes(q.toLowerCase())));
+  const unitCounts = reqs.reduce((a, r) => ({ ...a, all: a.all + 1, [uOf(r)]: (a[uOf(r)] || 0) + 1 }), { all: 0 });
+  const list = reqs.filter(r => (unit === "all" || uOf(r) === unit) && match(r) && (!q || `${r.item_name} ${r.requester_name}`.toLowerCase().includes(q.toLowerCase())));
   const count = (s) => reqs.filter(r => s === "Semua" || (s === "Terlambat" ? loanLabel(r).late : r.status === s)).length;
   return (
     <div className="space-y-4">
+      <UnitChips value={unit} onChange={setUnit} counts={unitCounts} testid="borrow-unit-filter" />
       <div className="flex gap-2 flex-wrap items-center" data-testid="borrow-status-filter">
         {FILTERS.map(s => (
           <button key={s} data-testid={`borrow-filter-${s.replace(/\s/g, "-")}`} onClick={() => setF(s)}
@@ -36,6 +40,8 @@ export function LoansView({ reqs, isStaff, onChange }) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-heading font-bold text-slate-900">{r.item_name} <span className="text-slate-400 text-sm font-normal">× {r.quantity}</span></p>
+                {uOf(r) !== "Umum" && <div className="mt-1 flex items-center gap-2 flex-wrap"><UnitBadge u={uOf(r)} testid={`borrow-unit-${r.id}`} />
+                  {r.use_date && <span data-testid={`borrow-lab-session-${r.id}`} className="text-[11px] font-semibold text-slate-600">{r.subject} · {r.use_date} {r.start_time}–{r.end_time}</span>}</div>}
                 <div className="mt-1.5 flex items-center gap-2 flex-wrap" data-testid={`borrower-info-${r.id}`}>
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold"><User className="w-3 h-3" />{r.requester_name}</span>
                   <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-semibold">{ROLE_LABEL[r.requester_role] || r.requester_role || "—"}</span>

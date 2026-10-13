@@ -56,3 +56,25 @@ export function getStation() {
 export function saveStation(s) { localStorage.setItem("gate_station", JSON.stringify(s)); }
 
 export const todayWib = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+
+export const getGateDir = () => localStorage.getItem("gate_direction") || "auto";
+export const saveGateDir = (d) => localStorage.setItem("gate_direction", d);
+
+// Loud 3-pulse siren for "keluar tanpa izin" so the guard notices immediately.
+export function alarm() {
+  try {
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35, 0.7].forEach(t => {
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = "sawtooth"; o.frequency.setValueAtTime(880, ctx.currentTime + t); o.frequency.linearRampToValueAtTime(440, ctx.currentTime + t + 0.3);
+      g.gain.value = 0.2; o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+    });
+  } catch { /* audio not available */ }
+}
+
+// Map an attendance API response (barcode / face) to a display result.
+export function gateKind(data) {
+  if (data.gate) return data.gate.repeat ? "dup" : data.gate.unauthorized ? "alert" : "ok";
+  return data.duplicate ? "dup" : "ok";
+}

@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { GraduationCap, LayoutDashboard, UsersRound, QrCode, Boxes, ClipboardList,
   BrainCircuit, Camera, HandCoins, Vote, Trophy, Megaphone, MessageSquareWarning,
-  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound, ScanFace, ShieldCheck, UserCheck, Contact, DoorOpen, ClipboardCheck, Tornado } from "lucide-react";
+  LogOut, ChevronDown, BarChart3, FileText, Presentation as PresentationIcon, MessageSquare, CalendarDays, UserPlus2, Settings as SettingsIcon, IdCard, Info, School, Network, BookOpen, CalendarCheck, CalendarRange, Award, Moon, Sun, Palette, KeyRound, ScanFace, ShieldCheck, UserCheck, Contact, DoorOpen, ClipboardCheck, Tornado, Radar } from "lucide-react";
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
 import AiAssistant from "@/components/AiAssistant";
@@ -27,6 +27,8 @@ const MENU = [
   { to: "/face-attendance", label: "Presensi Wajah", icon: ScanFace, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
   { to: "/face-enroll", label: "Daftar Wajah", icon: UserCheck, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
   { to: "/teacher-attendance", label: "Absensi Guru", icon: ClipboardCheck, roles: ["super_admin","kepsek","staff_tu","admin_absensi"] },
+  { to: "/gate-monitor", label: "Pantau Gerbang", icon: Radar, roles: ["super_admin","kepsek","staff_tu","guru","admin_absensi"] },
+  { to: "/gate-monitor", label: "Riwayat Gerbang", icon: Radar, roles: ["siswa","ketua_kelas","ketua_osis"] },
   { to: "/izin-keluar", label: "Izin Keluar (IK)", icon: DoorOpen, roles: ["super_admin","kepsek","staff_tu","guru","admin_absensi","siswa","ketua_kelas","ketua_osis"] },
   { to: "/guests", label: "Kunjungan Tamu", icon: Contact, roles: ["super_admin","kepsek","staff_tu"] },
   { to: "/piket", label: "Piket Gerbang", icon: ShieldCheck, roles: ["super_admin","kepsek","staff_tu","guru","admin_absensi"] },
@@ -64,7 +66,7 @@ export default function DashboardLayout() {
   const setBrand = async (c) => { try { await api.patch("/settings", { primary_color: c }); refresh(); setThemeMenu(false); } catch {} };
   if (!user) return null;
 
-  const ADMIN_ABSENSI_PATHS = ["/", "/attendance", "/attendance-recap", "/face-attendance", "/face-enroll", "/piket"];
+  const ADMIN_ABSENSI_PATHS = ["/", "/attendance", "/attendance-recap", "/face-attendance", "/face-enroll", "/piket", "/gate-monitor"];
   const visible = MENU
     .filter(m => m.roles === "*" || m.roles.includes(user.role))
     .filter(m => user.role !== "admin_absensi" || ADMIN_ABSENSI_PATHS.includes(m.to));
