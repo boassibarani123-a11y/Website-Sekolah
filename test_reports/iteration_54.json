@@ -1,0 +1,37 @@
+{
+  "summary": "Iter54 validated the three new feature groups: (1) iPhone exam mobile mode fix in ExamTake.jsx, (2) Gate masuk/keluar logging with unauthorized detection + notifications + /gate/* endpoints and GateMonitor page, (3) Inventory lab categories (Lab Biologi / Lab Komputer) with lab-specific borrow validation and grouped Excel export. Backend: 16/16 pytest pass in /app/backend/tests/test_iter54_gate_inventory_exam.py (JUnit /app/test_reports/pytest/iter54.xml). Frontend (Playwright): iPhone 13 emulation with requestFullscreen deleted and fullscreenEnabled=false — siswa opened exam 'UTS' (token math123) and verified: canFullscreen()=false, exam-password-modal shows exam-mobile-mode-note, after token exam-running has data-guard-mode='mobile', NO lock overlay right after start, dispatching visibilitychange with document.hidden=true shows exam-lock-overlay with button text 'Lanjutkan Ujian' and bumps exam-violation-count from 0/5 to 1/5, clicking exam-resume-fullscreen immediately dismisses lock (no fullscreen required), siswa then answered an MC (exam-option-0), submitted (submit-exam-button -> exam-confirm-submit), exam-done-modal appeared with score. GateMonitor /gate-monitor rendered with all 18 testids (gate-kpi-inside/masuk/keluar/unauthorized/overdue/late, 3 alert lists, gate-log-table + 5 filters + search, gate-date, gate-settings-button opens modal with jam_masuk/jam_pulang/jam_pulang_guru inputs + save). /attendance has gate-direction-toggle with auto/masuk/keluar; clicking persists 'gate_direction' in localStorage. /inventory Items tab shows all 5 UnitChips (all/Umum/Lab-Biologi/Lab-Komputer) with counts; Loans tab shows borrow-unit-filter chips and borrow-lab-session-{id} badge for the lab borrow created in the pytest run; inv-add-button opens Tambah Barang modal with inv-unit-select containing inv-unit-Umum/Lab-Biologi/Lab-Komputer, and picking Lab Biologi auto-selects location 'Laboratorium Biologi'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "InventoryDashboard", "issues": ["Recharts warning 'width(-1) and height(-1) of chart should be greater than 0' logged twice on /inventory initial load — cosmetic only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter54_gate_inventory_exam.py",
+    "/app/test_reports/pytest/iter54.xml"
+  ],
+  "action_items": [
+    "(none-blocking) Recharts container size warning on InventoryDashboard — set a minHeight on the ResponsiveContainer to silence."
+  ],
+  "critical_code_review_comments": [
+    "server.py:7097 gate notify title/body are hard-coded 'MASUK'/'KELUAR' strings in Indonesian/English mix; fine functionally but if i18n is ever added these literals need extracting.",
+    "server.py:7056-7058 repeat-window check uses `requested in (None, '', 'auto', last['direction'])`. When operator passes direction='masuk' while last log is 'keluar', repeat is correctly bypassed. Confirm UX expectation when scanning twice in a row with explicit same direction within 60s — currently those return repeat=True which is desirable.",
+    "server.py:7085-7091 unauthorized detection only applies when early AND !is_guru. If a siswa scans 'keluar' after jam_pulang (not early) there is no izin check and no notification — intended, but worth doc comment.",
+    "ExamTake.jsx:233 strict = canFullscreen() && (!!fsEl() || !isTouchDevice()). On an Android with fullscreen support but running headless (where requestFullscreen may reject silently), fsEl() returns null and isTouchDevice() is true, so strict evaluates to false ⇒ mobile mode. Good fallback. Confirm desktop behaviour (!isTouchDevice()) still enters strict when fsEl() is null right after start — handled by setLocked(strict && !fsEl()) which immediately locks until the user Re-clicks resume.",
+    "GateMonitor.jsx: no auto-refresh of monitor data — if the user leaves the page open all day, overdue/unauthorized lists go stale. Consider a 30-60s poll (SSE even better)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter54_gate_inventory_exam.py",
+    "/app/test_reports/iteration_54.json",
+    "/app/test_reports/pytest/iter54.xml"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (iPhone exam mobile mode + GateMonitor + Attendance toggle + Inventory lab chips/modal all pass)"},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged.",
+  "seed_data_creation": "pytest TestInventoryLabUnits created 3 TEST_ items (Umum/Lab Biologi/Lab Komputer) and deleted them on teardown; one borrow_request remains from TestInventoryLabUnits.test_borrow_lab_requires_fields (approved=false, 'Biologi Sel' 2026-02-01 08:00-09:30) referencing a now-deleted item — safe but can be purged. Several gate_logs created today for Siswa Uji (NISN 0051234567) via auto+keluar scans with station_name='TEST_GATE'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter54_gate_inventory_exam.py. The test_scan_explicit_keluar_early_unauthorized test sleeps 61s to bypass the 60s repeat window — this makes the suite take ~65s total. If adding more scan tests, use station_name='TEST_GATE' and vary nisn or wait >60s. The iPhone exam mobile-mode Playwright flow uses `ctx.add_init_script` BEFORE the first navigation to delete requestFullscreen/webkitRequestFullscreen on both Element and HTMLElement prototypes and override Document.fullscreenEnabled getter. Simulating visibilitychange requires overriding both document.hidden and document.visibilityState via Object.defineProperty then dispatching a 'visibilitychange' Event. All current testids match the review spec exactly.",
+  "rca of the issue": "N/A - all three feature groups verified working end-to-end."
+}
