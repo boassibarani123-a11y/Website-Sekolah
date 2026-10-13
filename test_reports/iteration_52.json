@@ -1,0 +1,34 @@
+{
+  "summary": "Iter52 verified the new 'Analisis Ujian' feature in Vortex Guard end-to-end. Backend: 12/12 pytest in /app/backend/tests/test_iter52_exam_analysis.py (JUnit at /app/test_reports/pytest/iter52.xml) covering (a) KKM field default=75 / accept POST+PATCH 0-100 / reject >100 (422), (b) GET /api/exams/{eid}/analysis - guru creator + super_admin 200 with full shape (stats keys participants/roster/not_taken/avg/max/min/median/kkm/passed/pass_rate, 10 distribution buckets 0-10..91-100, items with mc difficulty+label and discrimination+label, options list with count/pct/is_key/effective, blank, flags list, essay avg_score/graded/responses, enough_data true at >=5, problem_count), siswa 403, (c) GET /api/exams/{eid}/export?format=xlsx contains both 'Nilai Ujian' and 'Analisis Butir' sheets, PDF export still works. Frontend: Playwright smoke all 5 role logins OK, /vortex-guard loads for guru/siswa/super_admin; Analisis modal flow verified on 'Uji Analisis' card (exam-analysis-{id} button opens exam-analysis-modal, data-testids analysis-stats/analysis-distribution/analysis-items/analysis-participants/analysis-pass-rate/analysis-problem-count/analysis-export-xlsx/exam-analysis-close present, analysis-low-data-warning shown with 1 submission, clicking item 1 expands analysis-options-1, close works).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ExamAnalysis modal distribution chart", "issues": ["Recharts ResponsiveContainer logs 'width(-1) height(-1)' warnings on initial mount - cosmetic, chart still renders correctly after re-measure"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter52_exam_analysis.py",
+    "/app/test_reports/pytest/iter52.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:6392 - the tuple-assignment 'upper, lower = {...}, {...} if k else set()' relies on Python precedence (ternary binds only to the second tuple element). Works for current call sites because k==0 implies ranked is empty so both set comprehensions yield empty sets, but the intent is unclear. Suggest 'if k==0: upper=lower=set()' then compute afterwards.",
+    "server.py:6383 - bucket index formula '-(-int(p*100)//1000)-1' is correct but opaque; replace with 'min(9, int(p//10))' guarded for p==0.",
+    "server.py is still 6850 lines - Vortex/Exam block (~2270-2620 + 6260-6500) remains a strong refactor candidate (also flagged in iter50/51).",
+    "ExamAnalysis.jsx DistributionChart: wrap ResponsiveContainer in a container with explicit height to avoid the 'width(-1) height(-1)' Recharts warning on first paint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter52_exam_analysis.py",
+    "/app/test_reports/iteration_52.json",
+    "/app/test_reports/pytest/iter52.xml"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (smoke 5/5 + analysis-modal flow)"},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged. Ephemerally created+deleted 5 TEST_ITER52 siswa accounts (test_iter52_s1..5@sman1laguboti.sch.id, phone 081234000001..5) in XII IPA 1 and a temp exam that were cleaned up by pytest fixtures.",
+  "seed_data_creation": "Fully ephemeral - 5 TEST_ITER52 siswa + 1 temp exam created and deleted during test run. No persistent seed data added. Existing 'Uji Analisis' (VG2026) with 1 submission is unchanged.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter52_exam_analysis.py. The exam creation path uses shuffle_questions=false + shuffle_options=false so answers can be submitted as original indices. Siswa submission flow: POST /api/exams/{eid}/start {password} then POST /api/exams/attempt {exam_id, answers}. Note POST /api/users (super_admin) requires 'phone' for role=siswa else 400. Analysis endpoint ACL: guru creator OR wali kelas (via _homeroom_kelas) OR super_admin; everyone else 403.",
+  "rca of the issue": "N/A - no defects detected."
+}

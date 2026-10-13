@@ -1,0 +1,34 @@
+{
+  "summary": "Iter49 covers the latest Website-Sekolah main21 batch requested by main agent: (a) GET /api/health, (b) GET /api/users/{uid} role-gated + 404 + password_hash exclusion, (c) POST /api/users/bulk-delete super_admin guard + working flow on throwaway accounts, (d) POST /api/auth/forgot-password weak-password early-return + valid-flow create + admin approve-all + login with new pw + restore to BaruSiswa123, plus a UI smoke of all referenced pages (/accounts BulkDeleteModal, /forgot-password, /reset-requests, /teacher-attendance, /schoolgram, /guests, /izin-keluar, /vortex-guard, /face-enroll, /my-card as siswa). Backend: 10/10 passed via /app/backend/tests/test_iter49_new_batch.py (JUnit at /app/test_reports/pytest/iter49.xml). Frontend: BulkDeleteModal correctly omits super_admin option (verified via Playwright testid probe + screenshot) and offers the 8 non-super_admin roles only; forgot-password page exposes all expected testids (forgot-email-input, forgot-identifier-input, forgot-new-password-input, forgot-confirm-password-input, forgot-submit-button, forgot-strength, forgot-page). Admin login works, dashboard loads. Siswa /my-card shows NIS 2024001 and 'BERLAKU SAMPAI LULUS SMA'. All referenced routes render without client-side crashes (only expected 401 on /api/me pre-login).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter49_new_batch.py",
+    "/app/test_reports/pytest/iter49.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/server.py now 6208 lines - continues to be a maintainability concern; splitting by domain still recommended (accounts/face/schoolgram/guests/izin/teacher_att/forgot).",
+    "GET /api/users/{uid} is defined AFTER app.include_router? Actually it's defined before include_router at line 6195 but it comes after other /users/* routes - route ordering OK. However the response includes raw user fields unfiltered; consider whitelisting fields to avoid leaking internal flags (identifier_hint, is_demo, etc.).",
+    "bulk_delete_users excludes super_admin in body.roles but if an operator sends roles=['siswa'] with kelas=None it will delete ALL siswa in-scope. The modal shows a total count but requires only 'HAPUS' text; consider also showing a last-step confirmation when total>50.",
+    "forgot-password: password-rule 400 is correctly returned before identity check (verified by test). However Pydantic Field(min_length=8) returns 422 for len<8 BEFORE reaching the handler, so clients see 422 vs 400 depending on length. UX-wise harmless, but inconsistent.",
+    "ResetRequests UI 'Approve Semua' button only renders when pending>0 - correct, but add a disabled version so admins see it exists.",
+    "Login page shows 401 console errors for /api/me ping - harmless but noisy; consider gating the ping behind an existing cookie check."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter49_new_batch.py",
+    "/app/test_reports/iteration_49.json",
+    "/app/test_reports/pytest/iter49.xml"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% smoke (all referenced routes rendered, all expected testids present)"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is. Test restored siswa password to BaruSiswa123 at end of forgot-password test.",
+  "seed_data_creation": "Created and destroyed 2 ephemeral TEST_ siswa accounts under a disposable kelas TEST_K_* via /api/users then wiped via bulk-delete. Cleared db.password_reset_requests and pending reset_requests for siswa before forgot-password flow.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter49_new_batch.py (self-loads env from /app/frontend/.env + /app/backend/.env, strips quotes). Siswa account must have whatsapp/phone to be created via POST /api/users. The pymongo direct connection is used inside forgot-password test to pre-clear rate-limit table (password_reset_requests) and pending reset_requests for determinism. Playwright wrapper is healthy again in this iteration.",
+  "rca of the issue": "N/A - no functional defects detected in the requested feature batch."
+}
