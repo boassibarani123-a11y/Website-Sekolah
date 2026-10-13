@@ -40,7 +40,7 @@ function DistributionChart({ data }) {
     <div className="rounded-xl border border-slate-200 bg-white p-4" data-testid="analysis-distribution">
       <p className="text-xs font-bold uppercase text-slate-500 mb-2 flex items-center gap-1.5"><BarChart3 className="w-3.5 h-3.5" />Distribusi Nilai</p>
       <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 192 }}>
           <BarChart data={data} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
             <XAxis dataKey="range" tick={{ fontSize: 10 }} />

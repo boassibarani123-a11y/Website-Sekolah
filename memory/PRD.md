@@ -41,3 +41,13 @@ Admin (super_admin), Guru, Siswa (+ other existing roles from repo)
 ## Backlog
 - P1: bulk import 500+ students (needs file), Brevo email activation
 - P2: AI question generator / book summary, WhatsApp notifications to parents, exam item analysis
+
+## Update 2026-06 — main22 import + Analisis Ujian
+- Imported branch main22, pip + yarn deps installed, backend .env (JWT_SECRET, ADMIN_*, FRONTEND_URL, empty SMTP/OpenAI)
+- Seeded guru, siswa, ketua_osis, admin_absensi + class XII IPA 1 (test_credentials.md)
+- NEW Vortex Guard Analisis Ujian: GET /api/exams/{eid}/analysis (creator/wali kelas/super admin) — stats (avg/median/max/min, peserta/belum ikut, % tuntas vs KKM), distribusi nilai 10 rentang, analisis butir PG (P kesukaran, D daya beda 27%, sebaran opsi, pengecoh lemah), rata-rata esai, flag soal bermasalah (>=5 respon); KKM per ujian (default 75); Excel export adds sheet "Analisis Butir"
+- UI: ExamAnalysis.jsx modal (recharts) via "Analisis" button on exam card; KKM input in editor
+- iteration_52: backend + frontend pass
+## Backlog
+- P1: bulk import 500+ siswa (needs file), Brevo email activation, websocket proctor dashboard
+- P2: AI question generation, WhatsApp notifications, backend module split
