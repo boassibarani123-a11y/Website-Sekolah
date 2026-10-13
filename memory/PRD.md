@@ -35,3 +35,16 @@ See `/app/memory/test_credentials.md`.
 
 ## Next Tasks
 - Await real integration keys to activate AI/email, or proceed to VPS production deploy flow when ready.
+
+## Feature Update — Class Extras (2026-06)
+Added 8 new tabs to the class detail page (`/classes/{id}`), verified by testing agent iteration_58 (backend 19/19, frontend all tabs render, role-based auth enforced):
+1. **Materi & Bahan Ajar** — teachers upload modul/PDF/slide/link per mapel; students view/download.
+2. **Jadwal Pelajaran** — weekly timetable grid (Senin–Sabtu) per class.
+3. **Rekap Absensi Kelas** — per-student Hadir/Izin/Sakit/Alpa counts + kehadiran %, with date range.
+4. **Papan Peringkat Kelas** — ranked leaderboard (poin from tugas/quiz/ujian/kehadiran), top-3 highlighted.
+5. **Rapor Ringkas** — unified grade table (Tugas+Quiz+Ujian+Kehadiran→Nilai Akhir) + CSV export, subject filter.
+6. **Agenda & Pengumuman Kelas** — class announcements (pinnable) + agenda events.
+7. **Denah Tempat Duduk** — editable seat grid; assign students to seats (seat IDs validated against real class members).
+8. **Diskusi / Tanya-Jawab** — threaded Q&A per mapel with replies.
+- Backend: endpoints appended in `server.py` CLASS EXTRAS block; helpers `_class_view_ok`, `_assert_class_manage`, `_class_students`, `_class_scores`. Frontend: `components/class/ClassExtras.jsx`, tabs in `ClassHero.jsx`, wiring in `pages/ClassDetail.jsx`.
+- Authorization: super_admin & assigned guru manage content; class members read; ketua_kelas can post announcements/agenda; students can create discussions/replies.

@@ -7705,8 +7705,10 @@ async def delete_class_announcement(aid: str, user=Depends(get_current_user)):
     a = await db.class_announcements.find_one({"id": aid})
     if not a:
         raise HTTPException(404, "Pengumuman tidak ditemukan")
-    if user["role"] not in ("super_admin", "guru") and a.get("author_id") != user["id"]:
-        raise HTTPException(403, "Tidak diizinkan")
+    if user["role"] != "super_admin" and a.get("author_id") != user["id"]:
+        klass = await db.classes.find_one({"id": a.get("class_id")}, {"_id": 0})
+        if not (user["role"] == "guru" and guru_can_access_class(user, klass)):
+            raise HTTPException(403, "Tidak diizinkan")
     await db.class_announcements.delete_one({"id": aid})
     return {"ok": True}
 
@@ -7768,7 +7770,8 @@ async def get_seating(cid: str, user=Depends(get_current_user)):
 async def set_seating(cid: str, body: SeatingIn, user=Depends(require_roles("guru", "super_admin"))):
     klass = await _load_class_or_404(cid)
     await _assert_class_manage(user, klass)
-    seats = {k: v for k, v in (body.seats or {}).items() if v}
+    valid_ids = {s["id"] for s in await _class_students(klass, user)}
+    seats = {k: v for k, v in (body.seats or {}).items() if v and v in valid_ids}
     data = {"class_id": cid, "rows": max(1, min(12, body.rows)), "cols": max(1, min(12, body.cols)),
             "seats": seats, "updated_at": now_iso(), "updated_by": user["name"]}
     await db.class_seating.replace_one({"class_id": cid}, {**data, "is_demo": bool(user.get("is_demo"))}, upsert=True)

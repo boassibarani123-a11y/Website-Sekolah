@@ -1,0 +1,39 @@
+{
+  "summary": "Tested the 8 new class detail features (Materi, Jadwal, Rekap Absensi, Rapor, Peringkat, Agenda/Pengumuman, Denah, Diskusi) end-to-end. Backend pytest: 19/19 passed. All new endpoints (GET/POST/DELETE /api/classes/{cid}/{materials,schedule,announcements,agenda,discussions}, /api/classes/{cid}/{attendance-recap,report-card,leaderboard,seating}) return correct shapes and respect authorization: siswa role gets 403 on create for materi/schedule/announcements/seating. Admin create+delete flows verified with GET-after-write persistence (materi, schedule, announcements, agenda, denah). Rapor subject filter works. Leaderboard rank ordering verified ascending. Denah PUT persists rows/cols/seats, confirmed via subsequent GET. Discussions: siswa can create + reply, reply_count increments, super_admin can delete. Frontend: logged in as super_admin via UI, opened /classes/06ffd680-fae9-4658-8987-fe5d32ec50d3, all 8 new data-testid tabs found (tab-materi/jadwal/absensi/rapor/peringkat/agenda/denah/diskusi). Each tab renders its primary action/testids: add-materi-btn, jadwal-add, rekap-start, rapor-export, rank-row-{sid} (1 row), ann-add + agenda-add, 20 seats + denah-save, add-diskusi-btn. Materi POST through UI returned 200. Regression: existing tab-tugas still clickable and renders. No console errors on class detail. Tab bar overflow-scrolls horizontally as designed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Class hero stats", "issues": ["Hero shows '0 SISWA' while the Peringkat tab lists 1 student — the stats panel count may be stale/computed from a different source than _class_students; verify student count aggregator so UI stays consistent."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter58_class_extras.py",
+    "/app/test_reports/pytest/iter58.xml"
+  ],
+  "action_items": [
+    "(Optional) Reconcile the hero 'SISWA' count on class detail with _class_students result (currently 0 vs 1).",
+    "(Optional, carry-over) backend/server.py is ~7840 lines in one file; split into routers (class_extras.py etc.) for maintainability."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py now ~7840 lines in a single module — the new CLASS EXTRAS block (lines 7447-7834) should be its own router module (e.g. routers/class_extras.py).",
+    "Delete authorization for class_announcements/class_agenda allows ANY guru/super_admin to delete regardless of class ownership. Consider gating by _assert_class_manage against the announcement's class_id so a guru from another class cannot delete.",
+    "Reply to a discussion only checks assert_class_view but NOT assert_class_unlocked — if a class later gets a password, cross-class members whose session is unlocked could still reply if endpoint is probed directly. Minor hardening.",
+    "SeatingIn: no validation that seats maps to actual class students; a malicious manager could persist arbitrary user ids as seat values. Add set-intersection with _class_students before saving.",
+    "class_announcements list sorts by `pinned` after Mongo sort by created_at desc — the second sort is stable-safe but it would be cleaner to sort server-side in a single Mongo pipeline (pinned desc, created_at desc).",
+    "In create_discussion the author's `kelas` ownership isn't explicitly verified beyond assert_class_view — siswa from a different kelas but who somehow passes assert_class_view (e.g. super role check) could post. Confirm assert_class_view correctly scopes siswa by `kelas` field."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter58_class_extras.py",
+    "/app/test_reports/iteration_58.json",
+    "/app/test_reports/pytest/iter58.xml"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100% of asserted selectors present; materi create via UI 200; all 8 tabs render; no console errors"},
+  "test_credentials": "/app/memory/test_credentials.md (super_admin / guru / siswa). All used successfully.",
+  "seed_data_creation": "No new seed. Transient TEST_ prefixed docs created and cleaned up within each test (create + delete pairs).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend regression: `python -m pytest /app/backend/tests/test_iter58_class_extras.py -v --junitxml=/app/test_reports/pytest/iter58.xml`. Seeded class id for XII IPA 1 = 06ffd680-fae9-4658-8987-fe5d32ec50d3. Class detail URL /classes/{id}. The TABS array includes new keys materi/jadwal/absensi/rapor/peringkat/agenda/denah/diskusi. For role-based tests, siswa.test@sman1laguboti.sch.id is a member of XII IPA 1 and should get 200 on reads + create discussion/reply, but 403 on create materi/schedule/announcement/seating. guru.test teaches Matematika + is wali kelas so is authorized to manage.",
+  "rca of the issue": "N/A — all tests passed. The only non-blocking observation is the hero 'SISWA: 0' counter while the leaderboard shows 1 student (likely different data source: class.students_count vs live _class_students aggregator)."
+}
