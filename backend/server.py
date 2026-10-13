@@ -830,6 +830,8 @@ async def get_class(cid: str, user=Depends(get_current_user)):
         user.get("role") == "super_admin"
         or (user.get("role") == "ketua_kelas" and user.get("kelas") == c.get("name"))
     )
+    c["student_count"] = await db.users.count_documents(
+        {"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": c.get("name"), **dscope(user)})
     return c
 
 @api.post("/classes/{cid}/unlock")
@@ -1637,6 +1639,7 @@ async def cron_attendance_reminder(request: Request, bg: BackgroundTasks):
     if not run_id:
         return {"ok": True, "duplicate": True}
     bg.add_task(run_attendance_reminder)
+    bg.add_task(run_agenda_reminder)
     return {"ok": True}
 
 @api.post("/cron/attendance-auto-alpha")
@@ -7492,11 +7495,44 @@ class MaterialIn(BaseModel):
 
 @api.get("/classes/{cid}/materials")
 async def list_materials(cid: str, subject: Optional[str] = None, user=Depends(get_current_user)):
-    await _class_view_ok(cid, user)
+    klass = await _class_view_ok(cid, user)
     q = {"class_id": cid, **dscope(user)}
     if subject and subject != "all":
         q["subject"] = subject
-    return await db.class_materials.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    rows = await db.class_materials.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    is_mgr = user["role"] in ("super_admin", "kepsek", "staff_tu") or (user["role"] == "guru" and guru_can_access_class(user, klass))
+    total_students = await db.users.count_documents(
+        {"role": {"$in": STUDENT_IN_CLASS_ROLES}, "kelas": klass["name"], **dscope(user)})
+    mids = [m["id"] for m in rows]
+    views = {}
+    if mids:
+        async for v in db.material_views.find({"material_id": {"$in": mids}}, {"_id": 0}):
+            views.setdefault(v["material_id"], []).append(v)
+    for m in rows:
+        vs = views.get(m["id"], [])
+        m["view_count"] = len(vs)
+        m["total_students"] = total_students
+        m["viewed"] = any(v["student_id"] == user["id"] for v in vs)
+        if is_mgr:
+            m["viewers"] = sorted(
+                [{"student_id": v["student_id"], "name": v.get("student_name"), "viewed_at": v.get("viewed_at")} for v in vs],
+                key=lambda x: (x["name"] or "").lower())
+    return rows
+
+
+@api.post("/materials/{mid}/view")
+async def mark_material_viewed(mid: str, user=Depends(get_current_user)):
+    m = await db.class_materials.find_one({"id": mid})
+    if not m:
+        raise HTTPException(404, "Materi tidak ditemukan")
+    klass = await db.classes.find_one({"id": m.get("class_id")}, {"_id": 0})
+    await assert_class_view(user, klass)
+    if user["role"] in STUDENT_IN_CLASS_ROLES:
+        await db.material_views.update_one(
+            {"material_id": mid, "student_id": user["id"]},
+            {"$set": {"material_id": mid, "student_id": user["id"], "student_name": user["name"],
+                      "class_id": m.get("class_id"), "viewed_at": now_iso()}}, upsert=True)
+    return {"ok": True, "view_count": await db.material_views.count_documents({"material_id": mid})}
 
 
 @api.post("/classes/{cid}/materials")
@@ -7518,6 +7554,44 @@ async def delete_material(mid: str, user=Depends(require_roles("guru", "super_ad
     if user["role"] != "super_admin" and m.get("teacher_id") != user["id"]:
         raise HTTPException(403, "Hanya pembuat atau Super Admin yang dapat menghapus materi ini")
     await db.class_materials.delete_one({"id": mid})
+    await db.material_views.delete_many({"material_id": mid})
+    return {"ok": True}
+
+
+# ---------------- NOTIFIKASI AGENDA (pengingat H-1) ----------------
+async def run_agenda_reminder():
+    """Kirim notifikasi H-1 untuk setiap agenda kelas yang jatuh besok (WIB)."""
+    tomorrow = (datetime.now(WIB).date() + timedelta(days=1)).isoformat()
+    events = await db.class_agenda.find(
+        {"date": tomorrow, "reminder_sent": {"$ne": True}, "is_demo": {"$ne": True}}, {"_id": 0}).to_list(2000)
+    sent = 0
+    for e in events:
+        klass = await db.classes.find_one({"id": e.get("class_id")}, {"_id": 0})
+        if not klass:
+            continue
+        students = await db.users.find(
+            {"role": {"$in": STUDENT_IN_CLASS_ROLES}, "kelas": klass["name"], "is_demo": {"$ne": True}},
+            {"_id": 0, "id": 1}).to_list(2000)
+        uids = [s["id"] for s in students]
+        if klass.get("homeroom_teacher_id"):
+            uids.append(klass["homeroom_teacher_id"])
+        label = {"ujian": "Ujian", "tugas": "Tenggat Tugas", "acara": "Acara", "libur": "Libur"}.get(e.get("kind"), "Agenda")
+        waktu = f" pukul {e['time']}" if e.get("time") else ""
+        await notify(uids, f"Pengingat {label} Besok",
+                     f"{e.get('title')} di kelas {klass['name']} dijadwalkan besok ({tomorrow}){waktu}.",
+                     f"/classes/{klass['id']}")
+        await db.class_agenda.update_one({"id": e["id"]}, {"$set": {"reminder_sent": True}})
+        sent += 1
+    return sent
+
+
+@api.post("/cron/agenda-reminder")
+async def cron_agenda_reminder(request: Request, bg: BackgroundTasks):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    run_id = await _cron_guard(request, "agenda-reminder")
+    if not run_id:
+        return {"ok": True, "duplicate": True}
+    bg.add_task(run_agenda_reminder)
     return {"ok": True}
 
 

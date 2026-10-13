@@ -1,6 +1,6 @@
 crons:
   - name: attendance-reminder
-    description: "Mengingatkan siswa yang belum absen pukul 08:00 WIB (email + notifikasi Sakit/Izin)"
+    description: "Pukul 08:00 WIB: ingatkan siswa yang belum absen + kirim pengingat agenda/ujian kelas H-1"
     cron: "0 8 * * *"
     timezone: "Asia/Jakarta"
     endpoint: "{{BASE_URL}}/api/cron/attendance-reminder"

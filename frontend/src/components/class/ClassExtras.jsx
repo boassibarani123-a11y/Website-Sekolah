@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   BookOpen, CalendarDays, ClipboardCheck, Trophy, FileSpreadsheet, Megaphone,
   LayoutGrid, MessagesSquare, Plus, Trash2, Upload, FileText, ImageIcon, Link as LinkIcon,
-  Download, Pin, Loader2, X, Send, CornerDownRight, Users2, Crown, Medal, Clock,
+  Download, Pin, Loader2, X, Send, CornerDownRight, Users2, Crown, Medal, Clock, Eye, CheckCircle2,
 } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -37,13 +37,36 @@ const Avatar = ({ name, photo, size = "w-9 h-9" }) =>
 const scoreColor = (v) => v == null ? "text-slate-300" : v >= 80 ? "text-emerald-600" : v >= 60 ? "text-amber-600" : "text-rose-600";
 const fmt = (v) => v == null ? "–" : v;
 
+function MateriViews({ m }) {
+  const [show, setShow] = useState(false);
+  const pct = m.total_students ? Math.round((m.view_count / m.total_students) * 100) : 0;
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100" data-testid={`materi-stats-${m.id}`}>
+      <button onClick={() => setShow(s => !s)} className="flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-sky-600 w-full">
+        <Eye className="w-3.5 h-3.5 text-sky-500" />
+        <span data-testid={`materi-viewcount-${m.id}`}>{m.view_count}/{m.total_students} siswa membaca ({pct}%)</span>
+      </button>
+      <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div>
+      {show && (
+        <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`materi-viewers-${m.id}`}>
+          {(m.viewers || []).length === 0 ? <span className="text-[11px] text-slate-400 italic">Belum ada siswa yang membuka materi ini</span>
+            : m.viewers.map(v => <span key={v.student_id} className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">{v.name}</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============ 1. MATERI & BAHAN AJAR ============ */
 export function ClassMateri({ klass, subject, canManage, teachSubjects }) {
+  const { user } = useAuth();
+  const isStudent = ["siswa", "ketua_kelas", "ketua_osis"].includes(user.role);
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ title: "", description: "", subject: "", link: "", attachments: [] });
   const [busy, setBusy] = useState(false);
   const load = () => api.get(`/classes/${klass.id}/materials?subject=${subject || "all"}`).then(r => setRows(r.data)).catch(() => {});
+  const markViewed = async (id) => { try { await api.post(`/materials/${id}/view`); load(); } catch { /* noop */ } };
   useEffect(() => { load(); }, [klass.id, subject]); // eslint-disable-line
 
   const addFiles = async (e) => {
@@ -80,15 +103,21 @@ export function ClassMateri({ klass, subject, canManage, teachSubjects }) {
               </div>
               {m.description && <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap">{m.description}</p>}
               <div className="flex flex-wrap gap-2 mt-3">
-                {m.link && <a href={m.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-medium hover:bg-indigo-100"><LinkIcon className="w-3.5 h-3.5" />Tautan</a>}
+                {m.link && <a href={m.link} target="_blank" rel="noreferrer" onClick={() => isStudent && markViewed(m.id)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-medium hover:bg-indigo-100"><LinkIcon className="w-3.5 h-3.5" />Tautan</a>}
                 {(m.attachments || []).map((a, i) => (
-                  <a key={i} href={a.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700 max-w-[200px]">
+                  <a key={i} href={a.url} target="_blank" rel="noreferrer" onClick={() => isStudent && markViewed(m.id)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700 max-w-[200px]">
                     {(a.type || "").startsWith("image") ? <ImageIcon className="w-3.5 h-3.5 text-sky-600" /> : <FileText className="w-3.5 h-3.5 text-rose-600" />}
                     <span className="truncate">{a.name || "Lampiran"}</span>
                   </a>
                 ))}
               </div>
-              <p className="text-[11px] text-slate-400 mt-3">Oleh {m.teacher_name}</p>
+              <div className="flex items-center justify-between gap-2 mt-3">
+                <p className="text-[11px] text-slate-400">Oleh {m.teacher_name}</p>
+                {isStudent && (m.viewed
+                  ? <span data-testid={`materi-read-${m.id}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600"><CheckCircle2 className="w-3.5 h-3.5" />Sudah dibaca</span>
+                  : <button data-testid={`materi-markread-${m.id}`} onClick={() => markViewed(m.id)} className="text-xs font-semibold text-sky-600 hover:underline">Tandai sudah dibaca</button>)}
+              </div>
+              {canManage && <MateriViews m={m} />}
             </div>
           ))}
         </div>
