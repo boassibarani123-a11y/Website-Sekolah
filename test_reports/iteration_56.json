@@ -1,0 +1,35 @@
+{
+  "summary": "Iter56 verified SMAN 1 Laguboti follow-up: (1) /api/piket/tv now returns ik_out array (today's approved IK requests); after inserting a TEST approved IK for siswa.test, the API returns it in ik_out, and /piket/tv UI SidePanels rotates data-slide 0->1 every 10s with tv-ik-out panel + tv-ik-count=1 visible on slide 1; (2) /attendance and /face-attendance render with att-dark class on both desktop (1920) and mobile (390) viewports; (3) /school-logo.png served 200 (image/png >1KB) and shown in Piket TV header (src=/school-logo.png) via object-contain; (4) Exam create/start/delete flow works for guru.test (XII IPA 1 Matematika), siswa.test can start with correct token (200), wrong token rejected (400), delete removes session; mobile viewport (390x844): exam-password-modal opens, start proceeds to exam-running with data-guard-mode=fullscreen and exam-current-question rendering question 2+2 with 4 options and timer 9:56; (5) bash -n /app/scripts/update-vps.sh passes. Backend pytest 9/9 PASS in /app/backend/tests/test_iter56_piket_tv_dark_exam.py (JUnit /app/test_reports/pytest/iter56.xml). Headless caveat: exam-mobile-mode-note / exam-mobile-lock-note / exam-ios-guided-note are gated by isTouchDevice()/isIOS() which rely on (pointer: coarse) + navigator.maxTouchPoints — these return false in Chromium headless even with mobile viewport, so the notes did NOT render during the UI test. Code review of ExamTake.jsx shows the gating is correct for real devices; this is a Playwright emulation limitation (noted in review_request as 'cannot be fully verified headless').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter56_piket_tv_dark_exam.py",
+    "/app/test_reports/pytest/iter56.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ExamTake.jsx:16-17 — isTouchDevice() OR'd with navigator.maxTouchPoints > 1 means a desktop with a touchscreen will see the mobile-lock note and auto re-fullscreen pointerdown handler. Consider also gating on viewport width or (any-pointer: coarse) + no mouse to avoid annoying desktop touchscreen users.",
+    "ExamTake.jsx:84 — screen.orientation.lock('portrait') is only valid in fullscreen on Android Chrome; the catch(()=>{}) silences the SecurityError but every exam start logs an uncaught promise rejection in some browsers. Consider feature-detect `screen.orientation?.lock` AND `isTouchDevice()` AND `fsEl()` BEFORE calling.",
+    "ExamTake.jsx:246 — pointerdown re-fullscreen uses capture=true. Rapid taps across the UI will fire many enterFullscreen().then(setFsMode/setLocked) in parallel; the browser throttles successive requestFullscreen calls (and some reject when one is pending). A simple ref guard (busyRef) would reduce console noise.",
+    "ExamTake.jsx:21-29 — useWakeLock reacquires on visibilitychange but doesn't release the previous lock before requesting a new one; `lock` variable gets reassigned and old lock is only released on unmount. On rapid visibility toggles, you can accumulate zombie locks until GC. Store the lock in a ref and release before re-requesting.",
+    "server.py:7417 piket_tv — ik_out query selects {_id:0,id,student_name,kelas,reason,category,out_time,return_time,approved_at,student_photo}; good exclude of _id. No cap on count beyond .to_list(200) — fine. Consider also filtering status != 'returned' explicitly (currently only status='approved' is included so returned IK won't appear; verified).",
+    "PiketTV.jsx:115 — SidePanels rotates on an unconditional 10s interval even when the tab is backgrounded; combined with the parent's 4s /piket/tv poll, this is OK, but consider pausing when document.hidden to save CPU on cheap TV sticks.",
+    "index.css:161 .att-dark uses !important across ~20 Tailwind utility selectors — this works, but any new bg-*/text-*/border-* class added later will not auto-dark. Consider extracting to a dark-mode variant or :where() scope to reduce specificity surprises."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter56_piket_tv_dark_exam.py",
+    "/app/test_reports/iteration_56.json",
+    "/app/test_reports/pytest/iter56.xml"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (piket TV rotation, dark attendance, mobile exam flow all green; mobile notes not verifiable headless by design)"},
+  "test_credentials": "/app/memory/test_credentials.md used unchanged (super admin, guru.test, siswa.test).",
+  "seed_data_creation": "Temporary approved IK (id=TEST_IK_UI_iter56 and TEST_IK_*) inserted into ik_requests for today pointing at siswa.test, and a temporary exam TEST_ITER56_UI_EXAM / TEST_ITER56_EXAM / TEST_ITER56_DEL for XII IPA 1 Matematika — all deleted at end of fixtures/scripts.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter56_piket_tv_dark_exam.py (requires REACT_APP_BACKEND_URL env; export from /app/frontend/.env before pytest). Playwright Chromium headless cannot emulate pointer:coarse / maxTouchPoints — isTouchDevice()/isIOS() in ExamTake.jsx will always be false; to UI-verify mobile notes use `context.new_page(**playwright.devices['iPhone 13'])` or inject `Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 })` on an addInitScript before navigation. The exam cards on /vortex-guard are not clickable at card-level — the actual trigger is the inner `Masuk Ujian` button (role=button). Fullscreen requestFullscreen() in headless resolves without error so guard-mode ends up 'fullscreen' even on 390px viewport.",
+  "rca of the issue": "N/A — no defects detected in this iteration's scope."
+}

@@ -1,0 +1,38 @@
+{
+  "summary": "Iter55 verified SMAN 1 Laguboti main23 feature set: (1) bulk student import (template, preview, 520-row perf, duplicate/NIS/email detection), (2) random question package + bank stock + exclude_poor + shortfall warning, (3) Piket TV endpoint + /piket/tv full UI + siswa 403 enforcement, (4) Brevo-not-configured flows (email/status, reset-options, forgot-password/email configured:false, reset-password invalid-token 400, single-use reset token), (5) AI exam generation via Claude Sonnet 4.5 (Emergent LLM key) returning valid MC questions. Backend: 17/17 pytest pass in /app/backend/tests/test_iter55_import_rp_piket_email.py (JUnit /app/test_reports/pytest/iter55.xml). The 520-row import completed in ~1.7-3s server-side, created exactly 500 valid rows and reported 20 invalid rows (10 bad NIS, 10 bad email) in skipped_rows; re-import of 5 rows reported them as 'exists' (0 created). Frontend (Playwright, desktop 1920x1080): (a) ForgotPassword renders forgot-email-not-configured note (admin-approval tabs hidden because email_reset=false, consistent with /auth/reset-options); (b) /reset-password without token renders reset-no-token; (c) super_admin → /settings → email-status-card badge 'Belum dikonfigurasi' + email-config-hint visible; (d) /accounts → import-students-button opens import-students-modal with import-template-button + import-nis-rule 'NIS wajib tepat 5 angka (dipakai untuk verifikasi Face ID).'; (e) guru → /vortex-guard → new-exam-button → exam-open-random opens RP modal → rp-subject=Matematika with mudah/sedang/sulit=2 each → rp-generate yields '6 soal siap' and rp-use enabled; (f) exam-open-ai opens AI modal with ai-exam-material + ai-exam-generate (not executed in UI to save LLM calls — already covered in pytest); (g) /piket page shows piket-tv-link; (h) /piket/tv (admin) renders piket-tv-page, tv-gate-status, tv-today, tv-connection='Tersambung · diperbarui tiap 4 detik'; (i) siswa fetch to /api/piket/tv returns 403.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter55_import_rp_piket_email.py",
+    "/app/test_reports/pytest/iter55.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:7051 import_students hashes the password once for the whole batch — great for perf on 500+ rows, but means every imported student starts with the same password. Already handled by must_change_password semantics elsewhere; confirm the siswa first-login redirect enforces password change (it does for admin-created accounts; worth verifying for bulk-imported ones).",
+    "server.py:6988 NIS regex requires exactly 5 digits for Face ID. The IMPORT_HEADERS dict does not alias 'nomor induk siswa' or 'no induk' — if a school's template uses that header the column silently falls through to default. Consider adding more aliases.",
+    "server.py:7281-7282 forgot_password_email supersedes previous unused tokens via update_many then inserts a new one — good single-flight behaviour. The 429 rate limit uses count_documents on a 15-min / 1-hour window; cheap enough but creates a password_reset_requests row even for unknown emails, which could grow unbounded. Add a TTL index on password_reset_requests.ts (7d).",
+    "server.py:7336 random_package aggregates once per level; each $sample is independent so a bank item appearing in two levels (unlikely but possible if difficulty_label is reclassified) can theoretically slip through. The post-aggregation `seen` dedupe guards against it — good.",
+    "server.py:7417 piket_tv does a per-request get_settings() + two Mongo scans; with the 4s client polling and ~30-50 piket viewers that's ~750 ops/min. Fine for now, but consider in-process cache (TTL 2-3s) if usage grows.",
+    "ExamEditor.jsx AI modal: ai-exam-generate button correctly disables while busy, but there is no visible progress/eta hint for the ~60s Claude call. Add a 'Memerlukan hingga ~60 detik' hint.",
+    "ImportStudentsModal: import-nis-rule is only shown in the pre-upload state — once the preview appears, the 5-digit rule is only visible as per-row error messages. Consider showing the rule above the preview table too."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter55_import_rp_piket_email.py",
+    "/app/test_reports/iteration_55.json",
+    "/app/test_reports/pytest/iter55.xml"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all 9 flows verified)"},
+  "test_credentials": "Used /app/memory/test_credentials.md unchanged. One pytest temporarily resets siswa.test password via a direct Mongo token insert and immediately restores the original password_hash in a finally block.",
+  "seed_data_creation": "Ran /app/scripts/seed_test_data.py (idempotent). TestImportStudents inserted 505 TEST_ users (prefix test_iter55_) and the class-scoped teardown deletes all users where email matches ^test_iter55_. One password_reset_token row is used-and-left in the DB by test_reset_password_token_single_use (used=True, so inert).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter55_import_rp_piket_email.py. Three gotchas (1) pytest run must disable xdist (pytest.ini sets -n auto, override with `-p no:xdist -o addopts=''`); (2) Alice/preview test must avoid NISN 0081111111 which collides with seeded siswa.test; (3) preview expects pre-cleanup of test_iter55_* users (fixture does it before yield). Email auth is cookie-only (httponly, samesite=none, secure). Playwright calls hitting /api/* must verify auth via fetch('/api/auth/me',{credentials:'include'}) because api.* axios calls use withCredentials: true. Rate limit on /auth/forgot-password/email is 3/email per 15min + 10/ip per 1h — if iter56 adds more email-reset tests, clear the password_reset_requests collection first or vary emails.",
+  "rca of the issue": "N/A - no defects detected."
+}

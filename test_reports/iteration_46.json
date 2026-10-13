@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 46 — Verified bug fix (face profile orphan purge on siswa delete) + new features: Piket monthly report + Face enroll 'Mode Per Kelas'. 10/10 backend pytest pass. UI smoke on /face-enroll and /piket Laporan Bulanan confirms all requested data-testids and flows.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter46_face_rebind_piket_report.py",
+    "/app/test_reports/pytest/iter46.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now 5597 lines — still exceeds recommended 700-line cap; please split into feature modules (piket, face, users, etc.) in a future refactor.",
+    "_face_purge_orphans runs on every face_students / face_matrix call. For large schools consider doing it lazily or on user-delete only (already present) + a nightly cron, to avoid O(users) distinct() scans on hot paths.",
+    "/api/piket/shifts allows creating a shift with a past date (useful for backfill, but no explicit guard). Confirm this is intentional UX."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter46_face_rebind_piket_report.py"],
+  "success_rate": {"backend": "100% (10/10 pytest)", "frontend": "100% smoke (face-enroll batch mode toast + progress + stop, piket laporan tab + month nav + export button all working)"},
+  "test_credentials": "Super admin from /app/memory/test_credentials.md. Test guru/siswa accounts created with @example.com and deleted in teardown.",
+  "seed_data_creation": "All TEST_ users (siswa A/B/C, TEST_Guru_Report), piket_shifts (gate TEST_Gerbang_Report), face_profiles, attendance for test users were cleaned up in teardown. The real student Frederic Sibarani was NOT touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter46_face_rebind_piket_report.py is the regression suite. Covers: (1) face profile removal on user DELETE, (2) re-enrol same face after delete succeeds, (3) face-scan returns correct student, (4) orphan face profile injected directly in Mongo is purged on next enroll, (5) face/students enrolled<=total invariant, (6) piket report counts (hadir/tidak_hadir), invalid-month 400, guru 403, xlsx export. Note: pytest.ini applies xdist by default — must run with `-o addopts=\"\"` so class-level state carries between tests.",
+  "rca of the issue": "User's original bug 'Wajah ini sangat mirip dengan siswa lain yang sudah terdaftar' after deleting a siswa was fixed by: (a) delete_user() cascades to db.face_profiles.delete_many({student_id: uid}) and forces _face_matrix(force=True) refresh, (b) _face_purge_orphans() is called inside _face_matrix and inside face_students & face_enroll flows so any stale profile pointing to a non-existent/non-siswa user is deleted before duplicate-face check runs. Verified by test_04 which seeds an orphan directly in Mongo and confirms it is purged after a subsequent enroll."
+}

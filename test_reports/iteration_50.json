@@ -1,0 +1,35 @@
+{
+  "summary": "Iter50 covered the newly requested Vortex Guard (token projector, Excel/PDF export incl. wali-kelas access, live proctor) + Face/Barcode PresenceCard + Inventory full package (rooms CRUD, stats, activity, lookup, return-condition Rusak/Hilang). Backend: 26/26 passed via /app/backend/tests/test_iter50_vortex_inv.py (JUnit at /app/test_reports/pytest/iter50.xml). Frontend: Playwright smoke of /vortex-guard (guru), /face-attendance, /attendance, /inventory (admin & siswa) all green. Token projector shows real token 'MAT123'; LiveProctor renders 3 student tiles with filters/total-violations; wali kelas (Guru Vortex) sees UAS exam with exam-homeroom-* badge + export buttons but NO exam-token (correct - not owner). Barcode wedge scan of NISN 0012345678 produces big PresenceCard with gate-result-name 'Siswa Vortex' and gate-result-label. Unknown code produces gate-result-error. Inventory tabs render on admin (dashboard/items/requests/rooms/activity), QR manual lookup for INV-001 opens inv-drawer. Siswa inventory correctly hides dashboard/activity/add-button and still shows borrow buttons.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter50_vortex_inv.py",
+    "/app/test_reports/pytest/iter50.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/server.py is now 6528 lines - the monolith continues to grow. Splitting Vortex Guard section (lines 2267-2600 + 6254-6393) and Inventory (lines 1600-1770 + 6395-6513) into separate modules is strongly recommended.",
+    "In backend/server.py L2370 `_homeroom_kelas` runs an unindexed find on db.classes.homeroom_teacher_id each request; consider caching per-request or adding a Mongo index to avoid overhead when guru hits /exams or /exams/{id}/export.",
+    "GET /api/exams/{eid}/export calls `_exam_viewer` which uses dscope but then roster uses dscope(user) too - this works but if `is_demo` scopes diverge (unlikely) it would miss students. Current behaviour verified correct.",
+    "LiveProctor filter keys use Indonesian ('semua' instead of 'all'); the request mentioned 'proctor-filter-*' pattern so this is acceptable, but documenting the keyset ('semua','mengerjakan','melanggar','belum','selesai') in a code comment would help future testers.",
+    "PATCH /api/borrow/{id} takes `status`/`return_condition` as query params rather than JSON body - unusual REST style but matches existing contract and the frontend. Documented in LoansView.jsx via `act(id, status)` call.",
+    "DELETE /api/inventory-rooms/{rid} correctly blocks when items still reference the room; however DELETE returns 400 instead of 409 Conflict which would be more semantically correct.",
+    "Face Attendance page uses OPS allow-list for access, good; however `/face-attendance` loads MediaDevices even for unauthorized users briefly (before role check). Minor privacy nit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter50_vortex_inv.py",
+    "/app/test_reports/iteration_50.json",
+    "/app/test_reports/pytest/iter50.xml"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "100% (all requested testids present and interactions working)"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is. No credential mutation.",
+  "seed_data_creation": "Created & deleted 2 ephemeral TEST_tmpguru_* guru accounts to validate 403 for non-owner/non-homeroom. Created & deleted several TEST_Loan_* inventory items (approve->return Rusak/Hilang/Baik) to validate stock/damaged_units/lost_units bookkeeping. Vortex live-proctor test creates+clears an exam_session/exam_attempt for the siswa against exam UH Matematika Bab 1 (cleans up after itself). Existing seed data (3 rooms, 5 INV-00x items, 1 overdue loan, 3 exams) left intact.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter50_vortex_inv.py (reads env from /app/frontend/.env + /app/backend/.env; uses pymongo direct connect for test-attempt cleanup against test_database). Known seeded IDs: EXAM MAT='0c849a79-...', EXAM UAS='3de5b66e-...' (admin-owned, Guru Vortex wali-kelas), INV-001 id='0d7c1a7e-...'. Siswa NISN=0012345678 for barcode wedge. Previous iter49 remains valid (bulk-delete+forgot-password). Face Attendance cannot be tested without a real camera in CI; only UI shell verified. The pytest fixture uses class-scoped instance method with a deprecation warning (fine in pytest 9.x, breaks in 10.x) - consider converting to @classmethod before pytest 10 upgrade.",
+  "rca of the issue": "N/A - no defects detected in the requested feature batch."
+}
