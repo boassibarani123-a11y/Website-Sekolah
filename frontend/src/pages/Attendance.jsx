@@ -168,7 +168,7 @@ export default function Attendance() {
   }
 
   return (
-    <div className="space-y-6" data-testid="attendance-page">
+    <div className="space-y-6 att-dark" data-testid="attendance-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-heading text-3xl font-extrabold text-slate-900">Presensi Gerbang</h1>

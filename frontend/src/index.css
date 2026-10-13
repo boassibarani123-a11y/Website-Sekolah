@@ -156,3 +156,26 @@ html.dark body { background-color: #0b1220; color: #e2e8f0; }
 @keyframes fidDraw { to { stroke-dashoffset: 0; } }
 .guest-card { width: 54mm; height: 86mm; border-radius: 10px; overflow: hidden; }
 .sg-logo { font-family: 'Grand Hotel', cursive; }
+
+/* Absensi: tema gelap */
+.att-dark { background: #080B10; color: #E2E8F0; border-radius: 2rem; padding: 1.25rem; color-scheme: dark; }
+@media (min-width: 640px) { .att-dark { padding: 1.75rem; } }
+.att-dark .bg-white, .att-dark .bg-slate-50 { background-color: #111720 !important; }
+.att-dark .bg-slate-100, .att-dark .bg-slate-200 { background-color: #1C2430 !important; }
+.att-dark .bg-sky-50 { background-color: rgba(14,165,233,0.12) !important; }
+.att-dark .bg-emerald-50 { background-color: rgba(16,185,129,0.12) !important; }
+.att-dark .bg-rose-50 { background-color: rgba(244,63,94,0.12) !important; }
+.att-dark .bg-amber-50 { background-color: rgba(245,158,11,0.12) !important; }
+.att-dark .bg-slate-900 { background-color: #0284C7 !important; }
+.att-dark .from-sky-50, .att-dark .from-rose-50, .att-dark .from-emerald-50, .att-dark .from-amber-50 { --tw-gradient-from: #0D131B var(--tw-gradient-from-position) !important; --tw-gradient-to: #0D131B var(--tw-gradient-to-position) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
+.att-dark .via-white { --tw-gradient-stops: var(--tw-gradient-from), #0B1017 var(--tw-gradient-via-position), var(--tw-gradient-to) !important; }
+.att-dark .to-white { --tw-gradient-to: #0B1017 var(--tw-gradient-to-position) !important; }
+.att-dark .text-slate-900, .att-dark .text-slate-800 { color: #F8FAFC !important; }
+.att-dark .text-slate-700, .att-dark .text-slate-600 { color: #CBD5E1 !important; }
+.att-dark .text-slate-500, .att-dark .text-slate-400 { color: #94A3B8 !important; }
+.att-dark .border-slate-100, .att-dark .border-slate-200, .att-dark .border-slate-400 { border-color: #232C38 !important; }
+.att-dark .border-emerald-200, .att-dark .border-rose-200, .att-dark .border-amber-200, .att-dark .border-sky-200 { border-color: rgba(148,163,184,0.25) !important; }
+.att-dark .ring-slate-200, .att-dark .ring-sky-100 { --tw-ring-color: #232C38 !important; }
+.att-dark .shadow-sm { box-shadow: none !important; }
+.att-dark select option { background: #111720; color: #E2E8F0; }
+.att-dark .divide-slate-100 > * + * { border-color: #1C2430 !important; }

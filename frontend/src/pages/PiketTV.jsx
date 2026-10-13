@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/lib/apiClient";
-import { ShieldCheck, LogIn, LogOut, AlarmClock, AlertTriangle, Users, Maximize, ArrowLeft, WifiOff, Wifi } from "lucide-react";
+import { ShieldCheck, LogIn, LogOut, AlarmClock, AlertTriangle, Users, Maximize, ArrowLeft, WifiOff, Wifi, DoorOpen } from "lucide-react";
 
 const ST = {
   bertugas: ["BERTUGAS", "bg-emerald-500 text-emerald-950"], menunggu: ["MENUNGGU", "bg-sky-400 text-sky-950"],
@@ -88,6 +88,39 @@ function Recent({ items }) {
   );
 }
 
+const toMin = (t) => { const [h, m] = (t || "").split(":").map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+const nowWibMin = (offset) => { const [h, m] = new Date(Date.now() + offset).toLocaleTimeString("en-GB", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }).split(":").map(Number); return h * 60 + m; };
+
+function IkOut({ items, offset }) {
+  const now = nowWibMin(offset);
+  return (
+    <section className="rounded-3xl bg-rose-500/[0.06] border border-rose-500/30 p-6 min-h-0 flex-1 animate-in fade-in duration-700" data-testid="tv-ik-out">
+      <h2 className="text-2xl font-heading font-bold mb-1 flex items-center gap-3"><DoorOpen className="w-7 h-7 text-rose-400" />Belum Kembali dari Izin Keluar <span className="ml-auto px-3 py-0.5 rounded-full bg-rose-600 text-lg tabular-nums" data-testid="tv-ik-count">{items.length}</span></h2>
+      <p className="text-slate-400 mb-4">Siswa yang sudah keluar gerbang dengan IK dan belum tercatat kembali</p>
+      <div className="space-y-2 overflow-hidden">{items.slice(0, 9).map(k => {
+        const due = toMin(k.return_time), late = due !== null && now > due;
+        return (
+          <div key={k.id} data-testid={`tv-ik-${k.id}`} className={`flex items-center gap-3 rounded-2xl px-4 py-3 border ${late ? "bg-rose-600/20 border-rose-500" : "bg-white/5 border-white/10"}`}>
+            <div className="min-w-0 flex-1"><p className="text-xl font-bold truncate">{k.student_name} <span className="text-slate-400 font-medium">· {k.kelas}</span></p><p className="text-slate-400 truncate">{k.reason}</p></div>
+            <div className="text-right shrink-0"><p className="font-mono text-lg">{k.out_time || "-"} → {k.return_time || "?"}</p>{late && <p className="text-sm font-extrabold text-rose-300 tracking-wider">LEWAT BATAS</p>}</div>
+          </div>);
+      })}{items.length > 9 && <p className="text-slate-400 text-lg">+{items.length - 9} siswa lainnya</p>}</div>
+    </section>
+  );
+}
+
+function SidePanels({ data, offset }) {
+  const [slide, setSlide] = useState(0);
+  const hasIk = (data.ik_out || []).length > 0;
+  useEffect(() => { if (!hasIk) { setSlide(0); return; } const t = setInterval(() => setSlide(s => (s + 1) % 2), 10000); return () => clearInterval(t); }, [hasIk]);
+  return (
+    <div className="flex flex-col gap-6" data-testid="tv-side" data-slide={slide}>
+      {hasIk && <div className="flex gap-2 justify-end">{[0, 1].map(i => <span key={i} className={`h-1.5 rounded-full transition-all duration-500 ${slide === i ? "w-10 bg-white" : "w-4 bg-white/25"}`} />)}</div>}
+      {slide === 1 && hasIk ? <IkOut items={data.ik_out} offset={offset} /> : <><Upcoming items={data.upcoming} /><Recent items={data.recent} /></>}
+    </div>
+  );
+}
+
 export default function PiketTV() {
   const [data, setData] = useState(null);
   const [online, setOnline] = useState(true);
@@ -129,7 +162,7 @@ export default function PiketTV() {
       </div>
       <div className="grid xl:grid-cols-3 gap-6 flex-1 min-h-0">
         <div className="xl:col-span-2 flex flex-col"><Timeline today={data.today} /></div>
-        <div className="flex flex-col gap-6"><Upcoming items={data.upcoming} /><Recent items={data.recent} /></div>
+        <SidePanels data={data} offset={offset.current} />
       </div>
     </div>
   );

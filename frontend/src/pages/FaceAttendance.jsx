@@ -164,7 +164,7 @@ export default function FaceAttendance() {
     : <LiveScanTable rows={log.siswa} stats={log.sStats} newId={log.newId} tabs={<LogTabs tab={tab} setTab={setTab} log={log} />} />;
 
   return (
-    <div className="space-y-6" data-testid="face-attendance-page">
+    <div className="space-y-6 att-dark" data-testid="face-attendance-page">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Face ID · Siswa & Guru</p>
@@ -178,7 +178,7 @@ export default function FaceAttendance() {
         </div>
       </div>
 
-      <div ref={wrapRef} className={`bg-gradient-to-b from-sky-50 via-white to-white p-6 sm:p-8 relative ${isFull ? "h-screen flex flex-col overflow-hidden" : "rounded-[2.5rem] border border-slate-200 shadow-sm"}`}>
+      <div ref={wrapRef} className={`bg-[#0B1017] p-6 sm:p-8 relative ${isFull ? "h-screen flex flex-col overflow-hidden" : "rounded-[2.5rem] border border-slate-200"}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
           <div>
             <p className="font-heading font-extrabold text-xl text-slate-900">{station.name}</p>

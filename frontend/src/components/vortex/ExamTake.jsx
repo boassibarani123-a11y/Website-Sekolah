@@ -14,6 +14,20 @@ export const canFullscreen = () => {
   return !!(d.requestFullscreen || d.webkitRequestFullscreen) && enabled !== false;
 };
 export const isTouchDevice = () => window.matchMedia?.("(pointer: coarse)").matches || navigator.maxTouchPoints > 1;
+export const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+
+// Keeps the screen awake and re-acquires the lock whenever the page becomes visible again.
+function useWakeLock(active) {
+  useEffect(() => {
+    if (!active || !navigator.wakeLock) return;
+    let lock = null, alive = true;
+    const get = () => { if (alive && !document.hidden) navigator.wakeLock.request("screen").then(l => { lock = l; }).catch(() => {}); };
+    get();
+    document.addEventListener("visibilitychange", get);
+    return () => { alive = false; document.removeEventListener("visibilitychange", get); lock?.release?.().catch(() => {}); };
+  }, [active]);
+}
 
 function useGuard({ active, onViolation, finishedRef, setLocked, fsMode }) {
   useEffect(() => {
@@ -57,7 +71,7 @@ function useGuard({ active, onViolation, finishedRef, setLocked, fsMode }) {
 }
 
 const exitFullscreen = () => {
-  try { navigator.keyboard?.unlock?.(); } catch (e) { /* noop */ }
+  try { navigator.keyboard?.unlock?.(); window.screen?.orientation?.unlock?.(); } catch (e) { /* noop */ }
   try { if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) { /* noop */ }
 };
 const enterFullscreen = () => {
@@ -65,7 +79,10 @@ const enterFullscreen = () => {
   const d = document.documentElement;
   try {
     const p = d.requestFullscreen ? d.requestFullscreen({ navigationUI: "hide" }) : d.webkitRequestFullscreen();
-    return Promise.resolve(p).then(() => navigator.keyboard?.lock?.().catch(() => {})).catch(() => {});
+    return Promise.resolve(p).then(() => {
+      navigator.keyboard?.lock?.().catch(() => {});
+      if (isTouchDevice()) window.screen?.orientation?.lock?.("portrait").catch(() => {});
+    }).catch(() => {});
   } catch (e) { return Promise.resolve(); }
 };
 
@@ -89,6 +106,8 @@ function TokenGate({ exam, onClose, onStart, starting }) {
             {canFullscreen()
               ? <li>• Layar masuk mode <b>penuh</b>; jawaban tersimpan otomatis.</li>
               : <li data-testid="exam-mobile-mode-note">• Perangkat ini tidak mendukung layar penuh (mis. iPhone) — ujian berjalan di <b>mode aman seluler</b>; jawaban tersimpan otomatis.</li>}
+            {isTouchDevice() && <li data-testid="exam-mobile-lock-note">• HP otomatis masuk layar penuh{isIOS() ? "" : ", terkunci posisi tegak"} dan layar tidak akan mati selama ujian. Setiap sentuhan di luar layar penuh akan mengembalikannya.</li>}
+            {isIOS() && <li data-testid="exam-ios-guided-note" className="text-amber-700">• iPhone/iPad: aktifkan <b>Akses Terpandu</b> (Pengaturan › Aksesibilitas › Akses Terpandu, lalu tekan tombol samping 3×) agar layar terkunci di ujian{!isStandalone() ? "; atau buka lewat \"Tambahkan ke Layar Utama\" untuk tampilan penuh" : ""}.</li>}
             <li>• Pindah tab / aplikasi, menutup layar, atau keluar layar penuh dicatat sebagai pelanggaran.</li>
             <li>• Maksimal <b>{maxV}×</b> pelanggaran, lalu ujian dikirim otomatis.</li>
           </ul>
@@ -220,6 +239,14 @@ export function ExamTake({ exam, onClose, onDone }) {
   }, [exam.id, submit, maxV]);
 
   useGuard({ active: phase === "running", onViolation, finishedRef, setLocked, fsMode });
+  useWakeLock(phase === "running");
+  // Mobile: any tap while out of fullscreen re-enters it automatically (requires a user gesture).
+  useEffect(() => {
+    if (phase !== "running" || !isTouchDevice() || !canFullscreen()) return;
+    const back = () => { if (!fsEl() && !finishedRef.current) enterFullscreen().then(() => { if (fsEl()) { setFsMode(true); setLocked(false); } }); };
+    document.addEventListener("pointerdown", back, true);
+    return () => document.removeEventListener("pointerdown", back, true);
+  }, [phase]);
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); exitFullscreen(); }, []);
 
   const start = async (token) => {

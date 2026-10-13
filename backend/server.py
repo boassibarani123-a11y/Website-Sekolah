@@ -7428,7 +7428,10 @@ async def piket_tv(user=Depends(require_roles(*sorted(set(PIKET_VIEW) | set(GATE
     for lg in logs:
         latest.setdefault(lg["user_id"], lg)
     s = await get_settings()
-    return {"server_now": now.isoformat(), "date": today, "school_name": s.get("school_name"), "school_logo_url": s.get("school_logo_url"),
+    ik_out = await db.ik_requests.find({"date": today, "status": "approved", **dscope(user)},
+                                       {"_id": 0, "id": 1, "student_name": 1, "kelas": 1, "reason": 1, "category": 1, "out_time": 1,
+                                        "return_time": 1, "approved_at": 1, "student_photo": 1}).sort("approved_at", 1).to_list(200)
+    return {"server_now": now.isoformat(), "date": today, "ik_out": ik_out, "school_name": s.get("school_name"), "school_logo_url": s.get("school_logo_url"),
             "gate": {**_gate_phase(cfg, hhmm), "settings": cfg},
             "counts": {"masuk": sum(1 for l in logs if l["direction"] == "masuk"), "keluar": sum(1 for l in logs if l["direction"] == "keluar"),
                        "inside": sum(1 for l in latest.values() if l["direction"] == "masuk"),
