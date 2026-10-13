@@ -803,7 +803,7 @@ async def list_classes(user=Depends(get_current_user)):
         classes = [c for c in classes if guru_can_access_class(user, c)]
     # attach student count + homeroom teacher name
     for c in classes:
-        c["student_count"] = await db.users.count_documents({"role": "siswa", "kelas": c["name"], **dscope(user)})
+        c["student_count"] = await db.users.count_documents({"role": {"$in": ["siswa", "ketua_kelas", "ketua_osis"]}, "kelas": c["name"], **dscope(user)})
         if c.get("homeroom_teacher_id"):
             t = await db.users.find_one({"id": c["homeroom_teacher_id"]}, {"_id": 0, "name": 1})
             c["homeroom_teacher_name"] = t["name"] if t else None

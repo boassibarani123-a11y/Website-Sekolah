@@ -48,3 +48,9 @@ Added 8 new tabs to the class detail page (`/classes/{id}`), verified by testing
 8. **Diskusi / Tanya-Jawab** — threaded Q&A per mapel with replies.
 - Backend: endpoints appended in `server.py` CLASS EXTRAS block; helpers `_class_view_ok`, `_assert_class_manage`, `_class_students`, `_class_scores`. Frontend: `components/class/ClassExtras.jsx`, tabs in `ClassHero.jsx`, wiring in `pages/ClassDetail.jsx`.
 - Authorization: super_admin & assigned guru manage content; class members read; ketua_kelas can post announcements/agenda; students can create discussions/replies.
+
+## Feature Update — Class Enhancements + Deploy Guide (2026-06), verified iteration_59 (backend 7/7, frontend 100%)
+- **Statistik Materi**: `material_views` collection; `POST /api/materials/{mid}/view` (student, idempotent, teachers not counted); `GET .../materials` returns view_count/total_students/viewers (teacher) and viewed flag (student). UI: "X/Y siswa membaca" progress + viewer list for teachers; "Tandai sudah dibaca"/"Sudah dibaca" for students (auto-marks on opening link/attachment).
+- **Fix hitungan siswa**: `GET /api/classes/{cid}` and `/api/classes` grid now count siswa+ketua_kelas+ketua_osis → hero "Siswa" tile and grid match real roster.
+- **Notifikasi Agenda (H-1)**: `run_agenda_reminder()` notifies class members + wali kelas the day before an agenda item (WIB), with `reminder_sent` dedupe; `POST /api/cron/agenda-reminder` (Bearer WEBHOOK_CRON_SECRET) + piggybacked on daily `attendance-reminder` cron (08:00 WIB). WEBHOOK_CRON_SECRET added to backend/.env.
+- **PDF panduan deploy dari nol**: `/app/PANDUAN_DEPLOY_DARI_NOL_GEMINI.pdf` (7 hal.) + generator `scripts/build_deploy_guide_pdf.py`. Berisi prompt untuk Gemini, Bagian A (kosongkan server: hentikan layanan, hapus Nginx/service/kode/DATABASE, verifikasi) & Bagian B (bangun ulang: paket, MongoDB, clone repo main24, backend .env+venv, frontend build, systemd, Nginx, SSL) + cron.
