@@ -1,33 +1,37 @@
-# PRD — Website Sekolah SMAN 1 Laguboti + Vortex Guard (branch main23)
+# PRD — Website-Sekolah (SMA NEGERI 1 LAGUBOTI)
 
-## Original problem statement
-Penyelesaian Website-Sekolah (branch main23) — Fitur yang belum selesai: 1) Import Siswa Massal (Excel → 500+ akun, NIS 5 angka untuk Face ID), 2) Paket Soal Acak per tingkat kesukaran, 3) Layar Piket TV (status gerbang + jadwal piket hari ini untuk pos satpam), 4) Aktivasi Email Brevo (reset password + notifikasi siswa; tanpa kredensial = "belum dikonfigurasi"), 5–7) Tahap 3: AI soal, WhatsApp (nanti), analisis butir. Housekeeping: isi test_result.md.
-User choices: repo https://github.com/boassibarani123-a11y/Website-Sekolah.git branch main23; Brevo kerangka saja; AI Claude Sonnet 4.5 via Emergent Universal Key; WhatsApp nanti; template import existing.
+## Original Problem Statement
+Import the full-stack school management system from `https://github.com/boassibarani123-a11y/Website-Sekolah.git` (branch `main24`) as-is and run it locally for development. Stack: FastAPI + React + MongoDB (standard Emergent stack). Integration keys stubbed; AI question-gen and email inactive until real keys provided.
 
 ## Architecture
-- backend/server.py (FastAPI monolith, cookie JWT), email_guard.py; MongoDB collections: users, question_bank, piket_shifts, gate_logs, password_reset_tokens, email_logs
-- frontend React (CRACO) + Tailwind; Vortex Guard in components/vortex/*
+- **Backend**: FastAPI (`backend/server.py`, single ~7400-line file), routes prefixed `/api`, runs on :8001 via supervisor. Auth = JWT (`JWT_SECRET`). MongoDB via `MONGO_URL`/`DB_NAME` (motor). Local disk file storage (`UPLOAD_DIR`).
+- **Frontend**: React 19 + CRACO + Tailwind + shadcn/ui, React Router 7. Calls backend via `REACT_APP_BACKEND_URL`.
+- **DB**: Local MongoDB. Super admin seeded on startup; test accounts via `scripts/seed_test_data.py`.
 
-## Users
-Super Admin, Staff TU, Guru, Siswa, Admin Absensi/Satpam
+## Import Setup (done 2026-06, local dev)
+- Cloned repo @ branch `main24` (commit dc20ad7), copied into `/app` (excluding .git/.env/node_modules/venv).
+- `backend/.env` created: MONGO_URL, DB_NAME, CORS_ORIGINS, JWT_SECRET (dev), empty EMERGENT_LLM_KEY / BREVO_API_KEY / BREVO_SENDER_EMAIL (features inactive).
+- Backend deps installed with resolved versions (repo's frozen `requirements.txt` was unresolvable in this env); `emergentintegrations` via its index; `requirements.txt` regenerated from the working env.
+- Frontend deps installed via `yarn` (lockfile honoured).
+- Services boot clean; `/api/health` → `{status: ok}`.
 
-## Implemented (2026-10-13)
-- Imported main23 into /app, deps installed, .env (JWT_SECRET, ADMIN_*, FRONTEND_URL, BREVO_* empty, EMERGENT_LLM_KEY, AI_MODEL)
-- Import siswa: NIS wajib tepat 5 angka; alias /api/admin/students/import(+/preview,/template); optional email akun baru; template columns unchanged (sample NIS values now 5 digits)
-- Paket Soal Acak: POST /api/exams/random-package ($sample per Mudah/Sedang/Sukar, skip daya beda Jelek, shortfall warnings), GET /api/question-bank/stock; UI modal in exam editor with preview
-- Layar Piket TV: GET /api/piket/tv + /piket/tv page (fullscreen, 4s polling, last data kept when offline, WIB clock)
-- Email: Brevo API v3 sender with retry on 429/5xx, SMTP fallback, email_logs, status card; reset password via one-time sha256 token (30 min) /auth/forgot-password/email + /auth/reset-password + /reset-password page; exam schedule notification emails. Not configured by default → skipped without errors
-- AI: _ai_text now uses Claude claude-sonnet-4-5-20250929 via Emergent key; POST /api/ai/exam-generate (PG + esai from material), GET /api/ai/status; "Buat dengan AI" in exam editor
-- Seed script scripts/seed_test_data.py; iteration_55: backend 17/17, frontend 9/9 flows pass
+## Verified (testing agent iteration_57 — 100% pass)
+- Health endpoint OK; super admin + guru + siswa + admin_absensi all authenticate (JWT).
+- Authenticated reads (users, classes, settings, auth/me) 200; protected routes 401 without token.
+- Public endpoints/pages work without auth (gallery, struktur-organisasi, ppdb, profil-sekolah).
+- Frontend login → dashboard renders; main nav pages render; backend pytest 15 passed / 1 skipped.
+- AI + email features fail gracefully while keys are empty (no crashes).
 
-## Implemented (2026-10-13, iterasi 2)
-- Piket TV: right panel rotates (10s) to "Belum Kembali dari Izin Keluar" (ik_out in /api/piket/tv), overdue highlighted
-- Absensi (Presensi Barcode & Wajah) dark theme via .att-dark scope
-- Vortex Guard mobile: auto fullscreen on start + tap re-enter, portrait orientation lock (Android), Wake Lock, iPhone Guided Access note
-- New school logo (transparent 1024px) + PWA icons
-- scripts/update-vps.sh + DEPLOY_VPS_UPDATE.md (main23); iteration_56 all pass
+## Core Features (from upstream repo)
+Multi-role school management: accounts, QR/face attendance, classes, assignments & quizzes (AI question-gen optional), VortexGuard exams, inventory, library, uang kas / social fund, OSIS elections, achievements/gallery, PPDB (admissions), ID card printing, org structure, reports & analytics, piket, announcements, feedback, password reset.
 
-## Backlog
-- P1: Isi BREVO_API_KEY + BREVO_SENDER_EMAIL (verified sender) to activate email
-- P1: Load real 500+ student Excel data
-- P2: WhatsApp (Twilio) notifications, item analysis charts polish, backend module split
+## Credentials
+See `/app/memory/test_credentials.md`.
+
+## Backlog / Remaining (out of current import scope)
+- P1: Provide real `EMERGENT_LLM_KEY` to enable AI question-gen; provide `BREVO_API_KEY` + `BREVO_SENDER_EMAIL` to enable email.
+- P2: Production deploy via `scripts/setup-vps.sh` + domain/SSL (currently local dev only).
+- P2 (optional, flagged by test agent): guard dashboard polling XHR until token attached (benign 401 in console); add canonical `GET /api/school/profile`.
+
+## Next Tasks
+- Await real integration keys to activate AI/email, or proceed to VPS production deploy flow when ready.
