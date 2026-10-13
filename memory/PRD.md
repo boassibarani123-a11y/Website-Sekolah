@@ -1,61 +1,26 @@
-# PRD — Website Sekolah SMAN 1 Laguboti + Vortex Guard
+# PRD — Website Sekolah SMAN 1 Laguboti + Vortex Guard (branch main23)
 
 ## Original problem statement
-Import project dari GitHub repository https://github.com/boassibarani123-a11y/Website-Sekolah.git, branch main21 (previously main19). Setup dan install semua dependencies-nya.
-Approved plan: rename exam system to "Vortex Guard" and complete the exam features (schedule, token, MC+essay bank, shuffle, timer, nav, ragu-ragu, autosave, tab-switch guard, MC auto-grade, essay grading, recap).
+Penyelesaian Website-Sekolah (branch main23) — Fitur yang belum selesai: 1) Import Siswa Massal (Excel → 500+ akun, NIS 5 angka untuk Face ID), 2) Paket Soal Acak per tingkat kesukaran, 3) Layar Piket TV (status gerbang + jadwal piket hari ini untuk pos satpam), 4) Aktivasi Email Brevo (reset password + notifikasi siswa; tanpa kredensial = "belum dikonfigurasi"), 5–7) Tahap 3: AI soal, WhatsApp (nanti), analisis butir. Housekeeping: isi test_result.md.
+User choices: repo https://github.com/boassibarani123-a11y/Website-Sekolah.git branch main23; Brevo kerangka saja; AI Claude Sonnet 4.5 via Emergent Universal Key; WhatsApp nanti; template import existing.
 
 ## Architecture
-- backend/server.py (FastAPI monolith, cookie JWT auth), email_guard.py, uploads on local disk
-- frontend React (craco) + Tailwind; Vortex Guard in frontend/src/components/vortex/* and pages/VortexGuard.jsx (/vortex-guard)
-- Mongo collections for exams: exams, exam_sessions (live state: answers, flags, violation_log), exam_attempts (details, essay scores)
+- backend/server.py (FastAPI monolith, cookie JWT), email_guard.py; MongoDB collections: users, question_bank, piket_shifts, gate_logs, password_reset_tokens, email_logs
+- frontend React (CRACO) + Tailwind; Vortex Guard in components/vortex/*
 
 ## Users
-Admin (super_admin), Guru, Siswa (+ other existing roles from repo)
+Super Admin, Staff TU, Guru, Siswa, Admin Absensi/Satpam
 
-## Implemented (2026-06)
-- Imported branch main19 to /app, pip + yarn dependencies installed, backend .env (JWT_SECRET, ADMIN_*, empty SMTP/OpenAI)
-- Admin seeded from code; test guru/siswa/class created (see test_credentials.md). Repo contains NO student data dump — 500+ students not available
-- Vortex Guard: branded page + sidebar entry + class "Ujian" tab; exam editor (class, subject, schedule start/end, duration, token, max violations, shuffle toggles, MC/essay bank); take flow (token gate, fullscreen, timer, question grid, ragu-ragu, autosave+resume, confirm submit); guard violations logged with reason/time; MC auto-grade; essay grading 0–100; results modal with recap stats + live proctoring tab (8s refresh)
-- Tested: backend 10/10, frontend critical flows pass (iteration_47)
+## Implemented (2026-10-13)
+- Imported main23 into /app, deps installed, .env (JWT_SECRET, ADMIN_*, FRONTEND_URL, BREVO_* empty, EMERGENT_LLM_KEY, AI_MODEL)
+- Import siswa: NIS wajib tepat 5 angka; alias /api/admin/students/import(+/preview,/template); optional email akun baru; template columns unchanged (sample NIS values now 5 digits)
+- Paket Soal Acak: POST /api/exams/random-package ($sample per Mudah/Sedang/Sukar, skip daya beda Jelek, shortfall warnings), GET /api/question-bank/stock; UI modal in exam editor with preview
+- Layar Piket TV: GET /api/piket/tv + /piket/tv page (fullscreen, 4s polling, last data kept when offline, WIB clock)
+- Email: Brevo API v3 sender with retry on 429/5xx, SMTP fallback, email_logs, status card; reset password via one-time sha256 token (30 min) /auth/forgot-password/email + /auth/reset-password + /reset-password page; exam schedule notification emails. Not configured by default → skipped without errors
+- AI: _ai_text now uses Claude claude-sonnet-4-5-20250929 via Emergent key; POST /api/ai/exam-generate (PG + esai from material), GET /api/ai/status; "Buat dengan AI" in exam editor
+- Seed script scripts/seed_test_data.py; iteration_55: backend 17/17, frontend 9/9 flows pass
 
 ## Backlog
-- P1: Export nilai Excel/PDF, real-time proctor dashboard (websocket), Brevo SMTP activation
-- P1: Import 500+ student accounts (needs data file from user)
-- P2: AI question generation, WhatsApp notifications, item analysis & statistics
-
-## Update 2026-06 — main21 import
-- Imported branch main21, pip + yarn deps installed, backend .env (JWT_SECRET, ADMIN_*, FRONTEND_URL, empty SMTP/OpenAI)
-- Seeded test accounts: guru, siswa, ketua_osis, admin_absensi + class XII IPA 1 (see test_credentials.md)
-- Fixes: bulk-delete blocks super_admin (backend + modal option removed); forgot-password validates password rule first (400 message); new GET /api/health and GET /api/users/{uid}
-- iteration_49: backend 10/10; frontend smoke of all batch pages passes. Deep UI flows (schoolgram follow/takedown, izin keluar gate approve, guest check-in/out, face confirm with camera) only smoke-tested
-## Next
-- Phase 2: Vortex Guard export Excel/PDF, real-time proctor dashboard, big token screen for projector
-- Phase 3: bulk import 500+ students, Brevo, AI features, WhatsApp notifications
-
-## Update 2026-06 — Vortex Guard Phase 2, Face/Barcode redesign, Inventory v2
-- Vortex Guard: token projector screen (big token + countdown, hide/fullscreen), live proctor dashboard (4s polling, per-student state/violations/remaining time), Excel/PDF grade export per exam (creator, wali kelas, super admin). Plain token stored as `token_plain` (staff-only endpoint /exams/{id}/token)
-- Face ID page redesigned (light, animated frame, big PresenceCard); log tabs Siswa/Guru; teacher records stay in teacher_attendance (/teacher-attendance)
-- Barcode gate uses the same PresenceCard
-- Inventory: dashboard (KPIs + charts), rooms CRUD, condition incl. Hilang, return condition (Rusak→damaged_units, Hilang→lost_units, stock not restored), activity log, QR labels print + QR/code lookup, item drawer, grid/table views
-- iteration_50: backend 26/26, frontend all flows pass
-## Backlog
-- P1: bulk import 500+ students (needs file), Brevo email activation
-- P2: AI question generator / book summary, WhatsApp notifications to parents, exam item analysis
-
-## Update 2026-06 — main22 import + Analisis Ujian
-- Imported branch main22, pip + yarn deps installed, backend .env (JWT_SECRET, ADMIN_*, FRONTEND_URL, empty SMTP/OpenAI)
-- Seeded guru, siswa, ketua_osis, admin_absensi + class XII IPA 1 (test_credentials.md)
-- NEW Vortex Guard Analisis Ujian: GET /api/exams/{eid}/analysis (creator/wali kelas/super admin) — stats (avg/median/max/min, peserta/belum ikut, % tuntas vs KKM), distribusi nilai 10 rentang, analisis butir PG (P kesukaran, D daya beda 27%, sebaran opsi, pengecoh lemah), rata-rata esai, flag soal bermasalah (>=5 respon); KKM per ujian (default 75); Excel export adds sheet "Analisis Butir"
-- UI: ExamAnalysis.jsx modal (recharts) via "Analisis" button on exam card; KKM input in editor
-- iteration_52: backend + frontend pass
-## Backlog
-- P1: bulk import 500+ siswa (needs file), Brevo email activation, websocket proctor dashboard
-- P2: AI question generation, WhatsApp notifications, backend module split
-
-## Update 2026-06 — Realtime proctor, Bank Soal, Face NIS, Piket UI, Excel style
-- Live proctor via SSE GET /api/exams/{eid}/live/stream (push on change, ping/resync 20s, auto fallback to 4s polling); LiveProctor shows connection mode
-- Bank Soal: collection question_bank; POST /question-bank/from-exam (dedupe, stores P/D stats), GET /question-bank, POST /question-bank/use, DELETE; UI in Analisis modal (select + "Pilih soal berkualitas") and editor picker "Ambil dari Bank Soal"
-- Face ID lookalike confirm: exactly 5 digits = NIS (siswa) / last 5 of NIP (guru); DigitPad 5 dots
-- Piket Gerbang redesign: guide strip, gate status, step indicator, today timeline, stats with hints, weekly agenda list + legend
-- Excel: write_report_sheet/pretty_excel structured style (centered title + logo, blue header, section rows per group, grey subtotals, blue totals/summary, Rp format); grouping per export; exam export analysis sheet uses same style
-- iteration_53: backend 25/25, frontend flows pass
+- P1: Isi BREVO_API_KEY + BREVO_SENDER_EMAIL (verified sender) to activate email
+- P1: Load real 500+ student Excel data
+- P2: WhatsApp (Twilio) notifications, item analysis charts polish, backend module split
