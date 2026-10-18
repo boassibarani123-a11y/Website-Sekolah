@@ -1,0 +1,42 @@
+{
+  "summary": "Tested the full Zynex UI redesign (frontend) and ran a quick backend check of settings.card_show_zynex. Backend: 3/3 pass (GET returns a bool, PATCH false/true is saved, PATCH without login is rejected). Frontend: login leads to the new Dashboard with all six sections. Sidebar groups 01-04 collapse and expand, the active item is highlighted, and the breadcrumb is correct on every page. All 37 menu routes render with no JS page errors. The app footer and its Zynex logo show on every dashboard page. The public footer with the Zynex logo shows on all 6 public pages. Topbar works: dark toggle, theme palette, user menu, profile and logout. Kelola Akun works: the 4 tabs, search, the 9-role select and siswa creation. The Kartu modal shows id-card-zynex. The Settings Zynex toggle works end to end: the live preview hides the logo, the setting survives a reload, the card modal hides it too, and it was restored. /piket/tv renders tv-clock, tv-today and tv-footer with the Zynex logo. Schoolgram opens after the password gate. On mobile (390px) the drawer opens and closes after navigating. One critical layout bug: every modal is confined to the page content area instead of covering the full screen. Several dark-mode contrast issues were also found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "All in-page modals (Create Account, Kartu Pelajar, Edit, Delete confirm, and every other page modal using fixed inset-0)", "issue": "The modal overlay does not cover the viewport. It is confined to the page root box: the sidebar, topbar, page title and PageHeader action buttons stay un-dimmed, and 'Tambah akun' is drawn over the overlay. Tall modals can get clipped. RCA: index.css line 53 `.zx-main > div > * { animation: zxRise .35s ease-out both; }`. With fill-mode `both`, the computed transform stays at matrix(1,0,0,1,0,0) after the animation ends. That makes the page root a containing block for position:fixed descendants (verified: the overlay rect was 288,108,1592x747 instead of 0,0,1920x1080).", "selector": "[data-testid=accounts-page] .fixed.inset-0", "priority": "HIGH"},
+      {"component": "AppFooter", "issue": "'Terakhir diperbarui HH.MM WIB' uses the browser's local time without timeZone 'Asia/Jakarta'. In the test browser the footer showed 14.53 WIB while the Piket TV clock showed 21.54 WIB.", "selector": "[data-testid=app-footer]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dark mode - Dashboard hero", "issues": ["The right-side chips ('0 prestasi', '0 jadwal hari ini') and the 'Terus bertumbuh' tile keep a white/light background with near-white text, so they are unreadable."]},
+      {"screen": "Dark mode - Kelola Akun", "issues": ["The bottom info panels ('Akses berbasis peran', 'Kartu pelajar otomatis') have a light background with light body text, so they are unreadable."]},
+      {"screen": "Dark mode - Settings", "issues": ["The 'Tips' panel heading is light text on a light sky background (contrast about 1.03)."]},
+      {"screen": "Dark mode - App footer", "issues": ["The Zynex wordmark (dark logo) is nearly invisible on the dark footer. It needs a white chip like PiketTV uses, or a light variant."]},
+      {"screen": "All dashboard pages (desktop)", "issues": ["The floating AI assistant button overlaps the right end of the footer Zynex wordmark. pr-24 is not enough at 1920 width."]},
+      {"screen": "Topbar", "issues": ["The sonner toast ('Selamat datang kembali!') sits over the topbar icons (dark toggle, palette) right after login, on both desktop and mobile."]},
+      {"screen": "/pemantau-live", "issues": ["Still a full dark panel inside the light sky theme, which is inconsistent with the PDF light style."]},
+      {"screen": "/feedback", "issues": ["Content is constrained to about 960px and leaves the right half of the desktop page empty."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter62_ui_redesign_settings.py", "/app/test_reports/pytest/pytest_iter62.xml"],
+  "action_items": [
+    "HIGH: Fix the modal containing-block bug. In index.css change `.zx-main > div > * { animation: zxRise .35s ease-out both; }` to fill-mode `backwards`, animate opacity only, or render modals via a portal to document.body. Then re-check the Create Account and Kartu modals cover the full viewport.",
+    "Fix dark-mode contrast: the dashboard hero chips and tile, the Kelola Akun info panels, the Settings Tips panel, and the footer Zynex wordmark (put it on a white chip in dark mode).",
+    "Give AppFooter enough right padding or margin so the AI assistant FAB does not cover the Zynex logo.",
+    "Use timeZone 'Asia/Jakarta' for the footer 'Terakhir diperbarui' time, since it is labelled WIB.",
+    "Optional: add data-testid to the Name, Email and Password inputs in the CreateModal of MasterAccounts.jsx (the Input component already forwards props)."
+  ],
+  "critical_code_review_comments": [
+    "Sidebar nav testids are built from the label with only whitespace replaced, which gives testids with special characters such as nav-guru-&-staff and nav-izin-keluar-(ik). Strip non-alphanumerics instead.",
+    "Sidebar Group's 'active' check uses pathname.startsWith(m.to) without the trailing '/' guard that findCrumb has, so '/piket/tv'-style prefixes could open the wrong group.",
+    "No React ErrorBoundary around Outlet, so any page crash gives a blank content area. Consider adding one.",
+    "In ThemeMenu, setBrand swallows errors silently (catch {}). There is no toast on failure."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter62_ui_redesign_settings.py"],
+  "success_rate": {"backend": "100%", "frontend": "88% (all flows work functionally; 1 high-severity modal layout bug plus dark-mode contrast issues)"},
+  "seed_data_creation": "Created siswa TEST_Siswa Zynex (test_zynex_siswa@example.com) and deleted it afterwards. card_show_zynex was restored to true.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Super admin creds are in /app/memory/test_credentials.md. All 37 sidebar routes were checked: breadcrumb correct, no pageerrors. /presentasi and /dokumentasi render outside DashboardLayout (standalone pages). To retest: open /accounts, click create-account-button and confirm the overlay rect is 0,0 at full viewport size; then retest dark mode on /, /accounts and /settings.",
+  "rca of the issue": "Modal confinement: the CSS animation zxRise with animation-fill-mode both leaves an identity transform on each page root (.zx-main > div > *). Any transform other than none creates a containing block for position:fixed children, so 'fixed inset-0' overlays size to the page root instead of the viewport. Repro: login, go to /accounts, click 'Tambah akun' and see that the sidebar, topbar and header are not dimmed. Mitigation: use fill-mode backwards or an opacity-only animation, or portal the modals."
+}

@@ -1,0 +1,34 @@
+{
+  "summary": "Post-import smoke test of SMA Negeri 1 Laguboti school system. Backend: 99/99 pytest checks passed (settings, health, login success/fail, /auth/me, all 6 /api/cron/* return 401 without auth and with a wrong secret, and 87 authenticated GET list endpoints with no 5xx). Frontend: super admin login works and lands on the dashboard. I clicked all 38 sidebar menu items; every page rendered content (main innerText > 0) with no page errors or error boundaries. Public pages all load without login: /info-tamu, /ppdb (via 'Buka Formulir PPDB'), /struktur-organisasi, /galeri, /profil-sekolah (via 'Lihat Profil Sekolah'). I found no blocking issues.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/piket/report", "issue": "Returns 422 when the 'month' query is missing. The frontend always sends it, so this is informational only."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/reports (Rapor Digital)", "issues": ["Console warning: '<span> cannot be a child of <option>' (hydration warning). It does not break rendering; it most likely comes from the dev visual-edit wrapper, or from mixed text in <option> at Reports.jsx line 68 'Semester {s}'. Could use a template literal: {`Semester ${s}`}"]},
+      {"screen": "/ppdb", "issues": ["TANGGAL LAHIR uses the browser's native date input (mm/dd/yyyy) instead of a shadcn calendar, and the mm/dd format is inconsistent with an Indonesian audience"]},
+      {"screen": "Public pages", "issues": ["Console shows 401 errors from the unauthenticated /api/auth/me probe. This is expected and harmless."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter37_import_smoke.py", "/app/test_reports/pytest/pytest_results_iter37.xml"],
+  "action_items": [
+    "Optional: fix the <option> hydration warning in Reports.jsx",
+    "Optional: replace the native date input on the PPDB form with the shadcn Calendar/date picker"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 8389 lines. It should be split into routers per module (auth, attendance, cron, library, etc.).",
+    "The cron guard is done properly (hmac.compare_digest, idempotent run_id), but the guard logic in /cron/attendance-archive and /cron/kas-reminder is duplicated instead of reusing _cron_guard."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter37_import_smoke.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Super admin boassibarani123@gmail.com / <SUPER_ADMIN_PASSWORD> (from /app/memory/test_credentials.md) - works",
+  "seed_data_creation": "None. The DB is empty apart from the seeded super admin.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Super admin sees 38 sidebar links (aside nav a, data-testid nav-<label-kebab>). /presentasi has no DashboardLayout sidebar (standalone route), so go back after clicking it. Running all 38 clicks in one Playwright run times out, so batch them in groups of 12-18. Live class (LiveKit) could not be tested end-to-end because there are no classes and LIVEKIT_URL is empty; /pemantau-live opens fine."
+}

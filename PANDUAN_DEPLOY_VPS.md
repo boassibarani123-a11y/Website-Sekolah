@@ -1,0 +1,301 @@
+# PANDUAN DEPLOY — Website SMA Negeri 1 Laguboti ke VPS Ubuntu 22.04
+(Siap ditempel ke Gemini sebagai konteks. Posisi Anda: SUDAH berada di terminal VPS.)
+
+## 0. Konteks untuk AI asisten (Gemini)
+Saya sudah login ke terminal VPS Ubuntu 22.04 (akses sudo). Domain saya sudah diarahkan (A-record) ke IP VPS ini.
+Saya ingin men-deploy website sekolah full-stack dari GitHub:
+- Repo: https://github.com/boassibarani123-a11y/Website-Sekolah.git
+- Branch: main26
+- Frontend: React (CRA + craco, build statis pakai yarn) → dilayani Nginx
+- Backend: FastAPI (Python 3.11, uvicorn) → 127.0.0.1:8001, semua endpoint berawalan /api
+- Database: MongoDB 7.0 lokal (bind 127.0.0.1)
+- Reverse proxy: Nginx + HTTPS Let's Encrypt (Certbot)
+- Process manager: systemd service `sekolah-backend`
+- Cron: 5 endpoint terjadwal (attendance-reminder, attendance-auto-alpha, attendance-archive, kas-reminder, piket-reminder) dipanggil via curl dengan header `Authorization: Bearer <WEBHOOK_CRON_SECRET>` + `X-Webhook-Id`
+- Fitur kamera: Presensi Wajah & Daftar Wajah Siswa memakai webcam di browser (butuh HTTPS + izin kamera). Model AI wajah (±12MB) ada di `frontend/public/models` dan ikut ter-build sebagai file statis; pencocokan wajah di backend memakai numpy.
+- Piket Gerbang: jadwal shift guru, check-in/out berbasis jam WIB, pengingat otomatis ±30 menit sebelum shift (notifikasi + email), laporan bulanan + ekspor Excel.
+- Email: Brevo SMTP (smtp-relay.brevo.com:587). AI (OpenAI) dikosongkan. WhatsApp nonaktif.
+- Login memakai cookie httpOnly `Secure` + `SameSite=None` → WAJIB HTTPS dan frontend+backend SATU domain.
+Bantu saya langkah demi langkah, cek output tiap langkah, dan bantu troubleshooting jika ada error.
+
+Ganti semua `sekolah.domainanda.com` dengan domain Anda.
+
+---
+
+## CARA CEPAT (script otomatis, disarankan)
+Prasyarat: dari Emergent klik **Save to GitHub** → push ke branch `main26` (ganti `main26` di seluruh panduan ini dengan nama branch yang Anda pakai) (agar file `scripts/setup-vps.sh` dan perbaikan UI terbaru ikut).
+
+```bash
+cd ~
+git clone -b main26 https://github.com/boassibarani123-a11y/Website-Sekolah.git tmp-sekolah
+sudo DOMAIN=sekolah.domainanda.com \
+  CERT_EMAIL=email.anda@gmail.com \
+  ADMIN_EMAIL=admin@domainanda.com \
+  ADMIN_PASSWORD='PasswordKuatBaru!2026' \
+  SMTP_USER='login-smtp-brevo@smtp-brevo.com' \
+  SMTP_PASSWORD='xsmtpsib-xxxxxxxx' \
+  SMTP_FROM='noreply@domainanda.com' \
+  bash tmp-sekolah/scripts/setup-vps.sh
+rm -rf ~/tmp-sekolah
+```
+Script menjalankan Fase 1–8 di bawah secara otomatis (secret JWT & cron dibuat acak). Jika gagal di tengah, aman dijalankan ulang.
+
+---
+
+## CARA MANUAL (langkah per langkah)
+
+### Fase 1 — Dependency sistem
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y software-properties-common gnupg curl git nginx
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt update && sudo apt install -y python3.11 python3.11-venv python3.11-dev
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g yarn
+sudo timedatectl set-timezone Asia/Jakarta
+python3.11 --version && node -v && yarn -v && timedatectl | grep "Time zone"
+```
+
+### Fase 2 — MongoDB 7.0
+```bash
+curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt update && sudo apt install -y mongodb-org
+sudo systemctl enable --now mongod
+sudo systemctl status mongod --no-pager    # harus: active (running)
+grep bindIp /etc/mongod.conf               # harus: 127.0.0.1
+```
+
+### Fase 3 — Ambil kode
+```bash
+sudo mkdir -p /var/www && sudo chown -R $USER:$USER /var/www
+cd /var/www && git clone -b main26 https://github.com/boassibarani123-a11y/Website-Sekolah.git sekolah
+mkdir -p /var/www/sekolah/uploads
+```
+
+### Fase 4 — Backend
+```bash
+openssl rand -hex 32   # salin → JWT_SECRET
+openssl rand -hex 32   # salin → WEBHOOK_CRON_SECRET
+nano /var/www/sekolah/backend/.env
+```
+Isi:
+```
+MONGO_URL="mongodb://localhost:27017"
+DB_NAME="sekolah_db"
+JWT_SECRET="<hasil openssl 1>"
+WEBHOOK_CRON_SECRET="<hasil openssl 2>"
+CORS_ORIGINS="https://sekolah.domainanda.com"
+FRONTEND_URL="https://sekolah.domainanda.com"
+ADMIN_EMAIL="admin@domainanda.com"
+ADMIN_PASSWORD="PasswordKuatBaru!2026"
+UPLOAD_DIR="/var/www/sekolah/uploads"
+EMAIL_FROM_NAME="SMA NEGERI 1 LAGUBOTI"
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-4o-mini"
+SMTP_HOST="smtp-relay.brevo.com"
+SMTP_PORT="587"
+SMTP_USER="<login SMTP Brevo>"
+SMTP_PASSWORD="<SMTP key Brevo>"
+SMTP_FROM="<email pengirim terverifikasi di Brevo>"
+```
+```bash
+chmod 600 /var/www/sekolah/backend/.env
+cd /var/www/sekolah/backend
+python3.11 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r requirements.txt
+```
+Catatan: super admin dibuat otomatis saat backend pertama kali start (dari ADMIN_EMAIL/ADMIN_PASSWORD).
+
+### Fase 5 — Frontend
+```bash
+cat > /var/www/sekolah/frontend/.env <<'ENV'
+REACT_APP_BACKEND_URL=https://sekolah.domainanda.com
+WDS_SOCKET_PORT=443
+ENV
+cd /var/www/sekolah/frontend && yarn install && yarn build
+```
+Jika build kehabisan RAM (VPS 1GB): buat swap 2GB → `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
+
+### Fase 6 — systemd + Nginx
+```bash
+sudo tee /etc/systemd/system/sekolah-backend.service >/dev/null <<'UNIT'
+[Unit]
+Description=Sekolah FastAPI Backend
+After=network.target mongod.service
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/sekolah/backend
+ExecStart=/var/www/sekolah/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 1
+Restart=always
+RestartSec=3
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo chown -R www-data:www-data /var/www/sekolah/uploads /var/www/sekolah/backend
+sudo systemctl daemon-reload && sudo systemctl enable --now sekolah-backend
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/api/settings   # harus 200
+```
+```bash
+sudo tee /etc/nginx/sites-available/sekolah >/dev/null <<'NGINX'
+server {
+    listen 80;
+    server_name sekolah.domainanda.com;
+    client_max_body_size 15m;
+    root /var/www/sekolah/frontend/build;
+    index index.html;
+    location /api/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+    location /models/ {
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri =404;
+    }
+    location / { try_files $uri $uri/ /index.html; }
+}
+NGINX
+sudo ln -sf /etc/nginx/sites-available/sekolah /etc/nginx/sites-enabled/sekolah
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Fase 7 — HTTPS (wajib)
+```bash
+sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw --force enable
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d sekolah.domainanda.com --redirect -m email.anda@gmail.com --agree-tos -n
+```
+
+### Fase 8 — Cron terjadwal (WIB)
+```bash
+SECRET=$(grep WEBHOOK_CRON_SECRET /var/www/sekolah/backend/.env | cut -d'"' -f2)
+sudo tee /usr/local/bin/sekolah-cron.sh >/dev/null <<SH
+#!/usr/bin/env bash
+curl -s -X POST "http://127.0.0.1:8001/api/cron/\$1" -H "Authorization: Bearer $SECRET" -H "X-Webhook-Id: \$1-\$(date +%Y%m%d%H%M)" -H "Content-Type: application/json" -d '{}' >> /var/log/sekolah-cron.log 2>&1
+SH
+sudo chmod 700 /usr/local/bin/sekolah-cron.sh
+( sudo crontab -l 2>/dev/null; cat <<'CRON'
+0 8 * * *   /usr/local/bin/sekolah-cron.sh attendance-reminder
+0 9 * * *   /usr/local/bin/sekolah-cron.sh attendance-auto-alpha
+0 1 * * 1   /usr/local/bin/sekolah-cron.sh attendance-archive
+0 7 1 * *   /usr/local/bin/sekolah-cron.sh kas-reminder
+*/5 * * * * /usr/local/bin/sekolah-cron.sh piket-reminder
+CRON
+) | sudo crontab -
+sudo /usr/local/bin/sekolah-cron.sh kas-reminder && tail -1 /var/log/sekolah-cron.log   # harus {"ok":true}
+sudo /usr/local/bin/sekolah-cron.sh piket-reminder && tail -1 /var/log/sekolah-cron.log # harus {"ok":true}
+```
+Catatan piket-reminder: dijalankan tiap 5 menit; sistem hanya mengirim SATU kali per shift (ditandai `reminded_at`), sekitar 30–35 menit sebelum jam mulai. Jika jam/tanggal shift diedit, pengingat otomatis dikirim ulang sesuai jadwal baru.
+
+**Sudah deploy sebelumnya? Tambahkan baris piket saja:**
+```bash
+( sudo crontab -l; echo '*/5 * * * * /usr/local/bin/sekolah-cron.sh piket-reminder' ) | sudo crontab -
+sudo crontab -l | grep piket
+```
+
+### Fase 9 — Brevo SMTP
+1. Daftar di brevo.com → Settings → **SMTP & API** → tab SMTP → salin *Login* (SMTP_USER) & buat *SMTP key* (SMTP_PASSWORD).
+2. Senders & IP → tambah & verifikasi email pengirim (SMTP_FROM). Untuk deliverability terbaik, autentikasi domain (SPF/DKIM) di menu Domains.
+3. Isi ke backend/.env lalu `sudo systemctl restart sekolah-backend`.
+4. Kuota free: 300 email/hari → untuk 900 akun kirim bertahap 3 hari.
+
+### Fase 10 — Verifikasi di browser
+- https://domain → halaman login + logo tampil
+- Login super admin → dashboard
+- Informasi Sekolah → upload galeri → reload → gambar tetap ada
+- Presensi Barcode → colok scanner USB → scan kartu → muncul MASUK + baris di tabel
+- Kuis, Pemilu OSIS, Kartu Pelajar, tambah siswa/inventaris tersimpan
+- Pengaturan → Kirim Email Tes
+- Daftar Wajah Siswa → izinkan kamera → pilih siswa → rekam 5 pose → Simpan → di Kelola Akun kolom Wajah = Terdaftar
+- Presensi Wajah → siswa tadi berdiri di depan kamera → MASUK + baris baru di tabel (metode: Face)
+- Piket Gerbang → jadwalkan shift guru ±40 menit dari sekarang → tunggu ≤10 menit → guru menerima notifikasi/email pengingat → check-in → tab Laporan Bulanan → Export Excel
+- Ujian (login siswa) → masukkan password → langsung layar penuh; tekan Esc lama → layar "Ujian Terkunci" muncul
+
+---
+
+## Setup perangkat Scanner Barcode di gerbang
+- Scanner USB/Bluetooth tipe **HID keyboard (keyboard-wedge)** — default hampir semua scanner. Tidak perlu driver.
+- Pastikan scanner diset mengirim **Enter (CR) suffix** setelah kode (default pabrik umumnya sudah).
+- Di laptop gerbang: login akun **Admin Absensi** → buka menu **Presensi Barcode** → klik **Layar Penuh**.
+- Scanner langsung aktif selama: tab browser itu sedang aktif/fokus, dan kursor TIDAK sedang di kolom input teks.
+- Banyak gerbang: tiap laptop menyimpan nama stasiun sendiri (Gerbang 1, 2, …) – atur di panel Stasiun.
+- Barcode di Kartu Pelajar berisi NISN siswa.
+- Tips kiosk: Chrome `--kiosk https://domain/attendance`, matikan sleep/screen saver laptop.
+
+## Setup laptop Presensi Wajah (cadangan scanner)
+- Gunakan **Chrome / Edge terbaru**. Kamera hanya bisa diakses lewat **HTTPS** (Fase 7 wajib selesai).
+- Saat pertama membuka menu **Presensi Wajah** / **Daftar Wajah Siswa**, klik **Izinkan** kamera. Jika terlanjur ditolak: ikon gembok di address bar → Kamera → Izinkan → muat ulang.
+- Pembukaan pertama mengunduh model ±12MB (lalu tersimpan di cache browser; Nginx mengirimnya dengan cache 30 hari).
+- Laptop dengan webcam 720p sudah cukup. Letakkan kamera setinggi wajah, cahaya dari depan (jangan membelakangi jendela).
+- Pendaftaran wajah: menu **Daftar Wajah Siswa** → pilih kelas → **Mode Per Kelas** → sistem otomatis pindah ke siswa berikutnya setelah Simpan (±30 detik/siswa). Atau dari **Kelola Akun** → kolom Wajah → **Daftarkan**.
+- Aktifkan **Anti-Foto (Kedip)** di layar Presensi Wajah agar siswa harus berkedip (mencegah absen pakai foto).
+- Menghapus akun siswa otomatis menghapus data wajahnya.
+
+## Setup Ujian Anti-Nyontek
+- Siswa wajib memakai **Chrome/Edge di laptop/PC** agar layar penuh & kunci tombol Esc bekerja maksimal. Di HP, layar penuh tergantung browser.
+- Keluar layar penuh / pindah tab / Alt+Tab tetap bisa dilakukan oleh sistem operasi, tetapi soal langsung terkunci, pelanggaran tercatat, dan ujian terkirim otomatis setelah batas pelanggaran.
+
+## Kelas Live (video conference terjadwal) — opsional
+Server video LiveKit (open-source) dipasang di VPS yang sama, tanpa layanan pihak ketiga.
+1. Buat DNS A-record subdomain, mis. `live.domainanda.com` → IP VPS.
+2. Jalankan:
+```bash
+cd /var/www/sekolah && sudo bash scripts/setup-livekit-vps.sh live.domainanda.com
+```
+Script memasang `livekit-server` (systemd `livekit`), TURN, Nginx + SSL subdomain, membuka port
+7881/tcp, 3478/udp, 5349/tcp, 50000–60000/udp, menulis `LIVEKIT_*` ke `backend/.env`, memaksa backend
+`--workers 1`, lalu restart backend.
+3. Login super admin → Kelas → tab **Kelas Live** → label **"Server video siap"** harus hijau.
+4. Buka/Tutup Kelas Live untuk seluruh sekolah atau per kelas dari panel yang sama. Papan pemantau: menu **Pemantau Kelas Live**.
+5. Spesifikasi untuk 900 siswa / 22 kelas: 8 vCPU, 16 GB RAM, bandwidth ≥ 1 Gbps.
+6. Cek: `systemctl status livekit`, `journalctl -u livekit -n 50`. Jika port UDP diblok provider, peserta otomatis lewat TURN/TCP.
+7. Uji jadwal (opsional, data uji dibuat & dihapus otomatis):
+```bash
+cd /var/www/sekolah && API_BASE=http://127.0.0.1:8001 ./backend/venv/bin/python backend/tests/live_schedule_e2e.py --slot 120
+```
+
+> Penting: backend **harus 1 worker** (`--workers 1`). Notifikasi real-time, penjadwal Kelas Live, dan chat berjalan di satu proses.
+
+## Update / redeploy
+```bash
+cd /var/www/sekolah && sudo -u www-data git pull origin main26 || (sudo chown -R $USER /var/www/sekolah && git pull origin main26)
+./backend/venv/bin/pip install -r backend/requirements.txt
+sudo chown -R www-data:www-data backend uploads && sudo systemctl restart sekolah-backend
+cd frontend && yarn install && yarn build && sudo systemctl reload nginx
+```
+Folder `uploads/` tidak tersentuh → gambar aman.
+
+## Backup database harian (disarankan)
+```bash
+sudo mkdir -p /var/backups/sekolah
+( sudo crontab -l; echo '30 2 * * * mongodump --db sekolah_db --archive=/var/backups/sekolah/db-$(date +\%F).gz --gzip && find /var/backups/sekolah -mtime +14 -delete' ) | sudo crontab -
+```
+
+## Troubleshooting
+| Gejala | Penyebab / solusi |
+|---|---|
+| Kelas Live: "Server video belum terpasang" | `systemctl status livekit`; cek `LIVEKIT_*` di backend/.env lalu restart backend |
+| Kelas Live: video tidak muncul di jaringan sekolah | pastikan port UDP 50000–60000 & 3478 terbuka di firewall provider; TURN 5349/tcp aktif |
+| 502 Bad Gateway | backend mati → `sudo journalctl -u sekolah-backend -n 80 --no-pager` |
+| Login berhasil tapi terlempar ke login lagi | belum HTTPS / domain frontend ≠ REACT_APP_BACKEND_URL |
+| Upload gagal 413 | `client_max_body_size` Nginx kurang |
+| Gambar 401 | cookie tak terkirim → cek HTTPS & satu domain |
+| Upload gagal Permission denied | `sudo chown -R www-data:www-data /var/www/sekolah/uploads` |
+| Cron tidak jalan | cek `/var/log/sekolah-cron.log`, secret harus sama dengan .env |
+| Email tidak terkirim | cek SMTP key Brevo, sender sudah diverifikasi, port 587 tidak diblok provider VPS |
+| Scanner tidak terbaca | klik area kosong halaman (fokus keluar dari input), pastikan suffix Enter aktif |
+| `yarn build` killed | RAM kurang → tambah swap |
+| Kamera tidak muncul / "Izin kamera ditolak" | situs belum HTTPS atau izin diblokir → gembok address bar → Kamera: Izinkan |
+| "Gagal memuat model wajah" | cek `curl -I https://domain/models/face_recognition_model.bin` harus 200; jika 404 → `yarn build` ulang (folder public/models harus ada di repo) |
+| Wajah sering "tidak dikenali" | daftar ulang dengan cahaya terang, lepas masker/kacamata gelap, wajah mengisi ±1/4 layar |
+| "Wajah mirip siswa lain" | pastikan siswa yang dipilih benar; jika kembar/sangat mirip, hubungi admin untuk hapus data wajah siswa yang salah |
+| Pengingat piket tidak terkirim | `sudo crontab -l \| grep piket` harus ada; cek `/var/log/sekolah-cron.log` dan `journalctl -u sekolah-backend \| grep "Piket reminder"` |
