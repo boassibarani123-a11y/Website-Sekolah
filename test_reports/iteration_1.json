@@ -1,0 +1,22 @@
+{
+  "summary": "Smoke test of the import of Website-Sekolah branch main27. Backend: 13/13 pytest passed (login ok and invalid, /auth/me with and without auth, GET /settings /users /announcements /classes /gallery /face/students /subjects all return 200 with no _id in responses, create guru and siswa then GET then login then /auth/me then delete, siswa without phone returns 400). Frontend: /login loads; super admin logs in and lands on the dashboard; the sidebar pages Kelola Akun, Pengaturan, Informasi Sekolah, Absensi Barcode, Perpustakaan, Pengumuman and Schoolgram render with no JS page errors; public /galeri renders. Created a guru and a siswa through the Kelola Akun UI ('Akun berhasil dibuat' toast); both logged in and reached their role-specific dashboards. All test users were deleted afterwards.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Sidebar", "issues": ["The sidebar has no 'Galeri' entry. The gallery is only the public /galeri page, reachable from the login page link. This matches the code; noting it because the review request listed Galeri as a sidebar menu."]},
+      {"screen": "Login / sidebar", "issues": ["The school logo box on the login page was empty in one screenshot. The school name showed as 'SMA NEGERI 1 LAGUBOTI' early in the session and as 'SMANSALA' later; GET /api/settings now returns school_name=SMANSALA. This is data-driven, not a code bug."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter62_import_main27.py", "/app/test_reports/pytest/pytest_iter62.xml"],
+  "action_items": [],
+  "critical_code_review_comments": ["server.py is 8389 lines and should be split into routers (existing tech debt, out of scope for this import)."],
+  "updated_files": ["/app/frontend/src/pages/MasterAccounts.jsx (added data-testid new-account-name/email/password to CreateModal inputs)", "/app/backend/tests/test_iter62_import_main27.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None kept. TEST_ users were created and then deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Super admin credentials are in /app/memory/test_credentials.md. Siswa accounts need a phone number. Email, LiveKit and AI are unconfigured by design. Services restarted once mid-test and briefly returned a 502; it recovered by itself.",
+  "test_credentials": "boassibarani123@gmail.com / <SUPER_ADMIN_PASSWORD>"
+}

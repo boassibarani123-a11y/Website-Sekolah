@@ -1,0 +1,32 @@
+[16:09:06.061Z] Seed: kelas LIVE-TEST 21CEAD hari Kamis | Matematika 23:09:21-23:11:21 | Sejarah 23:11:21-23:13:21 (WIB)
+[16:09:07.722Z] PASS | Sebelum jadwal: guru matematika belum bisa masuk - HTTP 409
+[16:09:07.722Z] ... menunggu 13 detik sampai Matematika mulai
+[16:09:22.514Z] == SLOT 1: MATEMATIKA ==
+[16:09:22.520Z] PASS | (c) Guru tidak terjadwal (Biologi) diblokir - HTTP 403 Sesi ini milik guru Pak Budi (Matematika) (Matematika). Anda tidak dijadwalkan pada jam ini.
+[16:09:22.564Z] PASS | (c) Guru Sejarah diblokir saat jam Matematika - HTTP 403
+[16:09:22.609Z] PASS | Siswa kelas lain diblokir - HTTP 403
+[16:09:22.657Z] PASS | Siswa terdaftar mendapat token 
+[16:09:22.705Z] PASS | Guru Matematika mendapat token host 
+[16:09:23.237Z]   ws<siswa> presence 
+[16:09:23.237Z]   ws<guru-mtk> presence 
+[16:09:23.387Z] PASS | Siswa terhubung ke SFU LiveKit (self-hosted) 
+[16:09:23.390Z]   ws<siswa> presence 
+[16:09:23.391Z]   ws<guru-mtk> presence 
+[16:09:23.391Z]   ws<siswa> teacher_joined Pak Budi (Matematika) telah bergabung di Kelas Live Matematika
+[16:09:23.391Z]   ws<guru-mtk> teacher_joined Pak Budi (Matematika) telah bergabung di Kelas Live Matematika
+[16:09:23.439Z] PASS | (b) Notifikasi real-time saat guru bergabung - 4 ms: "Pak Budi (Matematika) telah bergabung di Kelas Live Matematika"
+[16:09:23.445Z] PASS | Perpanjang +5 menit ditolak karena Sejarah mulai tepat waktu - Tidak bisa diperpanjang: Sejarah dimulai tepat pukul 23:11
+[16:09:23.488Z] PASS | Siswa tidak bisa memakai kontrol host 
+[16:09:23.488Z] ... menunggu 118 detik sampai Matematika berakhir
+[16:11:21.990Z]   ws<siswa> session_ended schedule
+[16:11:21.990Z]   ws<guru-mtk> session_ended schedule
+[16:11:21.994Z]   ws<siswa> session_started 
+[16:11:22.018Z] PASS | (a) Siswa otomatis dikeluarkan (WebSocket) saat jam habis - +0.99s setelah 23:11:21
+[16:11:22.018Z] PASS | (a) Guru Matematika otomatis dikeluarkan 
+[16:11:22.018Z] PASS | (a) Koneksi video siswa diputus oleh server SFU - +0.99s
+[16:11:22.031Z]   ws<guru-mtk> session_started 
+[16:11:23.519Z] == SLOT 2: SEJARAH ==
+[16:11:23.525Z] PASS | (c) Guru Matematika diblokir setelah jamnya habis - HTTP 403
+[16:11:23.572Z] PASS | Guru Sejarah sekarang mendapat token host 
+[16:11:23.572Z] PASS | Sesi Sejarah aktif otomatis 
+[16:11:23.573Z] HASIL: 16/16 PASS

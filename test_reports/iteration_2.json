@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend test of the new layout and light theme on /attendance and /face-attendance at 1920x1080 as super admin. All requested checks passed. (1) Layout order measured from DOM positions. /attendance: header, attendance-counters (y=210), gate-display (340), attendance-tools-row (866), attendance-live-log (1246). /face-attendance: header, counters (246), face scanner block, face-tools-row (1142), live-scan-table (1522). On both pages manual-panel sits on the left (x=317) and station-panel on the right (x=1100), each 759px wide, top-aligned. (2) Light theme: the .att-soft wrapper uses a linear-gradient from #EEF6FB to #F4F9F6. No element on either page has the rgb(8,11,16) background. (3) Manual NISN on /attendance: submitting a test siswa NISN showed the toast 'TEST_Siswa1 - HADIR', the recognition-panel showed the name, Hadir went from 0 to 1, and the row appeared in the live log. (4) Manual NISN on the Face page for a second siswa: toast shown, recognition-panel shown, Hadir went from 1 to 2, and the row appeared in live-scan-table. (5) Station rename through station-name-edit, input and save worked; the name was set back to 'Gerbang 1' afterwards. (6) Export Excel downloaded absensi_2026-10-19.xlsx. (7) The 'Scanner Down? Pakai Wajah' link opens /face-attendance. No JS page errors. Test users and scan records were deleted afterwards.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Perangkat Scanner panel", "issues": ["The station list shows several entries all named 'Gerbang 1'. Each headless or test browser creates a new station id with the default name, so the list fills with identical names. This is a data artifact, not a layout bug. Optional: hide or prune offline stations that have 0 scans."]},
+      {"screen": "Absensi Manual panel", "issues": ["Before a submit there is a large empty area under the input, because the panel is stretched to the height of the Station panel. Cosmetic only; a hint or a recent-submissions placeholder could fill it."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": ["The exportXlsx function in Attendance.jsx has no try/catch, so a failed export gives the user no error toast."],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "Created TEST_Siswa1 (NISN 990000111) and TEST_Siswa2 (NISN 990000112) via POST /api/users, plus their scan records. All were deleted afterwards.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Creating a siswa needs a phone number; nisn is optional in UserCreate. Delete scans with DELETE /api/attendance/scan-record/{id}?kind=siswa. In the browser_automation tool, JS template literals inside triple-quoted strings break the script; use a single-line JS string. The headless browser provides a fake camera feed (green), so the face camera shows as 'Kamera aktif'.",
+  "test_credentials": "boassibarani123@gmail.com / <SUPER_ADMIN_PASSWORD>"
+}
